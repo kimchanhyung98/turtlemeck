@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>turtlemac</string>
+	<key>CFBundleExecutable</key>
+	<string>turtlemac</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.go.turtlemac</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>turtlemac</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>turtlemac briefly uses the built-in camera on this Mac to estimate posture on device. Video is not saved, sent, or shared.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 kimchanhyung98</string>
+</dict>
+</plist>
