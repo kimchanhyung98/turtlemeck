@@ -1,16 +1,22 @@
-.PHONY: help check init
+.PHONY: help check init package run
 
 .DEFAULT_GOAL := help
 
 help: ## 사용 가능한 명령어 목록 출력
 	@awk 'BEGIN {FS = ":.*##"; printf "\n사용법:\n  make \033[36m<target>\033[0m\n\n명령어:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-check: ## 테스트 및 린트 검사 실행
-	@echo "[check] running tests..."
-	# 테스트 명령어 추가 (예: npm test, pytest, go test 등)
-	@echo "[check] running lint..."
-	# 린트 명령어 추가 (예: npm run lint, flake8, golangci-lint 등)
+check: ## 테스트 및 빌드 검사 실행
+	@echo "[check] running manual Swift tests..."
+	@scripts/run-tests.sh
+	@echo "[check] building Swift package..."
+	@swift build --disable-sandbox
 	@echo "[check] all checks passed"
+
+package: ## Universal2 .app/ZIP/DMG 빌드 및 ad-hoc 서명
+	@scripts/package-app.sh
+
+run: ## 앱 패키징 후 실행
+	@scripts/run-app.sh
 
 init: ## 프로젝트 환경 설정
 	@if [ ! -f .env ]; then \
