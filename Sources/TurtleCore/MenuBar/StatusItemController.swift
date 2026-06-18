@@ -132,11 +132,11 @@ final class StatusItemController: NSObject {
         animation.duration = 0.8
         animation.autoreverses = true
         animation.repeatCount = .infinity
-        button.layer?.add(animation, forKey: "turtlemac.badPulse")
+        button.layer?.add(animation, forKey: "turtlemeck.badPulse")
     }
 
     private func stopPulse(on button: NSStatusBarButton) {
-        button.layer?.removeAnimation(forKey: "turtlemac.badPulse")
+        button.layer?.removeAnimation(forKey: "turtlemeck.badPulse")
         button.alphaValue = 1
     }
 

@@ -12,7 +12,7 @@ public final class NotificationManager {
 
     public func sendPostureReminder(soundEnabled: Bool) {
         let content = UNMutableNotificationContent()
-        content.title = "turtlemac"
+        content.title = "turtlemeck"
         content.body = messages.nextBody()
         content.interruptionLevel = .passive
         if soundEnabled {
@@ -20,7 +20,7 @@ public final class NotificationManager {
         }
 
         let request = UNNotificationRequest(
-            identifier: "com.go.turtlemac.posture.\(UUID().uuidString)",
+            identifier: "com.go.turtlemeck.posture.\(UUID().uuidString)",
             content: content,
             trigger: nil
         )

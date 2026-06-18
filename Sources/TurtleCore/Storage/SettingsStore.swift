@@ -2,8 +2,8 @@ import Foundation
 
 public final class SettingsStore {
     private let defaults: UserDefaults
-    private let settingsKey = "com.go.turtlemac.settings"
-    private let onboardingKey = "com.go.turtlemac.onboardingComplete"
+    private let settingsKey = "com.go.turtlemeck.settings"
+    private let onboardingKey = "com.go.turtlemeck.onboardingComplete"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

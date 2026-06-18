@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "turtlemac",
+    name: "turtlemeck",
     platforms: [
         .macOS(.v15)
     ],
     products: [
         .library(name: "TurtleCore", targets: ["TurtleCore"]),
-        .executable(name: "turtlemac", targets: ["turtlemac"]),
+        .executable(name: "turtlemeck", targets: ["turtlemeck"]),
         .executable(name: "analyze-image", targets: ["analyze-image"])
     ],
     targets: [
@@ -25,7 +25,7 @@ let package = Package(
                 "Storage/CLAUDE.md"
             ]
         ),
-        .executableTarget(name: "turtlemac", dependencies: ["TurtleCore"]),
+        .executableTarget(name: "turtlemeck", dependencies: ["TurtleCore"]),
         .executableTarget(name: "analyze-image", dependencies: ["TurtleCore"], path: "tools/analyze-image")
     ]
 )

@@ -3,7 +3,7 @@ import AppKit
 @MainActor private var retainedDelegate: AppDelegate?
 
 @MainActor
-public func runTurtleMacApp() {
+public func runTurtleMeckApp() {
     let app = NSApplication.shared
     let delegate = AppDelegate()
     retainedDelegate = delegate

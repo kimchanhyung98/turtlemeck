@@ -14,6 +14,6 @@ swiftc \
   -parse-as-library \
   $CORE_SOURCES \
   $TEST_SOURCES \
-  -o .build/turtlemac-manual-tests
+  -o .build/turtlemeck-manual-tests
 
-.build/turtlemac-manual-tests
+.build/turtlemeck-manual-tests

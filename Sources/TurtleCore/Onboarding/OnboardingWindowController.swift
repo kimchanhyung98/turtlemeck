@@ -7,7 +7,7 @@ final class OnboardingWindowController: NSWindowController {
         let view = OnboardingView(model: model)
         let controller = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: controller)
-        window.title = "turtlemac"
+        window.title = "turtlemeck"
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 480, height: 420))
         window.center()

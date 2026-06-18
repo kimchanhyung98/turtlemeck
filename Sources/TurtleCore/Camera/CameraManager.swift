@@ -8,7 +8,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     public var onNextCheckUpdate: (@Sendable (Int) -> Void)?
     public var onBlocked: (@Sendable (String) -> Void)?
 
-    private let queue = DispatchQueue(label: "com.go.turtlemac.camera", qos: .utility)
+    private let queue = DispatchQueue(label: "com.go.turtlemeck.camera", qos: .utility)
     private let detector = PoseDetector()
     private let pipeline = PosturePipeline()
     private let burstProcessor = BurstProcessor()

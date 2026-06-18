@@ -78,7 +78,7 @@ public final class StatsStore {
         } else {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? URL(fileURLWithPath: NSTemporaryDirectory())
-            self.fileURL = support.appendingPathComponent("turtlemac", isDirectory: true).appendingPathComponent("stats.json")
+            self.fileURL = support.appendingPathComponent("turtlemeck", isDirectory: true).appendingPathComponent("stats.json")
         }
     }
 

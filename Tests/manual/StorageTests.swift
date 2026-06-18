@@ -49,7 +49,7 @@ func registerStorageTests() {
     }
 
     TestRegistry.test("stats store writes and reads JSON") {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("turtlemac-stats-\(UUID().uuidString).json")
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("turtlemeck-stats-\(UUID().uuidString).json")
         let store = StatsStore(fileURL: url)
         var stats = DailyPostureStats(day: "2026-06-18")
         stats.record(.cautionStarted)

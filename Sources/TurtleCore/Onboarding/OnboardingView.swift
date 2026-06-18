@@ -10,7 +10,7 @@ struct OnboardingView: View {
                 Image(systemName: "tortoise.fill")
                     .font(.largeTitle)
                 VStack(alignment: .leading) {
-                    Text("turtlemac")
+                    Text("turtlemeck")
                         .font(.title)
                     Text("메뉴 막대에서 자세 징후를 조용히 알려줍니다.")
                         .foregroundStyle(.secondary)

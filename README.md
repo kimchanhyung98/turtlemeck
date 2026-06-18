@@ -1,4 +1,4 @@
-# turtlemac
+# turtlemeck
 
 macOS 메뉴 막대에 상주하며 내장 카메라로 전방머리/구부정 자세 징후를 온디바이스에서 추정하는 일반 웰니스 자세 알림 앱입니다.
 
@@ -22,7 +22,7 @@ make check
 make package
 ```
 
-`.build/turtlemac.app`을 Universal2로 조립하고 ad-hoc 서명한 뒤 `.build/turtlemac.zip`과 `.build/turtlemac.dmg`를 만듭니다. `hdiutil create`가 제한된 환경에서는 hybrid DMG로 대체합니다. Developer ID 공증은 현재 범위가 아닙니다.
+`.build/turtlemeck.app`을 Universal2로 조립하고 ad-hoc 서명한 뒤 `.build/turtlemeck.zip`과 `.build/turtlemeck.dmg`를 만듭니다. `hdiutil create`가 제한된 환경에서는 hybrid DMG로 대체합니다. Developer ID 공증은 현재 범위가 아닙니다.
 
 ## 실행
 
