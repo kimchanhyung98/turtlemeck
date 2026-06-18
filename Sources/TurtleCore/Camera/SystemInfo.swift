@@ -8,9 +8,7 @@ public struct SystemInfo: Equatable, Sendable {
         self.isAppleSilicon = isAppleSilicon
     }
 
-    public static var current: SystemInfo {
-        SystemInfo(isAppleSilicon: detectAppleSilicon(query: sysctlInt32))
-    }
+    public static let current = SystemInfo(isAppleSilicon: detectAppleSilicon(query: sysctlInt32))
 
     public static func detectAppleSilicon(query: (String) -> Int32?) -> Bool {
         query("hw.optional.arm64") == 1

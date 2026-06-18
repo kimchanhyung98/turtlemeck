@@ -21,6 +21,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var scheduledWorkItem: DispatchWorkItem?
     private var calibrationCompletion: (@Sendable (CalibrationResult) -> Void)?
     private var burstRunID = 0
+    private var immediateCheckPending = false
 
     public override init() {
         super.init()
@@ -91,6 +92,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         queue.async {
             self.settings = settings
             self.baseline = baseline
+            self.immediateCheckPending = true
             self.performBurst()
         }
     }
@@ -101,6 +103,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.baseline = baseline
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
+            self.immediateCheckPending = false
             self.calibrationCompletion = completion
             self.performBurst()
         }
@@ -125,7 +128,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func performBurst() {
-        guard isRunning || scheduledWorkItem == nil else {
+        guard shouldStartBurst else {
             return
         }
 
@@ -138,18 +141,29 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                     return
                 }
                 self.queue.async {
+                    guard self.shouldStartBurst else {
+                        return
+                    }
                     if allowed {
                         self.startAuthorizedBurst()
                     } else {
                         self.emitBlocked("camera permission denied")
+                        self.calibrationCompletion = nil
+                        self.immediateCheckPending = false
                         self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
                     }
                 }
             }
         case .blocked(let reason):
             emitBlocked(reason)
+            calibrationCompletion = nil
+            immediateCheckPending = false
             scheduleNextBurst(after: effectiveIntervalSeconds())
         }
+    }
+
+    private var shouldStartBurst: Bool {
+        isRunning || calibrationCompletion != nil || immediateCheckPending
     }
 
     private func startAuthorizedBurst() {
@@ -168,6 +182,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             }
         } catch {
             emitBlocked("camera unavailable")
+            calibrationCompletion = nil
+            immediateCheckPending = false
             scheduleNextBurst(after: effectiveIntervalSeconds())
         }
     }
@@ -175,6 +191,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private func finishBurst() {
         session?.stopRunning()
         burstStartDate = nil
+        immediateCheckPending = false
 
         if let completion = calibrationCompletion {
             calibrationCompletion = nil
@@ -234,28 +251,51 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
 
         try device.lockForConfiguration()
-        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 5)
-        device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 5)
-        device.unlockForConfiguration()
+        defer {
+            device.unlockForConfiguration()
+        }
+        configureFrameRate(for: device)
 
         let session = AVCaptureSession()
         session.beginConfiguration()
+        defer {
+            session.commitConfiguration()
+        }
         session.sessionPreset = .vga640x480
 
         let input = try AVCaptureDeviceInput(device: device)
-        if session.canAddInput(input) {
-            session.addInput(input)
+        guard session.canAddInput(input) else {
+            throw CameraError.cannotAddInput
         }
+        session.addInput(input)
 
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
-        if session.canAddOutput(output) {
-            session.addOutput(output)
+        guard session.canAddOutput(output) else {
+            throw CameraError.cannotAddOutput
+        }
+        session.addOutput(output)
+
+        self.session = session
+    }
+
+    private func configureFrameRate(for device: AVCaptureDevice) {
+        let desiredFrameRate = 5.0
+        let desiredDuration = CMTime(value: 1, timescale: 5)
+        let ranges = device.activeFormat.videoSupportedFrameRateRanges
+
+        let duration: CMTime
+        if ranges.contains(where: { $0.minFrameRate <= desiredFrameRate && desiredFrameRate <= $0.maxFrameRate }) {
+            duration = desiredDuration
+        } else if let slowestRange = ranges.max(by: { CMTimeCompare($0.maxFrameDuration, $1.maxFrameDuration) < 0 }) {
+            duration = slowestRange.maxFrameDuration
+        } else {
+            return
         }
 
-        session.commitConfiguration()
-        self.session = session
+        device.activeVideoMinFrameDuration = duration
+        device.activeVideoMaxFrameDuration = duration
     }
 
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -280,6 +320,9 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private func invalidateCurrentBurst() {
         burstRunID += 1
         burstStartDate = nil
+        burstFrames.removeAll()
+        calibrationCompletion = nil
+        immediateCheckPending = false
     }
 
     @objc private func sessionInterrupted() {
@@ -287,6 +330,9 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.session?.stopRunning()
             self.invalidateCurrentBurst()
             self.emit(BurstVerdict(assessment: .noEval))
+            if self.isRunning {
+                self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
+            }
         }
     }
 
@@ -309,6 +355,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
 private enum CameraError: Error {
     case noCamera
+    case cannotAddInput
+    case cannotAddOutput
 }
 
 enum CameraAuthorizationAction: Equatable {
