@@ -4,12 +4,18 @@ import SwiftUI
 @MainActor
 final class OnboardingWindowController: NSWindowController {
     init(model: AppModel) {
-        let view = OnboardingView(model: model)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 460),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let view = OnboardingView(model: model) { [weak window] in
+            window?.close()
+        }
         let controller = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: controller)
         window.title = "turtlemeck"
-        window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 480, height: 420))
+        window.contentViewController = controller
         window.center()
         super.init(window: window)
     }
