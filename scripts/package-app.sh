@@ -22,6 +22,7 @@ mkdir -p "$MACOS" "$RESOURCES/en.lproj" "$RESOURCES/ko.lproj"
 
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$MACOS/turtlemeck"
 cp Resources/Info.plist "$CONTENTS/Info.plist"
+printf 'APPL????' > "$CONTENTS/PkgInfo"
 cp Resources/en.lproj/InfoPlist.strings "$RESOURCES/en.lproj/InfoPlist.strings"
 cp Resources/ko.lproj/InfoPlist.strings "$RESOURCES/ko.lproj/InfoPlist.strings"
 
