@@ -2,7 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @ObservedObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    var onStart: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
