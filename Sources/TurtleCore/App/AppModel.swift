@@ -59,7 +59,7 @@ public final class AppModel: ObservableObject {
 
     public func stop() {
         recordElapsedStats()
-        try? statsStore.save([todayStats])
+        saveStats()
         cameraManager.stop()
     }
 
@@ -68,7 +68,7 @@ public final class AppModel: ObservableObject {
         isPaused = true
         postureState = .paused
         statusText = "일시정지"
-        try? statsStore.save([todayStats])
+        saveStats()
         cameraManager.stop()
     }
 
@@ -166,20 +166,53 @@ public final class AppModel: ObservableObject {
             todayStats.record(alert)
 
             if settings.bannerNotificationsEnabled, notificationPolicy.shouldSend(alert: alert) {
-                notificationManager.sendPostureReminder(soundEnabled: settings.notificationSoundEnabled)
-                todayStats.recordNotificationSent()
+                notificationManager.sendPostureReminder(soundEnabled: settings.notificationSoundEnabled) { [weak self] success in
+                    guard success else {
+                        return
+                    }
+                    Task { @MainActor in
+                        self?.recordNotificationSent()
+                    }
+                }
             }
         }
-        try? statsStore.save([todayStats])
+        saveStats()
     }
 
     private func recordElapsedStats(now: Date = Date()) {
+        rotateStatsIfNeeded(now: now)
         let seconds = Int(now.timeIntervalSince(lastStatsTimestamp))
         guard seconds > 0 else {
             return
         }
         todayStats.recordDuration(state: postureState, seconds: seconds)
         lastStatsTimestamp = now
+    }
+
+    private func rotateStatsIfNeeded(now: Date) {
+        let day = Self.dayKey(for: now)
+        guard todayStats.day != day else {
+            return
+        }
+
+        saveStats()
+        todayStats = (try? statsStore.load().first { $0.day == day }) ?? DailyPostureStats(day: day)
+        lastStatsTimestamp = now
+    }
+
+    private func recordNotificationSent() {
+        todayStats.recordNotificationSent()
+        saveStats()
+    }
+
+    private func saveStats() {
+        var allStats = (try? statsStore.load()) ?? []
+        if let index = allStats.firstIndex(where: { $0.day == todayStats.day }) {
+            allStats[index] = todayStats
+        } else {
+            allStats.append(todayStats)
+        }
+        try? statsStore.save(allStats)
     }
 
     private func handleCalibration(_ result: CalibrationResult) {
@@ -220,10 +253,14 @@ public final class AppModel: ObservableObject {
     }
 
     private static func todayKey() -> String {
+        dayKey(for: Date())
+    }
+
+    private static func dayKey(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        return formatter.string(from: date)
     }
 }

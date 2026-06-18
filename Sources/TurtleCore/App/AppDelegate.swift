@@ -9,9 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
         statusController = StatusItemController(model: model)
-        model.start()
 
-        if !model.hasCompletedOnboarding {
+        if model.hasCompletedOnboarding {
+            model.start()
+        } else {
             showOnboarding()
         }
     }

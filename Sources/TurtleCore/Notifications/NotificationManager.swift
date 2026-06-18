@@ -10,7 +10,7 @@ public final class NotificationManager {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    public func sendPostureReminder(soundEnabled: Bool) {
+    public func sendPostureReminder(soundEnabled: Bool, completion: @escaping @Sendable (Bool) -> Void = { _ in }) {
         let content = UNMutableNotificationContent()
         content.title = "turtlemeck"
         content.body = messages.nextBody()
@@ -24,6 +24,8 @@ public final class NotificationManager {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request)
+        UNUserNotificationCenter.current().add(request) { error in
+            completion(error == nil)
+        }
     }
 }
