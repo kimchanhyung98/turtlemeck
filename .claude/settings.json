@@ -114,7 +114,6 @@
     "serena@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": false,
     "supabase@claude-plugins-official": false,
-    "superpowers@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": false,
     "vercel@claude-plugins-official": true
   },
@@ -132,7 +131,7 @@
   "model": "opus",
   "effortLevel": "xhigh",
   "companyAnnouncements": [
-    "\nWelcome to {base}!\nRun 'make init' on first launch."
+    "\nWelcome to turtlemeck!\nRun 'make init' on first launch."
   ],
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true

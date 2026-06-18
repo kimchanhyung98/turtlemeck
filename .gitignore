@@ -185,4 +185,5 @@ agent-os/
 # etc
 .cmux/
 .omx/
-.remember
+.remember/
+.playwright-mcp/
