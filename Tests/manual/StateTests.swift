@@ -25,6 +25,16 @@ func registerStateTests() {
         try expectEqual(verdict.assessment, .noEval, "insufficient valid frames")
     }
 
+    TestRegistry.test("burst processor breaks sustained bad evidence on no-eval gaps") {
+        let frames = [
+            TimedFrame(time: 0.0, frame: AnalyzedFrame(assessment: .bad)),
+            TimedFrame(time: 1.0, frame: AnalyzedFrame(assessment: .noEval)),
+            TimedFrame(time: 2.0, frame: AnalyzedFrame(assessment: .bad))
+        ]
+        let verdict = BurstProcessor(sustainSeconds: 1.6, minimumValidFrames: 2).process(frames)
+        try expectEqual(verdict.assessment, .good, "no-eval gap should break continuous bad evidence")
+    }
+
     TestRegistry.test("state machine requires two bad bursts before caution") {
         var machine = PostureStateMachine(requiredBadBursts: 2)
         let first = machine.apply(BurstVerdict(assessment: .bad))

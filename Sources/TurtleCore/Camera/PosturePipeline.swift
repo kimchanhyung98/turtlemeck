@@ -1,6 +1,6 @@
 import Foundation
 
-public final class PosturePipeline: @unchecked Sendable {
+public final class PosturePipeline {
     private let analyzer: PostureAnalyzer
     private let classifier: ViewpointClassifier
     private var viewpointStabilizer: ViewpointStabilizer

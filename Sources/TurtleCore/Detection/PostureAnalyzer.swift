@@ -133,9 +133,13 @@ public struct PostureAnalyzer {
     private func shoulderReference(in pose: PoseLandmarks, side: Side) -> Point2D? {
         switch side {
         case .left:
-            return pose.leftShoulder?.isReliable == true ? pose.leftShoulder : pose.neck
+            return pose.leftShoulder?.isReliable == true
+                ? pose.leftShoulder
+                : (pose.neck?.isReliable == true ? pose.neck : nil)
         case .right:
-            return pose.rightShoulder?.isReliable == true ? pose.rightShoulder : pose.neck
+            return pose.rightShoulder?.isReliable == true
+                ? pose.rightShoulder
+                : (pose.neck?.isReliable == true ? pose.neck : nil)
         }
     }
 

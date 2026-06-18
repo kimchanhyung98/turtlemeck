@@ -28,15 +28,16 @@ public struct BurstProcessor {
     }
 
     public func process(_ frames: [TimedFrame]) -> BurstVerdict {
-        let validFrames = frames.filter { $0.frame.assessment != .noEval }.sorted { $0.time < $1.time }
-        guard validFrames.count >= minimumValidFrames else {
+        let orderedFrames = frames.sorted { $0.time < $1.time }
+        let validFrameCount = orderedFrames.filter { $0.frame.assessment != .noEval }.count
+        guard validFrameCount >= minimumValidFrames else {
             return BurstVerdict(assessment: .noEval)
         }
 
         var badRunStart: Double?
         var badRunEnd: Double?
 
-        for item in validFrames {
+        for item in orderedFrames {
             if item.frame.assessment == .bad {
                 if badRunStart == nil {
                     badRunStart = item.time

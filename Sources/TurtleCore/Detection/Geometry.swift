@@ -27,7 +27,9 @@ public enum Geometry {
             return nil
         }
 
-        let lowerBody = pose.spine?.isReliable == true ? pose.spine : pose.root
+        let lowerBody = pose.spine?.isReliable == true
+            ? pose.spine
+            : (pose.root?.isReliable == true ? pose.root : nil)
         let bodyUp = lowerBody.flatMap { (shoulderCenter - Vector3($0)).normalized() } ?? Vector3(x: 0, y: 1, z: 0)
         guard let forward = lateral.cross(bodyUp).normalized() else {
             return nil

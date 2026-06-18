@@ -14,7 +14,7 @@ public struct Calibrator {
     public init() {}
 
     public func capture(from frames: [AnalyzedFrame]) -> CalibrationResult {
-        let signals = frames.compactMap(\.signal).filter { $0.confidence >= 0.5 }
+        let signals = frames.compactMap(\.signal).filter { $0.confidence >= Tuning.minimumLandmarkConfidence }
         guard !signals.isEmpty else {
             return .rejected(.noReliableFrames)
         }
