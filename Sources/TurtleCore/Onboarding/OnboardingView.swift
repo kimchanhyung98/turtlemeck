@@ -62,7 +62,7 @@ struct OnboardingView: View {
                 Button("시작") {
                     model.markOnboardingComplete()
                     model.start()
-                    dismiss()
+                    onStart()
                 }
                 .keyboardShortcut(.defaultAction)
             }
