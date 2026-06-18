@@ -45,6 +45,38 @@ public struct Settings: Codable, Equatable, Sendable {
         launchAtLogin: false
     )
 
+    private enum CodingKeys: String, CodingKey {
+        case storedCheckIntervalSeconds
+        case sensitivity
+        case cameraPlacement
+        case bannerNotificationsEnabled
+        case notificationSoundEnabled
+        case launchAtLogin
+        case baseline
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        storedCheckIntervalSeconds = Self.clampInterval(try container.decode(Int.self, forKey: .storedCheckIntervalSeconds))
+        sensitivity = try container.decode(Sensitivity.self, forKey: .sensitivity)
+        cameraPlacement = try container.decode(CameraPlacement.self, forKey: .cameraPlacement)
+        bannerNotificationsEnabled = try container.decode(Bool.self, forKey: .bannerNotificationsEnabled)
+        notificationSoundEnabled = try container.decode(Bool.self, forKey: .notificationSoundEnabled)
+        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+        baseline = try container.decodeIfPresent(Baseline.self, forKey: .baseline)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(checkIntervalSeconds, forKey: .storedCheckIntervalSeconds)
+        try container.encode(sensitivity, forKey: .sensitivity)
+        try container.encode(cameraPlacement, forKey: .cameraPlacement)
+        try container.encode(bannerNotificationsEnabled, forKey: .bannerNotificationsEnabled)
+        try container.encode(notificationSoundEnabled, forKey: .notificationSoundEnabled)
+        try container.encode(launchAtLogin, forKey: .launchAtLogin)
+        try container.encodeIfPresent(baseline, forKey: .baseline)
+    }
+
     private static func clampInterval(_ value: Int) -> Int {
         min(180, max(10, value))
     }

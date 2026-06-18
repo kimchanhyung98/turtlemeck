@@ -19,6 +19,21 @@ func registerStorageTests() {
         try expectEqual(high.checkIntervalSeconds, 180, "high clamp")
     }
 
+    TestRegistry.test("settings decode clamps persisted interval") {
+        let json = """
+        {
+          "storedCheckIntervalSeconds": 400,
+          "sensitivity": "medium",
+          "cameraPlacement": "center",
+          "bannerNotificationsEnabled": false,
+          "notificationSoundEnabled": false,
+          "launchAtLogin": false
+        }
+        """
+        let decoded = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        try expectEqual(decoded.checkIntervalSeconds, 180, "decoded interval should clamp high values")
+    }
+
     TestRegistry.test("sensitivity descriptions explain alert tradeoff") {
         try expect(Sensitivity.low.description.contains("알림 적음"), "low sensitivity should explain fewer alerts")
         try expect(Sensitivity.medium.description.contains("균형"), "medium sensitivity should explain balanced behavior")
