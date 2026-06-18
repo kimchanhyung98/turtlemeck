@@ -6,14 +6,21 @@ cd "$ROOT"
 
 mkdir -p .build
 
-CORE_SOURCES=$(find Sources/TurtleCore -name '*.swift' | sort)
-TEST_SOURCES=$(find Tests/manual -name '*.swift' | sort)
+CORE_SOURCES=()
+while IFS= read -r file; do
+  CORE_SOURCES+=("$file")
+done < <(find Sources/TurtleCore -name '*.swift' | sort)
+
+TEST_SOURCES=()
+while IFS= read -r file; do
+  TEST_SOURCES+=("$file")
+done < <(find Tests/manual -name '*.swift' | sort)
 
 swiftc \
   -O \
   -parse-as-library \
-  $CORE_SOURCES \
-  $TEST_SOURCES \
+  "${CORE_SOURCES[@]}" \
+  "${TEST_SOURCES[@]}" \
   -o .build/turtlemeck-manual-tests
 
 .build/turtlemeck-manual-tests

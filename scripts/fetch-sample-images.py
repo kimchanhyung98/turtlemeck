@@ -22,7 +22,11 @@ def main() -> int:
         image_url = item.get("url")
         if not image_url:
             continue
-        suffix = pathlib.Path(urllib.parse.urlparse(image_url).path).suffix.lower()
+        parsed = urllib.parse.urlparse(image_url)
+        if parsed.scheme not in {"http", "https"}:
+            print(f"skip {image_url}: unsupported URL scheme", file=sys.stderr)
+            continue
+        suffix = pathlib.Path(parsed.path).suffix.lower()
         if suffix not in {".jpg", ".jpeg", ".png"}:
             suffix = ".jpg"
         target = OUT / f"sample-{saved + 1:02d}{suffix}"
