@@ -62,6 +62,25 @@ func registerStateTests() {
         try expectEqual(second.state, .bad, "bad streak preserved")
     }
 
+    TestRegistry.test("state machine requests calibration after three no-eval bursts") {
+        var machine = PostureStateMachine(requiredNoEvalBursts: 3)
+        let first = machine.apply(BurstVerdict(assessment: .noEval))
+        let second = machine.apply(BurstVerdict(assessment: .noEval))
+        let third = machine.apply(BurstVerdict(assessment: .noEval))
+        try expectEqual(first.state, .noEval, "first no-eval should not switch")
+        try expectEqual(second.state, .noEval, "second no-eval should not switch")
+        try expectEqual(third.state, .needsCalibration, "third no-eval should request calibration")
+    }
+
+    TestRegistry.test("state machine resets no-eval streak after good burst") {
+        var machine = PostureStateMachine(requiredNoEvalBursts: 3)
+        _ = machine.apply(BurstVerdict(assessment: .noEval))
+        _ = machine.apply(BurstVerdict(assessment: .noEval))
+        _ = machine.apply(BurstVerdict(assessment: .good))
+        let firstAfterGood = machine.apply(BurstVerdict(assessment: .noEval))
+        try expectEqual(firstAfterGood.state, .noEval, "good burst should reset no-eval streak")
+    }
+
     TestRegistry.test("notification policy rate limits caution alerts") {
         var policy = NotificationPolicy(minimumInterval: 60)
         try expect(policy.shouldSend(alert: .cautionStarted, at: Date(timeIntervalSince1970: 100)), "first alert allowed")
@@ -123,6 +142,26 @@ func registerStateTests() {
         pipeline.reset()
         let unsmoothed = pipeline.process(forward, settings: .defaults, baseline: nil)
         try expectEqual(unsmoothed.assessment, .bad, "new burst should not retain previous smoothing")
+    }
+
+    TestRegistry.test("posture pipeline resets smoothing when algorithm changes") {
+        let pipeline = PosturePipeline(stableViewpointFrames: 1, signalFilterAlpha: 0.8)
+        var switchedSettings = Settings.defaults
+        switchedSettings.postureAlgorithm = .profileGeometry
+        let upright = PoseLandmarks(
+            rightEar: confident(0.56, 0.28),
+            rightShoulder: confident(0.54, 0.78),
+            faceYawDegrees: 72
+        )
+        let forward = PoseLandmarks(
+            rightEar: confident(0.87, 0.47),
+            rightShoulder: confident(0.52, 0.78),
+            faceYawDegrees: 74
+        )
+        _ = pipeline.process(upright, settings: .defaults, baseline: nil)
+        let switched = pipeline.process(forward, settings: switchedSettings, baseline: nil)
+        try expectEqual(switched.assessment, .bad, "algorithm change should clear previous smoothing")
+        try expectEqual(switched.signal?.kind, .profile2D, "profile geometry should emit profile signal kind")
     }
 
     TestRegistry.test("posture pipeline requires sustained viewpoint before flipping") {

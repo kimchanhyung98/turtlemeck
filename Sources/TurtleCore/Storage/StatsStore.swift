@@ -63,7 +63,7 @@ public struct DailyPostureStats: Codable, Equatable, Sendable {
             goodSeconds += seconds
         case .bad:
             badSeconds += seconds
-        case .calibrating, .noEval, .paused, .blocked:
+        case .calibrating, .noEval, .paused, .blocked, .needsCalibration:
             break
         }
     }

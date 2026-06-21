@@ -11,6 +11,8 @@ final class StatusItemController: NSObject {
     private var cancellables: Set<AnyCancellable> = []
     private var previousState: PostureState?
     private var recoveryWorkItem: DispatchWorkItem?
+    private var localEventMonitor: Any?
+    private var globalEventMonitor: Any?
 
     init(model: AppModel) {
         self.model = model
@@ -38,6 +40,7 @@ final class StatusItemController: NSObject {
 
     private func configurePopover() {
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentSize = NSSize(width: 320, height: 520)
         popover.contentViewController = NSHostingController(rootView: MenuView(model: model))
     }
@@ -75,32 +78,53 @@ final class StatusItemController: NSObject {
         }
 
         let symbol: String
+        let emoji: String?
         let label: String
         switch state {
         case .good:
-            symbol = "tortoise.fill"
+            symbol = "face.smiling"
+            emoji = "🙂"
             label = "자세: 정상"
         case .bad:
-            symbol = "exclamationmark.triangle.fill"
-            label = "자세: 전방머리 징후"
+            symbol = "tortoise.fill"
+            emoji = "😢"
+            label = "자세: 흐트러짐"
         case .calibrating:
             symbol = "scope"
+            emoji = nil
             label = "자세: 보정 중"
         case .noEval:
-            symbol = "questionmark.circle"
-            label = "자세: 추적 중"
+            symbol = "figure.stand"
+            emoji = "🐢"
+            label = "자세: 초기 상태"
         case .paused:
             symbol = "pause.circle.fill"
+            emoji = "🫥"
             label = "자세: 일시정지"
         case .blocked:
             symbol = "video.slash.fill"
+            emoji = nil
             label = "자세: 카메라 확인 필요"
+        case .needsCalibration:
+            symbol = "scope"
+            emoji = nil
+            label = "자세: 보정 필요"
         }
 
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        image?.isTemplate = true
-        button.image = image
-        button.contentTintColor = tint ?? tintColor(for: state)
+        if let emoji {
+            button.image = nil
+            button.attributedTitle = NSAttributedString(
+                string: emoji,
+                attributes: [.font: NSFont.systemFont(ofSize: 15)]
+            )
+            button.contentTintColor = nil
+        } else {
+            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+            image?.isTemplate = true
+            button.attributedTitle = NSAttributedString(string: "")
+            button.image = image
+            button.contentTintColor = tint ?? tintColor(for: state)
+        }
         button.setAccessibilityLabel(labelOverride ?? label)
 
         if state == .bad {
@@ -114,7 +138,7 @@ final class StatusItemController: NSObject {
         switch state {
         case .bad:
             return .systemOrange
-        case .good, .calibrating, .noEval, .paused, .blocked:
+        case .good, .calibrating, .noEval, .paused, .blocked, .needsCalibration:
             return nil
         }
     }
@@ -146,10 +170,58 @@ final class StatusItemController: NSObject {
         }
 
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             ensurePopoverBelowMenuBar(button: button)
+            startEventMonitoring()
+        }
+    }
+
+    private func closePopover() {
+        stopEventMonitoring()
+        popover.performClose(nil)
+    }
+
+    private func startEventMonitoring() {
+        stopEventMonitoring()
+
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self else {
+                return event
+            }
+            guard self.popover.isShown else {
+                return event
+            }
+            if event.window == self.popover.contentViewController?.view.window {
+                return event
+            }
+            if event.window == self.statusItem.button?.window {
+                return event
+            }
+            self.closePopover()
+            return event
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.popover.isShown else {
+                    return
+                }
+                self.closePopover()
+            }
+        }
+    }
+
+    private func stopEventMonitoring() {
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
+        }
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
         }
     }
 
@@ -167,5 +239,11 @@ final class StatusItemController: NSObject {
             frame.origin.y = visible.maxY - frame.height - 4
             window.setFrame(frame, display: true)
         }
+    }
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        stopEventMonitoring()
     }
 }

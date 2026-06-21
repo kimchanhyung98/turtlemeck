@@ -6,6 +6,7 @@ public final class PosturePipeline {
     private var viewpointStabilizer: ViewpointStabilizer
     private var signalFilters: [SignalKind: OneEuroFilter] = [:]
     private let signalFilterAlpha: Double
+    private var activeAlgorithm: PostureAlgorithmID?
 
     public init(
         analyzer: PostureAnalyzer = PostureAnalyzer(),
@@ -21,24 +22,39 @@ public final class PosturePipeline {
 
     public func reset() {
         // 각 버스트는 독립 판정 단위이므로 이전 버스트의 필터/시점 상태를 끌고 오지 않는다.
+        resetAnalysisState()
+        activeAlgorithm = nil
+    }
+
+    public func process(_ landmarks: PoseLandmarks, settings: Settings, baseline: Baseline?, timestamp: Double? = nil) -> AnalyzedFrame {
+        if activeAlgorithm != settings.postureAlgorithm {
+            resetAnalysisState()
+            activeAlgorithm = settings.postureAlgorithm
+        }
+
+        let rawViewpoint = classifier.classify(landmarks)
+        let stableViewpoint = viewpointStabilizer.stabilize(rawViewpoint)
+        let algorithm = PostureAlgorithmFactory.make(settings.postureAlgorithm, analyzer: analyzer)
+        let context = PostureAnalysisContext(
+            baseline: baseline,
+            sensitivity: settings.sensitivity,
+            viewpoint: stableViewpoint
+        )
+        let frame = algorithm.analyze(landmarks, context: context)
+        var result = smooth(frame, landmarks: landmarks, baseline: baseline, sensitivity: settings.sensitivity, timestamp: timestamp)
+        // 정면 응시 프레임이면 신호 종류와 무관하게 얼굴 위치를 남겨, 보정 시 frontFace baseline을 확보한다(개인화: 카메라 높이/방향).
+        if let box = landmarks.faceBoundingBox, abs(landmarks.faceYawDegrees ?? 0) <= Tuning.faceProxyMaxYaw {
+            result.faceBottomY = box.y
+        }
+        return result
+    }
+
+    private func resetAnalysisState() {
         signalFilters.removeAll()
         viewpointStabilizer.reset()
     }
 
-    public func process(_ landmarks: PoseLandmarks, settings: Settings, baseline: Baseline?, timestamp: Double? = nil) -> AnalyzedFrame {
-        let rawViewpoint = classifier.classify(landmarks)
-        let stableViewpoint = viewpointStabilizer.stabilize(rawViewpoint)
-        let frame = analyzer.analyze(
-            landmarks,
-            baseline: baseline,
-            cameraPlacement: settings.cameraPlacement,
-            sensitivity: settings.sensitivity,
-            viewpointOverride: stableViewpoint
-        )
-        return smooth(frame, baseline: baseline, sensitivity: settings.sensitivity, timestamp: timestamp)
-    }
-
-    private func smooth(_ frame: AnalyzedFrame, baseline: Baseline?, sensitivity: Sensitivity, timestamp: Double?) -> AnalyzedFrame {
+    private func smooth(_ frame: AnalyzedFrame, landmarks: PoseLandmarks, baseline: Baseline?, sensitivity: Sensitivity, timestamp: Double?) -> AnalyzedFrame {
         guard var signal = frame.signal else {
             return frame
         }
@@ -55,29 +71,14 @@ public final class PosturePipeline {
 
         var smoothed = frame
         smoothed.signal = signal
-        smoothed.assessment = assessment(for: signal, baseline: baseline, sensitivity: sensitivity)
+        let base = PostureJudge.assess(signal, baseline: baseline, sensitivity: sensitivity)
+        // 스무딩 후 재판정에서도 "바른 자세는 양성 증거 필요" 게이트를 동일 적용한다(머리 기울임/삐딱이면 good 제외).
+        let gate = AlgorithmSupport.applyUprightGate(base, pose: landmarks)
+        smoothed.assessment = gate.assessment
+        if let reason = gate.reason {
+            smoothed.reason = reason
+        }
         return smoothed
-    }
-
-    private func assessment(for signal: PostureSignal, baseline: Baseline?, sensitivity: Sensitivity) -> PostureAssessment {
-        switch signal.kind {
-        case .front2D:
-            guard let baselineRatio = baseline?.frontHeadDropRatio else {
-                return .noEval
-            }
-            return signal.angleDegrees / 90 < baselineRatio - Tuning.frontRelativeDrop ? .bad : .good
-        case .threeQuarter2D:
-            return classify(angle: signal.angleDegrees, baselineAngle: baseline?.threeQuarterAngle, sensitivity: sensitivity)
-        case .profile2D, .body3D:
-            return classify(angle: signal.angleDegrees, baselineAngle: baseline?.profileAngle, sensitivity: sensitivity)
-        }
-    }
-
-    private func classify(angle: Double, baselineAngle: Double?, sensitivity: Sensitivity) -> PostureAssessment {
-        if let baselineAngle {
-            return angle < baselineAngle - Tuning.profileRelativeDrop ? .bad : .good
-        }
-        return angle < Tuning.absoluteBadAngle(for: sensitivity) ? .bad : .good
     }
 }
 

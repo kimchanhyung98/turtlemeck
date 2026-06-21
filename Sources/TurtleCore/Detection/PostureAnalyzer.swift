@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PostureAnalyzer {
+public struct PostureAnalyzer: Sendable {
     private let classifier: ViewpointClassifier
     private let systemInfo: SystemInfo
 
@@ -12,14 +12,13 @@ public struct PostureAnalyzer {
     public func analyze(
         _ pose: PoseLandmarks,
         baseline: Baseline?,
-        cameraPlacement: CameraPlacement,
         sensitivity: Sensitivity,
         viewpointOverride: ViewpointResult? = nil
     ) -> AnalyzedFrame {
         let viewpoint = viewpointOverride ?? classifier.classify(pose)
-        // 정면 카메라에서 양 어깨가 넓게 보이는 profile은 머리만 돌린 상황일 수 있다.
-        // 이때 2D CVA는 막되, Apple Silicon 3D 신호가 있으면 먼저 fallback으로 사용한다.
-        let shouldHoldProfile2D = cameraPlacement == .center && viewpoint.band.isProfile && isLikelyHeadOnlyRotation(pose)
+        // 양 어깨가 넓게 보이는 profile은 머리만 돌린 상황일 수 있어 보류(시점 자동 분류 기반).
+        // 이 경우 2D CVA는 막되, Apple Silicon 3D 신호가 있으면 fallback으로 사용한다.
+        let shouldHoldProfile2D = viewpoint.band.isProfile && isLikelyHeadOnlyRotation(pose)
 
         if !shouldHoldProfile2D, let frame = analyze2DProfileIfReliable(pose, viewpoint: viewpoint, baseline: baseline, sensitivity: sensitivity) {
             return frame
@@ -27,7 +26,7 @@ public struct PostureAnalyzer {
 
         if systemInfo.isAppleSilicon, let signal = analyze3D(pose) {
             return AnalyzedFrame(
-                assessment: classify(angle: signal.angleDegrees, baselineAngle: baseline?.profileAngle, sensitivity: sensitivity),
+                assessment: classify(angle: signal.angleDegrees, baselineAngle: baseline?.bodyFrameAngle, sensitivity: sensitivity),
                 signal: signal,
                 viewpoint: viewpoint
             )
@@ -54,7 +53,7 @@ public struct PostureAnalyzer {
     }
 
     private static func firstReliable(_ points: [Point2D?]) -> Point2D? {
-        points.compactMap { $0 }.first { $0.isReliable }
+        points.compactMap { $0 }.first { $0.isTrackable }
     }
 
     private func analyze2DProfileIfReliable(
@@ -84,7 +83,10 @@ public struct PostureAnalyzer {
     }
 
     private func analyze3D(_ pose: PoseLandmarks) -> PostureSignal? {
-        guard let pose3D = pose.pose3D, let angle = Geometry.bodySagittalAngleDegrees(from: pose3D) else {
+        guard
+            let pose3D = pose.pose3D,
+            let angle = Geometry.bodySagittalAngleDegrees(from: pose3D)
+        else {
             return nil
         }
         return PostureSignal(kind: .body3D, angleDegrees: angle, confidence: 0.85)
@@ -102,13 +104,12 @@ public struct PostureAnalyzer {
                 return AnalyzedFrame(assessment: .noEval, viewpoint: viewpoint, reason: "front requires reliable head and shoulder landmarks")
             }
             let signal = PostureSignal(kind: .front2D, angleDegrees: current * 90, confidence: viewpoint.confidence)
-            guard let baselineRatio = baseline?.frontHeadDropRatio else {
-                return AnalyzedFrame(assessment: .noEval, signal: signal, viewpoint: viewpoint, reason: "front requires baseline")
-            }
+            let assessment = PostureJudge.assess(signal, baseline: baseline, sensitivity: sensitivity)
             return AnalyzedFrame(
-                assessment: current < baselineRatio - Tuning.frontRelativeDrop ? .bad : .good,
+                assessment: assessment,
                 signal: signal,
-                viewpoint: viewpoint
+                viewpoint: viewpoint,
+                reason: baseline?.frontHeadDropRatio == nil && assessment == .noEval ? "front requires baseline" : nil
             )
         case .threeQuarterLeft, .threeQuarterRight:
             guard
@@ -133,20 +134,20 @@ public struct PostureAnalyzer {
     private func shoulderReference(in pose: PoseLandmarks, side: Side) -> Point2D? {
         switch side {
         case .left:
-            return pose.leftShoulder?.isReliable == true
+            return pose.leftShoulder?.isTrackable == true
                 ? pose.leftShoulder
-                : (pose.neck?.isReliable == true ? pose.neck : nil)
+                : (pose.neck?.isTrackable == true ? pose.neck : nil)
         case .right:
-            return pose.rightShoulder?.isReliable == true
+            return pose.rightShoulder?.isTrackable == true
                 ? pose.rightShoulder
-                : (pose.neck?.isReliable == true ? pose.neck : nil)
+                : (pose.neck?.isTrackable == true ? pose.neck : nil)
         }
     }
 
     private func isLikelyHeadOnlyRotation(_ pose: PoseLandmarks) -> Bool {
         guard
-            let left = pose.leftShoulder, left.isReliable,
-            let right = pose.rightShoulder, right.isReliable
+            let left = pose.leftShoulder, left.isTrackable,
+            let right = pose.rightShoulder, right.isTrackable
         else {
             return false
         }
@@ -156,8 +157,8 @@ public struct PostureAnalyzer {
     private func frontHeadDropRatio(_ pose: PoseLandmarks) -> Double? {
         // 정면 신호는 절대 CVA가 아니라 어깨폭으로 정규화한 머리-어깨 수직 간격이다.
         guard
-            let leftShoulder = pose.leftShoulder, leftShoulder.isReliable,
-            let rightShoulder = pose.rightShoulder, rightShoulder.isReliable
+            let leftShoulder = pose.leftShoulder, leftShoulder.isTrackable,
+            let rightShoulder = pose.rightShoulder, rightShoulder.isTrackable
         else {
             return nil
         }
@@ -168,7 +169,7 @@ public struct PostureAnalyzer {
         }
 
         let headCandidates = [pose.leftEar, pose.rightEar, pose.leftEye, pose.rightEye, pose.nose].compactMap { point -> Point2D? in
-            guard let point, point.isReliable else {
+            guard let point, point.isTrackable else {
                 return nil
             }
             return point

@@ -14,26 +14,40 @@ public struct Calibrator {
     public init() {}
 
     public func capture(from frames: [AnalyzedFrame]) -> CalibrationResult {
-        let signals = frames.compactMap(\.signal).filter { $0.confidence >= Tuning.minimumLandmarkConfidence }
+        let signals = frames.compactMap(\.signal).filter { signal in
+            let threshold = signal.kind == .frontFace ? Tuning.minimumTrackingConfidence : Tuning.minimumLandmarkConfidence
+            return signal.confidence >= threshold
+        }
         guard !signals.isEmpty else {
             return .rejected(.noReliableFrames)
         }
 
-        let profileAngle = percentile(signals.filter { $0.kind == .profile2D || $0.kind == .body3D }.map(\.angleDegrees), 0.75)
-        if let profileAngle {
-            guard profileAngle >= Tuning.profileBaselineRejectAngle else {
-                return .rejected(.alreadySlouched)
-            }
-        }
-
+        // 신호 종류별로 분리해 baseline을 만든다(2D 전용).
+        let profileAngle = percentile(signals.filter { $0.kind == .profile2D }.map(\.angleDegrees), 0.75)
         let frontRatio = percentile(signals.filter { $0.kind == .front2D }.map { $0.angleDegrees / 90 }, 0.75)
         let threeQuarterAngle = percentile(signals.filter { $0.kind == .threeQuarter2D }.map(\.angleDegrees), 0.75)
+        // 얼굴 위치 보조 baseline — 모든 평가 프레임의 얼굴 위치(body 성공/실패 무관)를 모아 정자세 분포의 하단(0.25 percentile)을
+        // 보수 기준으로 잡는다(전방머리=y 하락 판정의 false-positive 억제 + 카메라 높이/방향 개인화).
+        // 프레임의 faceBottomY를 우선 쓰되, 없으면 frontFace 신호값으로 폴백한다.
+        let frontFaceY = percentile(frames.compactMap { frame -> Double? in
+            frame.faceBottomY ?? (frame.signal?.kind == .frontFace ? frame.signal?.angleDegrees : nil)
+        }, 0.25)
 
-        guard profileAngle != nil || frontRatio != nil || threeQuarterAngle != nil else {
+        // "클수록 좋음" 측면 각이 이미 구부정하면 보정 거부.
+        if let profileAngle, profileAngle < Tuning.profileBaselineRejectAngle {
+            return .rejected(.alreadySlouched)
+        }
+
+        guard profileAngle != nil || frontRatio != nil || threeQuarterAngle != nil || frontFaceY != nil else {
             return .rejected(.noReliableFrames)
         }
 
-        return .accepted(Baseline(profileAngle: profileAngle, frontHeadDropRatio: frontRatio, threeQuarterAngle: threeQuarterAngle))
+        return .accepted(Baseline(
+            profileAngle: profileAngle,
+            frontHeadDropRatio: frontRatio,
+            threeQuarterAngle: threeQuarterAngle,
+            frontFaceBottomY: frontFaceY
+        ))
     }
 
     private func percentile(_ values: [Double], _ p: Double) -> Double? {

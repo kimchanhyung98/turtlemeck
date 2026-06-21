@@ -62,6 +62,28 @@ func registerDetectionTests() {
         try expectEqual(result.band, .unknown, "weak landmarks should not guess")
     }
 
+    TestRegistry.test("front viewpoint falls back to nose and shoulders") {
+        let pose = PoseLandmarks(
+            nose: confident(0.5, 0.3),
+            leftShoulder: confident(0.32, 0.72),
+            rightShoulder: confident(0.68, 0.72),
+            faceYawDegrees: nil
+        )
+        let result = ViewpointClassifier().classify(pose)
+        try expectEqual(result.band, .front, "upper-body webcam signal should classify front")
+    }
+
+    TestRegistry.test("front viewpoint accepts low-confidence tracking landmarks") {
+        let pose = PoseLandmarks(
+            nose: lowConfidence(0.5, 0.3),
+            leftShoulder: lowConfidence(0.32, 0.72),
+            rightShoulder: lowConfidence(0.68, 0.72),
+            faceYawDegrees: nil
+        )
+        let result = ViewpointClassifier().classify(pose)
+        try expectEqual(result.band, .front, "low-confidence webcam landmarks should still be trackable")
+    }
+
     TestRegistry.test("profile head reference falls back from ear to eye") {
         let pose = PoseLandmarks(
             rightEye: confident(0.62, 0.26),
@@ -86,7 +108,7 @@ func registerDetectionTests() {
             rightShoulder: confident(0.54, 0.78),
             faceYawDegrees: 72
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .good, "upright profile should pass absolute threshold")
         try expect(analyzed.signal?.angleDegrees ?? 0 > 65, "upright angle")
     }
@@ -97,12 +119,12 @@ func registerDetectionTests() {
             rightShoulder: confident(0.52, 0.78),
             faceYawDegrees: 74
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .bad, "forward profile should fail absolute threshold")
         try expect(analyzed.signal?.angleDegrees ?? 90 < 55, "forward angle")
     }
 
-    TestRegistry.test("front pose without baseline is no-eval") {
+    TestRegistry.test("front pose without baseline can classify clear upright posture") {
         let pose = PoseLandmarks(
             leftEar: confident(0.35, 0.3),
             rightEar: confident(0.65, 0.3),
@@ -110,9 +132,21 @@ func registerDetectionTests() {
             rightShoulder: confident(0.7, 0.7),
             faceYawDegrees: 0
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
-        try expectEqual(analyzed.assessment, .noEval, "front absolute judgment should be withheld")
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, sensitivity: .medium)
+        try expectEqual(analyzed.assessment, .good, "clear upright front posture should pass absolute fallback")
         try expectEqual(analyzed.signal?.kind, .front2D, "front signal should still be available for calibration")
+    }
+
+    TestRegistry.test("front pose without baseline withholds ambiguous posture") {
+        let pose = PoseLandmarks(
+            leftEar: confident(0.35, 0.4),
+            rightEar: confident(0.65, 0.4),
+            leftShoulder: confident(0.3, 0.7),
+            rightShoulder: confident(0.7, 0.7),
+            faceYawDegrees: 0
+        )
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, sensitivity: .medium)
+        try expectEqual(analyzed.assessment, .noEval, "ambiguous front posture should still require baseline")
     }
 
     TestRegistry.test("front pose uses shoulder-width normalized baseline for relative bad judgment") {
@@ -124,7 +158,7 @@ func registerDetectionTests() {
             rightShoulder: confident(0.7, 0.7),
             faceYawDegrees: 0
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: baseline, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: baseline, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .bad, "front relative drop should be bad")
     }
 
@@ -137,7 +171,7 @@ func registerDetectionTests() {
             rightShoulder: confident(0.7, 0.7),
             faceYawDegrees: 0
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: baseline, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: baseline, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .good, "matching normalized front ratio should be good")
     }
 
@@ -148,7 +182,7 @@ func registerDetectionTests() {
             rightShoulder: confident(0.72, 0.72),
             faceYawDegrees: 75
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .noEval, "head-only rotation should be withheld")
     }
 
@@ -165,7 +199,7 @@ func registerDetectionTests() {
                 centerHead: p3(0, 2.2, 0.15)
             )
         )
-        let analyzed = PostureAnalyzer(systemInfo: SystemInfo(isAppleSilicon: true)).analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer(systemInfo: SystemInfo(isAppleSilicon: true)).analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .good, "3D should evaluate when 2D profile is head-only rotation")
         try expectEqual(analyzed.signal?.kind, .body3D, "3D fallback signal kind")
     }
@@ -177,7 +211,7 @@ func registerDetectionTests() {
             rightShoulder: confident(0.56, 0.76),
             faceYawDegrees: 75
         )
-        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, cameraPlacement: .right, sensitivity: .medium)
+        let analyzed = PostureAnalyzer().analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .good, "side camera should allow profile")
     }
 
@@ -222,7 +256,7 @@ func registerDetectionTests() {
                 centerHead: p3(0, 2.2, 0.15)
             )
         )
-        let analyzed = PostureAnalyzer(systemInfo: SystemInfo(isAppleSilicon: true)).analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer(systemInfo: SystemInfo(isAppleSilicon: true)).analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .good, "3D should evaluate without 2D")
         try expectEqual(analyzed.signal?.kind, .body3D, "3D signal kind")
     }
@@ -236,7 +270,7 @@ func registerDetectionTests() {
                 centerHead: p3(0, 2.2, 0.15)
             )
         )
-        let analyzed = PostureAnalyzer(systemInfo: SystemInfo(isAppleSilicon: false)).analyze(pose, baseline: nil, cameraPlacement: .center, sensitivity: .medium)
+        let analyzed = PostureAnalyzer(systemInfo: SystemInfo(isAppleSilicon: false)).analyze(pose, baseline: nil, sensitivity: .medium)
         try expectEqual(analyzed.assessment, .noEval, "Intel should ignore 3D-only frames")
     }
 
@@ -270,6 +304,12 @@ func registerDetectionTests() {
         try expectEqual(result, .accepted(Baseline(profileAngle: 75, frontHeadDropRatio: 1.0, threeQuarterAngle: 68)), "baseline should preserve all reliable channels")
     }
 
+    TestRegistry.test("calibrator stores face proxy baseline at tracking confidence") {
+        let frame = AnalyzedFrame(assessment: .noEval, signal: PostureSignal(kind: .frontFace, angleDegrees: 0.56, confidence: 0.4), viewpoint: ViewpointResult(band: .front, confidence: 0.45))
+        let result = Calibrator().capture(from: [frame])
+        try expectEqual(result, .accepted(Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, frontFaceBottomY: 0.56)), "face proxy baseline should use tracking confidence")
+    }
+
     TestRegistry.test("calibrator rejects slouched profile baseline") {
         let frame = AnalyzedFrame(assessment: .bad, signal: PostureSignal(kind: .profile2D, angleDegrees: 42, confidence: 0.9), viewpoint: ViewpointResult(band: .profileRight, confidence: 0.9, nearSide: .right))
         let result = Calibrator().capture(from: [frame])
@@ -295,5 +335,271 @@ func registerDetectionTests() {
 
         try expect(adaptiveOutput > staticOutput, "beta should reduce lag for fast movement")
         try expect(staticOutput > 0 && adaptiveOutput < 100, "both filters should still smooth")
+    }
+
+    // MARK: - 알고리즘 후보 5종 실행 검증
+
+    TestRegistry.test("factory builds every algorithm id") {
+        for id in PostureAlgorithmID.allCases {
+            try expectEqual(PostureAlgorithmFactory.make(id).id, id, "factory id roundtrip for \(id.rawValue)")
+        }
+    }
+
+    TestRegistry.test("monotonic profile angle clamps below-shoulder head to zero") {
+        let upright = Geometry.monotonicProfileAngle(head: confident(0.4, 0.2), shoulder: confident(0.4, 0.8))
+        let belowShoulder = Geometry.monotonicProfileAngle(head: confident(0.45, 0.9), shoulder: confident(0.4, 0.8))
+        try expectApprox(upright, 90, tolerance: 0.01, "upright vertical")
+        try expect(belowShoulder < 5, "head below shoulder should not re-increase angle")
+    }
+
+    TestRegistry.test("profile geometry algorithm emits profile signal") {
+        let pose = PoseLandmarks(rightEar: confident(0.56, 0.28), rightShoulder: confident(0.54, 0.78), faceYawDegrees: 72)
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = ProfileGeometryAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .profile2D, "profile signal kind")
+        try expect((frame.signal?.angleDegrees ?? 0) > 65, "upright profile angle high")
+    }
+
+    TestRegistry.test("front proxy emits front signal and classifies clear upright without baseline") {
+        let pose = PoseLandmarks(leftEar: confident(0.35, 0.3), rightEar: confident(0.65, 0.3), leftShoulder: confident(0.3, 0.7), rightShoulder: confident(0.7, 0.7), faceYawDegrees: 0)
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FrontProxyAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .front2D, "front signal kind")
+        try expectEqual(frame.assessment, .good, "clear upright front posture should pass absolute fallback")
+    }
+
+    TestRegistry.test("front proxy withholds ambiguous posture without baseline") {
+        let pose = PoseLandmarks(leftEar: confident(0.35, 0.4), rightEar: confident(0.65, 0.4), leftShoulder: confident(0.3, 0.7), rightShoulder: confident(0.7, 0.7), faceYawDegrees: 0)
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FrontProxyAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .front2D, "front signal kind")
+        try expectEqual(frame.assessment, .noEval, "ambiguous front posture should still require baseline")
+    }
+
+    TestRegistry.test("fusion emits front fallback signal when face landmarks are sparse") {
+        let pose = PoseLandmarks(
+            nose: confident(0.5, 0.3),
+            leftShoulder: confident(0.32, 0.72),
+            rightShoulder: confident(0.68, 0.72),
+            faceYawDegrees: nil
+        )
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .front2D, "fusion should expose sparse front signal")
+    }
+
+    TestRegistry.test("fusion keeps sane 3D when 2D shoulders are low confidence") {
+        let pose = PoseLandmarks(
+            nose: lowConfidence(0.5, 0.3),
+            leftShoulder: lowConfidence(0.32, 0.72),
+            rightShoulder: lowConfidence(0.68, 0.72),
+            pose3D: Pose3D(
+                leftShoulder: p3(-0.4, 1.2, 0),
+                rightShoulder: p3(0.4, 1.2, 0),
+                spine: p3(0, 0, 0),
+                centerHead: p3(0, 2.2, 0.15)
+            )
+        )
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .body3D, "low 2D confidence should not discard sane 3D")
+        try expect(frame.assessment != .noEval, "sane 3D should produce a posture assessment")
+    }
+
+    TestRegistry.test("body-frame 3D algorithm emits 3D signal on apple silicon") {
+        let pose = PoseLandmarks(pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.15)))
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = BodyFrame3DAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .body3D, "3D body signal kind")
+    }
+
+    TestRegistry.test("body-frame 3D algorithm withholds off apple silicon") {
+        let pose = PoseLandmarks(pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.15)))
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: false))
+        let frame = BodyFrame3DAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .noEval, "no 3D off apple silicon")
+        try expect(frame.signal == nil, "no signal off apple silicon")
+    }
+
+    TestRegistry.test("depth delta algorithm emits depth signal on apple silicon") {
+        let pose = PoseLandmarks(pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.2)))
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = DepthDeltaAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .depth3D, "depth signal kind")
+    }
+
+    TestRegistry.test("3D quality gating rejects no-proxy implausible geometry") {
+        let pose = PoseLandmarks(pose3D: Pose3D(leftShoulder: p3(-0.02, 1.2, 0), rightShoulder: p3(0.02, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.15)))
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = BodyFrame3DAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .noEval, "implausible 3D geometry without 2D proxy should gate to noEval")
+        try expect(frame.signal == nil, "no signal when gated")
+    }
+
+    TestRegistry.test("3D signal never collapses to zero confidence from an occluded proxy") {
+        let pose = PoseLandmarks(
+            leftEar: Point2D(x: 0.4, y: 0.3, confidence: 0.0),
+            pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.15))
+        )
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = BodyFrame3DAlgorithm().analyze(pose, context: context)
+        try expect(frame.signal != nil, "3D should still evaluate with a sane fallback quality")
+        try expect((frame.signal?.confidence ?? 0) >= Tuning.minimumTrackingConfidence, "occluded landmark must not drive 3D confidence to zero")
+    }
+
+    TestRegistry.test("upright gate downgrades good to bad when head is clearly tilted") {
+        let pose = PoseLandmarks(
+            leftEye: confident(0.55, 0.30),
+            rightEye: confident(0.45, 0.45),
+            rightEar: confident(0.50, 0.32),
+            rightShoulder: confident(0.52, 0.78),
+            faceYawDegrees: 40
+        )
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = ProfileGeometryAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .bad, "clearly tilted head should not be good")
+    }
+
+    TestRegistry.test("upright gate keeps good when eyes are level") {
+        let pose = PoseLandmarks(
+            leftEye: confident(0.55, 0.30),
+            rightEye: confident(0.45, 0.30),
+            rightEar: confident(0.50, 0.32),
+            rightShoulder: confident(0.52, 0.78),
+            faceYawDegrees: 40
+        )
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = ProfileGeometryAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .good, "level head with upright angle should remain good")
+    }
+
+    TestRegistry.test("3D signed angle treats backward lean differently from forward head") {
+        let forward = Pose3D(leftShoulder: p3(-0.2, 1.2, 0), rightShoulder: p3(0.2, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.3))
+        let backward = Pose3D(leftShoulder: p3(-0.2, 1.2, 0), rightShoulder: p3(0.2, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, -0.3))
+        let forwardAngle = Geometry.bodySagittalAngleDegrees(from: forward) ?? -999
+        let backwardAngle = Geometry.bodySagittalAngleDegrees(from: backward) ?? -999
+        try expect(backwardAngle > forwardAngle, "signed angle: backward lean should not score like forward head")
+    }
+
+    TestRegistry.test("fusion selects profile on profile view") {
+        let pose = PoseLandmarks(rightEar: confident(0.56, 0.28), rightShoulder: confident(0.54, 0.78), faceYawDegrees: 72)
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .profile2D, "fusion profile selection")
+    }
+
+    TestRegistry.test("fusion falls back to 3D on front view with 3D pose") {
+        let pose = PoseLandmarks(
+            leftEar: confident(0.35, 0.3),
+            rightEar: confident(0.65, 0.3),
+            leftShoulder: confident(0.3, 0.7),
+            rightShoulder: confident(0.7, 0.7),
+            faceYawDegrees: 0,
+            pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.15))
+        )
+        let viewpoint = ViewpointClassifier().classify(pose)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .body3D, "fusion 3D fallback on front")
+    }
+
+    TestRegistry.test("fusion withholds face position proxy without baseline") {
+        // 거북목 클로즈업 재현: body 관절 전부 없음, 정면 응시, 얼굴 박스가 화면 아래(전방머리/숙임).
+        // 얼굴 위치는 카메라 높이/각도에 민감하므로 baseline 없이 bad/good 판정하지 않는다.
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            faceRollDegrees: 0,
+            faceBoundingBox: FaceBox(x: 0.37, y: 0.06, width: 0.27, height: 0.47)
+        )
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointClassifier().classify(pose), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .noEval, "face position proxy needs baseline because camera height changes")
+        try expectEqual(frame.signal?.kind, .frontFace, "face proxy signal kind")
+    }
+
+    TestRegistry.test("fusion face position proxy uses baseline for relative bad judgment") {
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            faceRollDegrees: 0,
+            faceBoundingBox: FaceBox(x: 0.37, y: 0.30, width: 0.27, height: 0.47)
+        )
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, frontFaceBottomY: 0.56)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: ViewpointClassifier().classify(pose), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .bad, "face position should be bad only relative to a baseline")
+    }
+
+    TestRegistry.test("fusion face position proxy uses baseline for relative good judgment") {
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            faceRollDegrees: 0,
+            faceBoundingBox: FaceBox(x: 0.38, y: 0.50, width: 0.24, height: 0.42)
+        )
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, frontFaceBottomY: 0.56)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: ViewpointClassifier().classify(pose), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .good, "face position should stay good when close to baseline")
+    }
+
+    TestRegistry.test("face proxy detects tilt via face roll when eyes missing") {
+        // 박스 y는 정상(전방머리 아님)이지만 머리가 기울었으면 faceRoll 폴백으로 bad.
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            faceRollDegrees: 30,
+            faceBoundingBox: FaceBox(x: 0.38, y: 0.56, width: 0.20, height: 0.34)
+        )
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointClassifier().classify(pose), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .bad, "tilted head should be bad via face roll fallback")
+    }
+
+    TestRegistry.test("face proxy is skipped when head is turned away") {
+        // 고개 돌림(yaw 큼)은 자세 판정 부적합 — 얼굴 박스 신호를 쓰지 않고 noEval.
+        let pose = PoseLandmarks(
+            faceYawDegrees: -45,
+            faceRollDegrees: 0,
+            faceBoundingBox: FaceBox(x: 0.3, y: 0.1, width: 0.18, height: 0.32)
+        )
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointClassifier().classify(pose), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = FusionAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .noEval, "turned head should not use face proxy")
+    }
+
+    TestRegistry.test("calibration captures face baseline even when body signals dominate") {
+        // body 신호(threeQuarter)가 주도해도 모든 프레임의 faceBottomY로 frontFace baseline을 함께 확보한다(개인화 전제).
+        let frames = (0..<5).map { i in
+            AnalyzedFrame(
+                assessment: .good,
+                signal: PostureSignal(kind: .threeQuarter2D, angleDegrees: 75, confidence: 0.8),
+                faceBottomY: 0.50 + Double(i) * 0.02
+            )
+        }
+        guard case .accepted(let baseline) = Calibrator().capture(from: frames) else {
+            throw TestFailure(message: "calibration should accept")
+        }
+        try expect(baseline.threeQuarterAngle != nil, "body baseline captured")
+        try expect(baseline.frontFaceBottomY != nil, "face position baseline captured alongside body signal")
+        try expect((baseline.frontFaceBottomY ?? 1) < 0.55, "face baseline uses conservative lower percentile")
+    }
+
+    TestRegistry.test("calibration without any face position leaves front face baseline empty") {
+        let frames = (0..<5).map { _ in
+            AnalyzedFrame(
+                assessment: .good,
+                signal: PostureSignal(kind: .threeQuarter2D, angleDegrees: 75, confidence: 0.8)
+            )
+        }
+        guard case .accepted(let baseline) = Calibrator().capture(from: frames) else {
+            throw TestFailure(message: "calibration should accept body-only frames")
+        }
+        try expect(baseline.frontFaceBottomY == nil, "no face position means no face baseline")
     }
 }
