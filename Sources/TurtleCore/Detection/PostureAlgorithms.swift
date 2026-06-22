@@ -394,11 +394,16 @@ public struct FusionAlgorithm: PostureAlgorithm {
         }
 
         // body pose 경로가 모두 실패한 경우(비정상 자세에서 Vision body pose가 자주 실패) 얼굴 보조 신호로 판정한다.
-        // 삐딱은 faceRoll(uprightGate), 전방머리/숙임은 얼굴 박스 하단 y로 잡는다.
+        // 삐딱(머리 좌우 기울임)은 faceRoll로 잡는다. faceRoll은 yaw와 독립적이라(실측: 측면 yaw≈-45에서도 roll≈30 정확)
+        // yaw 게이트가 걸린 faceProxySignal 밖에서 먼저 검사한다 — 측면 배치(yaw 큼)의 삐딱을 놓치지 않도록.
+        if let roll = pose.faceRollDegrees.map(abs), roll > Tuning.maxHeadTiltDegrees {
+            let faceSignal = AlgorithmSupport.faceProxySignal(pose)
+                ?? pose.faceBoundingBox.map { PostureSignal(kind: .frontFace, angleDegrees: $0.y, confidence: 0.4) }
+            return AnalyzedFrame(assessment: .bad, signal: faceSignal, viewpoint: viewpoint, reason: "머리 기울임/삐딱(\(Int(roll))°)")
+        }
+
+        // 전방머리/숙임은 얼굴 박스 하단 y로 잡는다(정면 응시 yaw 게이트 — faceProxySignal 내부).
         if let faceSignal = AlgorithmSupport.faceProxySignal(pose) {
-            if let roll = pose.faceRollDegrees.map(abs), roll > Tuning.maxHeadTiltDegrees {
-                return AnalyzedFrame(assessment: .bad, signal: faceSignal, viewpoint: viewpoint, reason: "머리 기울임/삐딱(\(Int(roll))°)")
-            }
             let base = PostureJudge.assess(faceSignal, baseline: context.baseline, sensitivity: context.sensitivity)
             let gate = AlgorithmSupport.applyUprightGate(base, pose: pose)
             let reason = gate.reason ?? (context.baseline?.frontFaceBottomY == nil ? "얼굴 위치 baseline 필요(보정)" : "얼굴 보조 신호")

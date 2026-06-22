@@ -316,6 +316,25 @@ func registerDetectionTests() {
         try expectEqual(result, .rejected(.alreadySlouched), "reject slouched baseline")
     }
 
+    TestRegistry.test("calibrator accepts low-confidence side baseline from webcam shoulders") {
+        // 측면/3-4 배치에서 반대측 어깨가 웹캠 저신뢰(실측 0.36)라 신호 confidence가 0.5 미만이어도
+        // 보정이 돼야 한다(측면 배치에서 보정이 항상 "자세 신호 부족"으로 실패하던 회귀 방지).
+        let frames = [68.0, 70.0, 72.0].map {
+            AnalyzedFrame(assessment: .good, signal: PostureSignal(kind: .threeQuarter2D, angleDegrees: $0, confidence: 0.36), viewpoint: ViewpointResult(band: .threeQuarterRight, confidence: 0.66, nearSide: .right))
+        }
+        guard case .accepted(let baseline) = Calibrator().capture(from: frames) else {
+            throw TestFailure(message: "low-confidence side baseline should be accepted")
+        }
+        try expect(baseline.threeQuarterAngle != nil, "three-quarter baseline should be captured from low-confidence webcam shoulders")
+    }
+
+    TestRegistry.test("calibrator still rejects low-confidence front body signal") {
+        // 정면 2D(front2D)는 어깨가 양쪽 다 보이는 시점이라 저신뢰 완화 대상이 아니다 — 기존 0.5 기준 유지.
+        let frame = AnalyzedFrame(assessment: .good, signal: PostureSignal(kind: .front2D, angleDegrees: 90, confidence: 0.36), viewpoint: ViewpointResult(band: .front, confidence: 0.9))
+        let result = Calibrator().capture(from: [frame])
+        try expectEqual(result, .rejected(.noReliableFrames), "front2D below landmark confidence should not calibrate")
+    }
+
     TestRegistry.test("one euro filter smooths a sudden jump") {
         var filter = OneEuroFilter(alpha: 0.5)
         let first = filter.filter(10)

@@ -15,8 +15,7 @@ public struct Calibrator {
 
     public func capture(from frames: [AnalyzedFrame]) -> CalibrationResult {
         let signals = frames.compactMap(\.signal).filter { signal in
-            let threshold = signal.kind == .frontFace ? Tuning.minimumTrackingConfidence : Tuning.minimumLandmarkConfidence
-            return signal.confidence >= threshold
+            return signal.confidence >= Self.calibrationConfidenceThreshold(for: signal.kind)
         }
         guard !signals.isEmpty else {
             return .rejected(.noReliableFrames)
@@ -48,6 +47,20 @@ public struct Calibrator {
             threeQuarterAngle: threeQuarterAngle,
             frontFaceBottomY: frontFaceY
         ))
+    }
+
+    /// 신호 종류별 보정 통과 신뢰도 임계.
+    /// 측면/3-4 각은 머리(귀/눈)가 고신뢰여도 반대측 어깨가 웹캠에서 저신뢰(실측 0.2~0.4)라
+    /// `min(head, shoulder)` 신호 confidence가 낮게 나온다. 얼굴 보조 신호도 마찬가지다.
+    /// 이들은 실시간 판정과 동일한 추적 임계로 보정을 허용하고, percentile(0.75) baseline이 노이즈를 흡수한다.
+    /// (측면 배치에서 보정이 항상 실패하던 문제 해결 — 리서치가 핵심으로 본 측면/3-4 보정 활성화.)
+    private static func calibrationConfidenceThreshold(for kind: SignalKind) -> Double {
+        switch kind {
+        case .frontFace, .profile2D, .threeQuarter2D:
+            return Tuning.minimumTrackingConfidence
+        case .front2D, .body3D, .depth3D:
+            return Tuning.minimumLandmarkConfidence
+        }
     }
 
     private func percentile(_ values: [Double], _ p: Double) -> Double? {
