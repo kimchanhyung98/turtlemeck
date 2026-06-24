@@ -7,14 +7,23 @@ struct MenuView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Image(systemName: symbolName)
-                        .font(.title2)
+                    if let emoji = stateEmoji {
+                        Text(emoji)
+                            .font(.title2)
+                    } else {
+                        Image(systemName: symbolName)
+                            .font(.title2)
+                    }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.statusText)
                             .font(.headline)
                         Text(model.nextCheckDescription)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text(model.diagnosticText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                 }
@@ -46,6 +55,19 @@ struct MenuView: View {
                     )
                 }
 
+                Picker("판정 알고리즘", selection: Binding(
+                    get: { model.settings.postureAlgorithm },
+                    set: { model.setPostureAlgorithm($0) }
+                )) {
+                    ForEach(PostureAlgorithmID.allCases, id: \.self) { algorithm in
+                        Text(algorithm.title).tag(algorithm)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text(model.settings.postureAlgorithm.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Picker("민감도", selection: Binding(
                     get: { model.settings.sensitivity },
                     set: { model.setSensitivity($0) }
@@ -58,16 +80,6 @@ struct MenuView: View {
                 Text(model.settings.sensitivity.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Picker("카메라 위치", selection: Binding(
-                    get: { model.settings.cameraPlacement },
-                    set: { model.setCameraPlacement($0) }
-                )) {
-                    Text("정면").tag(CameraPlacement.center)
-                    Text("왼쪽").tag(CameraPlacement.left)
-                    Text("오른쪽").tag(CameraPlacement.right)
-                }
-                .pickerStyle(.segmented)
 
                 Toggle("배너 알림", isOn: Binding(
                     get: { model.settings.bannerNotificationsEnabled },
@@ -88,6 +100,11 @@ struct MenuView: View {
                 Toggle("로그인 시 자동 실행", isOn: Binding(
                     get: { model.settings.launchAtLogin },
                     set: { model.setLaunchAtLogin($0) }
+                ))
+
+                Toggle("디버그 모드", isOn: Binding(
+                    get: { model.settings.debugEnabled },
+                    set: { model.setDebugEnabled($0) }
                 ))
 
                 Button("카메라 권한 설정 열기") {
@@ -113,6 +130,21 @@ struct MenuView: View {
                 Button("종료") {
                     model.quit()
                 }
+
+                if model.settings.debugEnabled {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("디버그 측정")
+                            .font(.caption).bold()
+                        ForEach(Array(model.debugLines.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(16)
         }
@@ -122,9 +154,9 @@ struct MenuView: View {
     private var symbolName: String {
         switch model.postureState {
         case .good:
-            return "tortoise.fill"
+            return "face.smiling"
         case .bad:
-            return "exclamationmark.triangle.fill"
+            return "tortoise.fill"
         case .paused:
             return "pause.circle.fill"
         case .blocked:
@@ -132,7 +164,24 @@ struct MenuView: View {
         case .calibrating:
             return "scope"
         case .noEval:
-            return "questionmark.circle"
+            return "figure.stand"
+        case .needsCalibration:
+            return "scope"
+        }
+    }
+
+    private var stateEmoji: String? {
+        switch model.postureState {
+        case .noEval:
+            return "🐢"
+        case .good:
+            return "🙂"
+        case .bad:
+            return "😢"
+        case .paused:
+            return "🫥"
+        case .calibrating, .blocked, .needsCalibration:
+            return nil
         }
     }
 

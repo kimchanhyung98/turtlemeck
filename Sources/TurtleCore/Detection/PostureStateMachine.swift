@@ -12,16 +12,26 @@ public struct PostureTransition: Equatable, Sendable {
 
 public struct PostureStateMachine {
     private let requiredBadBursts: Int
+    private let requiredNoEvalBursts: Int
     private var badStreak = 0
+    private var noEvalStreak = 0
     private var currentState: PostureState = .good
 
-    public init(requiredBadBursts: Int = 2) {
+    public init(requiredBadBursts: Int = 2, requiredNoEvalBursts: Int = 3) {
         self.requiredBadBursts = max(1, requiredBadBursts)
+        self.requiredNoEvalBursts = max(1, requiredNoEvalBursts)
+    }
+
+    public mutating func reset(to state: PostureState = .good) {
+        badStreak = 0
+        noEvalStreak = 0
+        currentState = state
     }
 
     public mutating func apply(_ verdict: BurstVerdict) -> PostureTransition {
         switch verdict.assessment {
         case .bad:
+            noEvalStreak = 0
             badStreak += 1
             if badStreak >= requiredBadBursts {
                 let wasBad = currentState == .bad
@@ -31,10 +41,18 @@ public struct PostureStateMachine {
             return PostureTransition(state: currentState, alert: nil)
         case .good:
             badStreak = 0
+            noEvalStreak = 0
             let wasBad = currentState == .bad
             currentState = .good
             return PostureTransition(state: .good, alert: wasBad ? .recovered : nil)
         case .noEval:
+            noEvalStreak += 1
+            if noEvalStreak >= requiredNoEvalBursts {
+                badStreak = 0
+                // 추적이 지속 실패하면 조용히 멈추지 않고, 개인 기준자세 보정을 요청한다.
+                currentState = .needsCalibration
+                return PostureTransition(state: .needsCalibration, alert: nil)
+            }
             currentState = .noEval
             return PostureTransition(state: .noEval, alert: nil)
         }
