@@ -31,7 +31,7 @@ flowchart TD
 - 거북목의 1차 신호인 **머리 전방(깊이) 이동**은 정확히 이 "깊이축"에 놓인다 → 단안에서 가장 추정이 약한 차원.
 - **깊이축 오차는 정량적으로 in-plane(좌우·상하) 오차의 약 2~3배다 [3차 신규, 3-0]** — Nature Sci Rep 2025(PMC12589393), 2.2M 프레임 vs 모션캡처: *"the mean absolute depth error is approximately two to three times greater than the mean absolute horizontal and vertical errors for all pose estimators."* 거북목의 1차 신호가 바로 이 *가장 부정확한* 깊이축에 놓이므로, G-1의 `confidence=0.9` 하드코딩은 **가장 불확실한 차원을 가장 신뢰하는** 셈이다. (단 이 2~3배 비율은 3~3.5m·4카메라 환경 측정치 — 책상 거리 단일 웹캠의 정확한 배율은 미검증이나, *비율의 존재*는 단안 기하의 일반 성질로 독립 교차확인됨.)
 - `VNDetectHumanBodyPose3DRequest`의 3D 좌표는 **절대 측정값이 아니라 추정값**이다. 절대 거리/각을 신뢰하지 말고 **각도 기반 상대 측정 + 사전정보(prior) + 시간적 제약**으로 보강해야 한다.
-- → Apple Vision 3D confidence 하드코딩 문제(`docs/apple-body-pose/current-usage-and-gaps.md` G-1)가 더 위험한 이유: 가장 불확실한 차원을 "신뢰도 0.9"로 취급.
+- → Apple Vision 3D confidence 하드코딩 문제(`docs/algorithm/apple-body-pose/current-usage-and-gaps.md` G-1)가 더 위험한 이유: 가장 불확실한 차원을 "신뢰도 0.9"로 취급.
 
 ---
 
