@@ -10,10 +10,10 @@
 flowchart TD
     DA["Depth-Anything-V2<br/>단안 깊이 추정 파운데이션 모델"]
     DA --> REL["기본 출력: relative depth<br/>affine-invariant inverse depth<br/>scale·shift 미정"]
-    DA --> MET["별도 Metric 버전<br/>Hypersim(실내)·VKITTI(실외) fine-tune<br/>NYU δ1=0.998 / AbsRel=0.056"]
+    DA --> MET["별도 Metric 버전<br/>Hypersim(실내)·VKITTI(실외) fine-tune<br/>NYU δ1=0.984 (δ2=0.998) / AbsRel=0.056"]
 
     REL --> RP1["깊이 ordering만 보존<br/>절대 거리·각 불가"]
-    MET --> MP1["meters 단위 출력<br/>그러나 NYU >12% 상대오차"]
+    MET --> MP1["meters 단위 출력<br/>그러나 NYU AbsRel 5.6%+ (근거리 더 큼)"]
 
     RP1 --> APP["turtlemeck 적용"]
     MP1 --> APP
@@ -61,22 +61,22 @@ GitHub 공식 표 기준:
 ### 2-2. 별도 Metric depth 버전
 - 획득 방식(원문): *"we fine-tune our powerful encoder on Hypersim and Virtual KITTI synthetic datasets, for indoor and outdoor metric depth estimation, respectively."*
 - **실내(Indoor)** = Hypersim fine-tune, **max depth 20m**. **실외(Outdoor)** = Virtual KITTI 2, max depth 80m. (metric_depth/README) 출력은 *"depth map in meters in numpy"* — **미터 단위 직접 출력.** [high]
-- 실내 정확도(NYU-D, 논문 Table):
+- 실내 정확도(NYU-D fine-tuned metric, 논문 Table 4(a)):
 
-| 모델 | δ1 (높을수록 좋음) | AbsRel (낮을수록 좋음) |
-|---|---|---|
-| ViT-S | 0.996 | 0.073 |
-| ViT-B | 0.997 | 0.063 |
-| ViT-L | **0.998** | **0.056** |
+| 모델 | δ1 (높을수록 좋음) | δ2 | AbsRel (낮을수록 좋음) |
+|---|---|---|---|
+| ViT-S | 0.961 | 0.996 | 0.073 |
+| ViT-B | 0.977 | 0.997 | 0.063 |
+| ViT-L | **0.984** | **0.998** | **0.056** |
 
-> ⚠️ δ1 값은 arXiv:2406.09414 Table 4(a)(NYU-D fine-tuned metric) 기준 정정값이다(이전 0.961/0.977/0.984는 출처 미상 오기였음, 팩트체크 2026-06). AbsRel은 동일 표로 확인됨.
+> δ1 = **0.961 / 0.977 / 0.984**(ViT-S/B/L)이다. 0.996/0.997/0.998은 같은 표의 **δ2 컬럼**이다(arXiv:2406.09414 Table 4(a), 컬럼 순서 δ1 δ2 δ3 AbsRel; ZoeDepth 비교행 δ1=0.951로 정렬 교차확인). δ1조차 NYU fine-tuned에서 0.96~0.98대로 포화돼 변별력이 낮다(§2-3).
 
 - metric은 Small/Base/Large 세 크기 모두 실내·실외 체크포인트 공개. [high]
 
 ### 2-3. metric 버전이면 거북목이 풀리는가? — 부분적, 그러나 정밀도가 문제 [high]
-- δ1=0.998는 *"GT 대비 비율 오차 < 1.25인 픽셀 비율"* 이라는 **관대한** 지표다(NYU fine-tuned에서 거의 포화 → 변별력 낮음). 더 직접적인 AbsRel=0.056은 **평균 5.6% 상대오차**를 뜻한다.
-- 더 보수적 교차근거: *"State-of-the-art depth estimation models still all produce >12% relative (to true depth) error on the popular NYUv2 indoor dataset."* (Human-like monocular depth biases, biorxiv 2025.04.03.646971 / PMC12380331) [검증필요 — 단일 출처지만 NYU 일반 수준과 정합]
-- **거북목 산수에 대입:** 카메라-사용자 ~60cm에서 5~12% 상대오차면 **절대 깊이 오차 약 3~7cm.** 거북목의 머리 전방 이동량 자체가 흔히 **2~5cm 수준**이다(임상 FHP). → **재려는 신호(cm급)가 모델 오차(cm급)와 같은 자릿수.** 즉 metric 버전이라도 *단일 프레임 절대값으로는* 신호 대 잡음비(SNR)가 1 근처라 신뢰 어렵다. [검증필요 — 오차 자릿수는 1차, 거북목 이동량 자릿수는 임상 일반치]
+- δ1=0.984는 *"GT 대비 비율 오차 < 1.25인 픽셀 비율"* 이라는 **관대한** 지표다(NYU fine-tuned에서 거의 포화 → 변별력 낮음; δ2=0.998은 더더욱 포화). 더 직접적인 AbsRel=0.056은 **평균 5.6% 상대오차**를 뜻한다.
+- 교차근거: SOTA 단안 metric depth의 NYUv2 실내 AbsRel은 대략 **4~10%** 수준이며 본 모델 ViT-L의 5.6%가 그 하단이다. (*Human-like monocular depth biases*(PMC12380331)는 NYUv2에 AbsRel을 보고하지 않고 상관·RMSE를 사용하며, 오히려 일부 모델이 인간 깊이판단을 능가한다고 본다.)
+- **거북목 산수에 대입:** 카메라-사용자 ~60cm에서 5~10% 상대오차면 **절대 깊이 오차 약 3~6cm.** 거북목의 머리 전방 이동량 자체가 흔히 **2~5cm 수준**이다(임상 FHP). → **재려는 신호(cm급)가 모델 오차(cm급)와 같은 자릿수.** 즉 metric 버전이라도 *단일 프레임 절대값으로는* 신호 대 잡음비(SNR)가 1 근처라 신뢰 어렵다. [검증필요 — 오차 자릿수는 1차, 거북목 이동량 자릿수는 임상 일반치]
 
 ---
 
@@ -132,7 +132,7 @@ GitHub 공식 README 명시:
 
 ### 6-2. scale·shift 미정이 자세 측정에 주는 영향 — metric이면 해결되나?
 - relative 버전: scale·shift 미정 → **프레임마다 정규화 기준이 달라** 같은 자세라도 머리-어깨 disparity 차의 절대값이 출렁인다. baseline(개인 기준자세) 대비 **상대 변화 추세**로만 의미 있다.
-- metric 버전: 미터 단위라 scale 문제는 **명목상 해소.** 그러나 §2-3대로 **절대 정밀도(평균 5~12% 상대오차 = ~3~7cm)가 거북목 신호(cm급)와 동급**이라 *단일 프레임 절대 측정*은 여전히 신뢰 어렵다. → metric은 scale을 풀지만 정밀도를 풀지는 못한다.
+- metric 버전: 미터 단위라 scale 문제는 **명목상 해소.** 그러나 §2-3대로 **절대 정밀도(평균 5~10% 상대오차 = ~3~6cm)가 거북목 신호(cm급)와 동급**이라 *단일 프레임 절대 측정*은 여전히 신뢰 어렵다. → metric은 scale을 풀지만 정밀도를 풀지는 못한다.
 
 ### 6-3. 단일 프레임 정확도 / 프레임간 일관성(temporal flicker)
 - **단일 이미지 깊이 모델은 본질적으로 flicker.** *"applying a non-metric, single-image method to each frame of a video sequence naturally produces temporally flickering depth maps ... built based on an i.i.d. assumption between frames ... inherently prone to flickering and temporal inconsistency."* (Video Depth Anything, arXiv:2501.12375; StableDPT arXiv:2601.02793) [high]
@@ -144,7 +144,7 @@ GitHub 공식 README 명시:
 
 근거(모두 본문 1차 출처):
 1. **기본(relative) 모델은 절대 측정이 원리적으로 불가** — affine-invariant라 ordering만 보존(§2-1). [high]
-2. **metric 모델도 정밀도 부족** — 실내 AbsRel 5.6~12%(60cm에서 ~3~7cm)가 거북목 머리이동 신호(cm급)와 동급 SNR(§2-3). [high/검증필요]
+2. **metric 모델도 정밀도 부족** — 실내 AbsRel 5.6~10%(60cm에서 ~3~6cm)가 거북목 머리이동 신호(cm급)와 동급 SNR(§2-3). [high/검증필요]
 3. **근거리·정면 사람 상체에서의 직접 검증 근거 없음**(§3). 벤치는 방 전체 대상. [미검증]
 4. **단일 프레임 flicker**로 frame-to-frame 일관성 약함(§6-3). [high]
 5. 애초 "95% 측정"의 정의(무엇 대비 95%? CVA 각도? FHP 분류 정확도?)가 불명확하다. **분류 정확도 95%**(거북목/정상 이진)는 다른 신호와 결합 시 *후보로 검토*할 만하나, **절대 측정(거리·각) 95%**는 위 1~4로 **불가.**
@@ -169,5 +169,5 @@ GitHub 공식 README 명시:
 - 단일이미지 depth의 temporal flicker (i.i.d. 가정) — Video Depth Anything (CVPR 2025, arXiv:2501.12375): <https://arxiv.org/abs/2501.12375>
 - temporal stability — StableDPT (arXiv:2601.02793): <https://arxiv.org/abs/2601.02793>
 - 실내 단안 깊이 공간유형별 편차 — InSpaceType (arXiv:2408.13708): <https://arxiv.org/pdf/2408.13708>
-- NYUv2 SOTA도 >12% 상대오차 — Human-like monocular depth biases (PMC12380331): <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12380331/>
+- 단안 depth의 체계적(affine) bias·근거리 우선 (NYU SOTA AbsRel은 4~10%) — Human-like monocular depth biases (PLOS Comput Biol 2025, PMC12380331): <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12380331/>
 - HuggingFace 강좌(metric vs relative 개념·Depth Anything V2 fine-tuning): <https://huggingface.co/learn/computer-vision-course/en/unit8/monocular_depth_estimation>

@@ -1,6 +1,6 @@
 # 자세 추정 모델 비교 — 상체 추적 관점
 
-상체 웰니스 앱 관점에서 자세 추정 모델을 비교한다([README.md](README.md)에 상세 모델 서술, Apple Vision 전용은 [`../apple-body-pose/`](../apple-body-pose/)). 신뢰도 **[high]** 만장일치 / **[미검증]** 1차 근거 미확보.
+상체 웰니스 앱 관점에서 자세 추정 모델을 비교한다([README.md](README.md)에 상세 모델 서술, Apple Vision 전용은 [`../apple-body-pose/`](../apple-body-pose/)). 신뢰도 **[high]** 1차 출처 일치 / **[미검증]** 1차 근거 미확보.
 
 > ⚠️ **중요 한계:** **모델별 정량 벤치(mAP/FPS)는 1차 근거가 확보되지 않아 미확정**이다. 라이선스는 공식 모델 카드/라이선스 문서로 확인했다.
 
@@ -22,14 +22,14 @@ flowchart TD
 
 ---
 
-## 1. 검증된 사실 (1차 출처 만장일치) [high]
+## 1. 검증된 사실 (1차 출처 일치) [high]
 
 - **BlazePose는 온디바이스 실시간**: 33 keypoint, Pixel 2(모바일 CPU)에서 **30+ FPS**. (arXiv:2006.10204)
 - **BlazePose 토폴로지에 상체 지표 재료 포함**: nose/eyes/ears/mouth/shoulders(0–12). CVA류 머리-어깨 기하 가능.
-- **BlazePose는 상체 부분 관측(upper-body-only)에서도 추적을 유지**: 가림 시뮬레이션 학습 + per-point visibility classifier로 하체 프레임 밖에서도 추적 가능. ⚠️ **표현 정정:** 원논문은 "upper-body-only"를 occlusion 처리 능력의 *한 사례*로 언급할 뿐, 독립된 "설계 기능/모드"로 정의하지 않는다. 이전 판본의 "설계 차원에서 지원"은 다소 강한 표현이었음.
+- **BlazePose는 상체 부분 관측(upper-body-only)에서도 추적을 유지**: 가림 시뮬레이션 학습 + per-point visibility classifier로 하체 프레임 밖에서도 추적 가능. 원논문은 "upper-body-only"를 occlusion 처리 능력의 *한 사례*로 언급할 뿐, 독립된 "설계 기능/모드"로 정의하지는 않는다.
 - **MediaPipe Pose Landmarker = BlazePose + GHUM 3D**: 33개 3D landmark(normalized + world).
 
-→ "상체만 추적" 요구는 BlazePose류·Apple Vision 모두 상체 부분 관측에서 동작하므로 충족 가능하다. (이전 판본은 "BlazePose는 설계 의도에 상체-only 명시"라고 차별점을 부여했으나, 원논문 재확인 결과 occlusion 처리의 한 사례 서술이므로 과한 차별화였음 — 둘 다 상체 부분 관측을 처리한다는 수준으로 정정.)
+→ "상체만 추적" 요구는 BlazePose류·Apple Vision 모두 상체 부분 관측에서 동작하므로 충족 가능하다. 둘 다 상체 부분 관측을 처리하며, BlazePose의 upper-body 동작은 occlusion 처리의 한 사례다.
 
 ---
 
@@ -74,8 +74,8 @@ flowchart TD
 ---
 
 ## 5. 미해결 (다음 라운드)
-- ⚠️ 모델별 **정량 벤치(mAP/FPS)** — 추가 리서치에서 일부 확보했으나 **상호 비교 불가**: BlazePose는 저자 in-house PCK@0.2(Full AR 84.1 / Yoga 84.5), MovePose는 self-report COCO mAP 68.0, MoveNet은 FPS 위주(Lightning/Thunder 30+ FPS, Thunder ~12 FPS WebGL Pixel5)로 **측정 기준이 제각각**이라 모델 교체 결정 근거로는 부적합. 통일된 벤치(동일 데이터셋·동일 측정)는 여전히 ⬜.
-- ⚠️ **개인 baseline 파라미터의 자세 도메인 근거** — 3차에서 rolling-window percentile/median + CUSUM drift 트리거의 인접 도메인 근거는 확보했지만, turtlemeck 자세 신호에 적용할 percentile·window·임계는 자체 로그로 검증해야 한다. → [baseline-calibration.md](baseline-calibration.md).
+- 모델별 **정량 벤치(mAP/FPS)** — 일부 수치는 확보했으나 **상호 비교 불가**: BlazePose는 저자 in-house PCK@0.2(Full AR 84.1 / Yoga 84.5), MovePose는 self-report COCO mAP 68.0, MoveNet은 FPS 위주(Lightning/Thunder 30+ FPS, Thunder ~12 FPS WebGL Pixel5)로 **측정 기준이 제각각**이라 모델 교체 결정 근거로는 부적합. 통일된 벤치(동일 데이터셋·동일 측정)는 여전히 추가 검증 필요.
+- **개인 baseline 파라미터의 자세 도메인 근거** — rolling-window percentile/median + CUSUM drift 트리거의 인접 도메인 근거는 확보했지만, turtlemeck 자세 신호에 적용할 percentile·window·임계는 자체 로그로 검증해야 한다. → [baseline-calibration.md](baseline-calibration.md).
 
 ---
 

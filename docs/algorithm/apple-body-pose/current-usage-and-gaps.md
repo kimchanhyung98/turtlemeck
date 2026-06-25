@@ -42,7 +42,7 @@ PosturePipeline → viewpoint 분류 + One-Euro 스무딩
 - 그러나 **부작용은 그대로**: 3D 경로에서 `isReliable`(≥0.5)이 **항상 참** → 빈약한 추정도 판정에 반영. 2D는 실측 confidence로 거르는데 3D만 무방비 → **비대칭 신뢰**. (개선 1순위인 이유.)
 - 개선 방향(분석) — Vision이 confidence를 안 주므로 **대체 품질 신호를 조합**:
   - **관찰(observation) 레벨 신호** 활용: `heightEstimation`(측정 vs 참조추정 구분 — 참조추정이면 3D 신뢰 낮춤), `bodyHeight` 범위 sanity check [Apple].
-  - 2D 동일 관절의 confidence를 3D 신뢰 proxy로 차용. **[4차 1차 근거 보강]** 2D 요청(`VNDetectHumanBodyPoseRequest`)에는 per-joint confidence가 *있고* 3D에는 *없음*이 재확인됐다 → **2D+3D 융합 게이팅**(2D confidence로 3D 관절 신뢰 cross-check)이 유망한 방향이다(→ [`../pose-estimation/viewpoint-robust-geometry.md` §4](../pose-estimation/viewpoint-robust-geometry.md)). 단 실효성은 자체 실측 필요.
+  - 2D 동일 관절의 confidence를 3D 신뢰 proxy로 차용. 2D 요청(`VNDetectHumanBodyPoseRequest`)에는 per-joint confidence가 *있고* 3D에는 *없다* → **2D+3D 융합 게이팅**(2D confidence로 3D 관절 신뢰 cross-check)이 유망한 방향이다(→ [`../pose-estimation/viewpoint-robust-geometry.md` §4](../pose-estimation/viewpoint-robust-geometry.md)). 단 실효성은 자체 실측 필요.
   - 관절 간 거리·대칭성 sanity check(어깨폭·머리-어깨 거리 범위)로 outlier 배제.
   - 합성 어깨(보간)로 만든 점은 더 낮은 신뢰로 가중.
 
@@ -50,7 +50,7 @@ PosturePipeline → viewpoint 분류 + One-Euro 스무딩
 - 좌/우 어깨 3D가 없으면 `centerShoulder ± 0.2m`로 합성 [코드, `:74-75`] → **0.4m** 고정 어깨폭 가정 → 체형·자세에 따라 시상면 각·정규화에 오차.
 - ⚠️ **코드에 두 어깨폭 가정이 공존**: 여기 3D 보간은 0.4m(meter), 한편 2D `Tuning.headOnlyShoulderWidth = 0.32`(정규화 단위)다. 단위계가 달라 직접 모순은 아니나, 어깨폭 기준이 분산돼 있어 일관성 검토 권장.
 - 개선: 합성 시 신뢰도 낮춤(G-1과 연계), 또는 2D 어깨폭으로 스케일 보정.
-- ⚠️ **[4차 보강] 더 근본적 문제 — 3D 프레임이 hip-rooted다.** `VNDetectHumanBodyPose3DRequest`의 17관절은 hip(root) 기준이고 `cameraOriginMatrix`는 hip→camera 변환이다 [Apple/WWDC23, 3-0]. **근접 데스크 착석(상체-only)에서는 hip/root가 프레임 밖**이라, hip 기준으로 계산하는 모든 head-torso 각이 *가장 덜 관측된* 점에 묶이는 root 불안정이 생긴다. → **각을 hip이 아니라 관측 가능한 상체 관절(어깨/목/spine)에 anchor**하라(상세 [`../pose-estimation/viewpoint-robust-geometry.md` §4](../pose-estimation/viewpoint-robust-geometry.md)). Apple은 truncation/occlusion 거동을 미문서화하므로 자체 처리 필요.
+- ⚠️ **더 근본적 문제 — 3D 프레임이 hip-rooted다.** `VNDetectHumanBodyPose3DRequest`의 17관절은 hip(root) 기준이고 `cameraOriginMatrix`는 hip→camera 변환이다 [Apple/WWDC23]. **근접 데스크 착석(상체-only)에서는 hip/root가 프레임 밖**이라, hip 기준으로 계산하는 모든 head-torso 각이 *가장 덜 관측된* 점에 묶이는 root 불안정이 생긴다. → **각을 hip이 아니라 관측 가능한 상체 관절(어깨/목/spine)에 anchor**하라(상세 [`../pose-estimation/viewpoint-robust-geometry.md` §4](../pose-estimation/viewpoint-robust-geometry.md)). Apple은 truncation/occlusion 거동을 미문서화하므로 자체 처리 필요.
 
 ### G-3. 정면 카메라 ↔ 측면 지표의 구조적 불일치
 - Mac 내장 카메라는 정면. 그러나 거북목의 1차 신호(머리 전방 이동)는 **측면**에서 드러난다. 정면 2D에서는 전방 이동이 이미지 평면에 거의 안 나타난다(원리: 깊이축이 카메라 광학축과 평행) [Apple/가설].

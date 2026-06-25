@@ -41,21 +41,21 @@ flowchart TD
 
 거북목 측정의 본질은 **머리가 몸통보다 카메라 쪽으로 얼마나 나왔는가(전방 깊이차)** 를 재는 것이다. 그 신호의 크기와 AI depth의 오차를 직접 비교하면:
 
-- **신호 크기:** 거북목의 머리 전방 이동은 **cm 단위**의 작은 신호다. Harrison 등은 흉부 대비 머리 전방 변위를 보고하는데, **무증상(정상) 피험자조차 평균 ~15mm 전방**에 있다 — 즉 15mm는 "거북목"이 아니라 *정상 기준선*이고, 거북목은 거기서 **추가로** 전방 이동한 양이다. 따라서 **정상과 거북목을 가르는 증분 신호는 종종 15mm보다도 작다.** (이 프레이밍 정정은 SNR 논증을 더 *보수적*으로 만든다 — 측정 대상 신호가 더 작아지므로. 팩트체크 2026-06 반영.)
+- **신호 크기:** 거북목의 머리 전방 이동은 **cm 단위**의 작은 신호다. Harrison 등(1996)은 흉부 대비 머리 전방 변위(C2–C7 sagittal balance)를 보고하는데, **무증상(정상) 피험자조차 평균 ~15mm 전방**이고 정상 범위를 **<16mm, 경증 16~25mm**로 본다 — 즉 15mm는 "거북목"이 아니라 *정상 기준선*이고, 거북목은 거기서 **추가로** 전방 이동한 양이다. 따라서 **정상과 거북목을 가르는 증분 신호는 종종 15mm보다도 작다.** 이 프레이밍은 SNR 논증을 더 *보수적*으로 만든다 — 측정 대상 신호가 더 작아지므로.
 - **AI depth 오차:** 최고 수준 metric monocular depth(Depth-Anything-V2, ViT-L)의 실내(NYU-V2) **AbsRel ≈ 5.6%**. 50~70cm 거리에 적용하면 **평균 절대오차 ≈ 2.8~3.9cm**. Apple Depth Pro·Metric3D v2·UniDepth도 6~10%대로 같은 자릿수.
 - **비교:** **평균 깊이 오차(~3cm)가 측정 대상 신호(~1.5cm)의 2배 이상이다.** 신호 대 잡음비(SNR) < 1.
 
 > **이 비율에서는 단일 프레임 절대 측정의 SNR이 1 미만 → 신뢰할 측정이 원리적으로 불가능하다 [high].** 여기에 §4의 추가 오차원(relative scale 미정, 프레임간 flicker, 자기가림, 근거리 인물 편향)이 더해지면 반례는 더 강해진다.
 
-> **"여러 프레임을 평균하면 오차가 √N로 줄어 신호를 잡을 수 있지 않나?" — 안 된다 [high].** monocular depth 오차의 지배 성분은 *랜덤*이 아니라 **체계적(systematic) affine 왜곡**이다: 신경망(MiDaS·Depth Anything 계열 포함)은 **원거리 압축·근거리 확장(depth compression)** bias를 갖고 이미지 간 그 계수가 유의하게 상관한다(*Human-like monocular depth biases in DNNs*, PLOS Comput Biol 2025). **랜덤 오차만 √N로 줄고 계통 bias는 평균으로 제거되지 않으므로**, 다중 프레임 누적으로도 SNR<1을 구제하지 못한다. (적대적 검증 2026-06이 찾은, 결론을 *강화*하는 신규 근거.)
+> **"여러 프레임을 평균하면 오차가 √N로 줄어 신호를 잡을 수 있지 않나?" — 안 된다 [검증필요].** monocular depth 오차의 지배 성분은 *랜덤*이 아니라 **체계적(systematic) affine 왜곡**이다: 신경망(MiDaS·Depth Anything 계열 포함)은 **원거리 압축·근거리 확장(depth compression)** bias를 갖고 이미지 간 그 계수가 유의하게 상관한다(*Human-like monocular depth biases in deep neural networks*, PLOS Comput Biol 2025 — affine bias의 *존재*는 논문이 직접 보고). 여기서 **랜덤 오차만 √N로 줄고 계통 bias는 평균으로 제거되지 않는다**는 귀결은 그로부터의 타당한 추론이다(논문 verbatim 아님). ⇒ 다중 프레임 누적으로도 SNR<1을 구제하지 못한다.
 
 ⚠️ **정직한 한계 표기:** 위 AbsRel→cm 환산(60~70cm × 5.6% ≈ 3.4~3.9cm)은 산술 추정이며, NYU 벤치마크는 **방 전체 장면**에서 측정한 것이다. 책상 거리 **근접 인물·정면** 조건의 실제 오차는 이보다 **더 클 가능성**이 높아(벤치마크 도메인 밖), 반례 방향(불가)을 오히려 강화한다. [산술 추정/미검증]
 
 ### 2.1 이 반례의 적용 범위 — "절대 cm 측정"에 한정된다
 
-위 SNR<1 논증은 **절대 거리(cm) 회귀**를 가정한다. 중요한 경계가 하나 있다(검증에서 제기된 논리 보강).
+위 SNR<1 논증은 **절대 거리(cm) 회귀**를 가정한다. 중요한 경계가 하나 있다.
 
-- **깊이 *비율*과 *각도*는 scale-invariant다 [high].** "두 점의 깊이 비율은 스케일 불변"(Monocular Depth Estimation Using Relative Depth Maps, CVPR 2019; arXiv:2501.07742)이므로, 거북목을 *절대 cm*가 아니라 **머리 깊이 / 어깨 깊이 비율(또는 각도)** 로 표현하면 미지의 scale·focal·계통 bias가 분자·분모에서 상당 부분 **상쇄**된다 → 그 표현에서는 SNR이 절대 cm보다 **유리**해질 수 있다(§6의 baseline 상대화가 같은 원리).
+- **깊이 *비율*과 *각도*는 (순수) scale에 대해 불변이다 [검증필요].** "두 점의 깊이 비율은 스케일 불변"(Lee & Kim, *Monocular Depth Estimation Using Relative Depth Maps*, CVPR 2019)이라는 성질에서, 거북목을 *절대 cm*가 아니라 **머리 깊이 / 어깨 깊이 비율(또는 각도)** 로 표현하면 미지의 scale·focal이 분자·분모에서 상당 부분 **상쇄**된다 → 그 표현에서는 SNR이 절대 cm보다 **유리**해질 수 있다(§6의 baseline 상대화가 같은 원리). ⚠️ **단, 비율이 상쇄하는 것은 순수 *scale*뿐이다.** MiDaS·Depth Anything류 기본 출력은 scale+shift의 **affine** 모호성을 가지므로(§4-1), shift 항이 남는 한 비율도 완전 불변이 아니다 — 이는 바로 아래 "비율이면 풀린다도 과장"을 오히려 강화한다.
 - **그러나 "비율이면 풀린다"도 과장이다:** (a) AbsRel은 *장면 평균*이라 머리/어깨 **국소(local)** 깊이 오차가 그와 같다는 보장이 없고(국소가 더 클 수 있음), (b) depth 모델의 *ordering(머리가 어깨보다 앞)* 안정성 자체가 근접 인물·정면에서 직접 검증된 바 없다.
 - **결론:** SNR<1은 "절대 측정"을 닫지만, **비율/각도 + baseline 상대화** 경로는 닫지 못한다 — 단 그 경로의 실효는 **자체 실측**으로만 확인된다(§7 미해결). 이것이 "절대측정 ✗ / 상대신호 ○"라는 본 문서 결론의 정밀한 근거다.
 
@@ -71,7 +71,7 @@ flowchart TD
 
 즉 **"정면 + 깊이차"라는 turtlemeck 가설의 물리 원리는 검증됐다.** 검증되지 않은 것은 정확히 사용자가 메우려는 지점 — **"단일 RGB로 그 깊이를 충분히 정확하게 얻을 수 있는가"** 이고, §2가 그 답을 "현재로선 아니오"로 가리킨다.
 
-⚠️ PreventFHP 98% 수치는 검색 요약상 일관 확인됐으나 원문 PDF 직접 열람 실패(2차 인용 일치). [부분 미검증]
+PreventFHP 98.0% 정확도·오경보 2.0%는 **IEEE 1차 abstract(doc 6775470)에 직접 보고**된다. 메커니즘 인용문 verbatim만 후속 논문 재인용 경유이며, 원논문은 "저가 상용 depth camera(= Kinect)"를 명시한다.
 
 ### 3.2 단일 RGB 추정 depth 자세측정 — 정면 거북목 선례는 부재 [high]
 
@@ -161,5 +161,5 @@ flowchart TD
 - FHP 시상면/측면 뷰 우위 (Physiopedia): <https://www.physio-pedia.com/Forward_Head_Posture>
 - 단안 깊이축 오차 in-plane의 2~3배 (Nature Sci Rep 2025): <https://pmc.ncbi.nlm.nih.gov/articles/PMC12589393/>
 - monocular depth 오차의 체계적 affine bias(평균으로 안 줄어듦) (PLOS Comput Biol 2025): <https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013020>
-- 두 점의 깊이 비율은 scale-invariant (CVPR 2019 relative depth maps; arXiv:2501.07742): <https://arxiv.org/abs/2501.07742>
+- 두 점의 깊이 비율은 (순수)scale 불변 — Lee & Kim, Monocular Depth Estimation Using Relative Depth Maps (CVPR 2019): <https://openaccess.thecvf.com/content_CVPR_2019/html/Lee_Monocular_Depth_Estimation_Using_Relative_Depth_Maps_CVPR_2019_paper.html>
 - 단일 RGB→back depth→척추측만 추정 GAMA-Net(δ-threshold "97%", 후면·하드웨어 GT, 도메인 불일치) (arXiv:2507.22691, 2025): <https://arxiv.org/abs/2507.22691>

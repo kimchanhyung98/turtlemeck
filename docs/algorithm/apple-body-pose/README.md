@@ -26,7 +26,7 @@ flowchart TD
 | [vision-pose-apis.md](vision-pose-apis.md) | Vision의 3개 자세/얼굴 요청 API — 출력 구조, 좌표계, 관절 목록, 가용성, 성능 모델 |
 | [current-usage-and-gaps.md](current-usage-and-gaps.md) | 현 앱(`PoseDetector`)의 Vision 사용 실태 분석 + 발견된 한계 + 개선 방향 |
 
-> 검증 표기: **[코드]** = 현 저장소 코드에서 직접 확인 / **[Apple]** = Apple 공식 문서·WWDC 근거 / **[확인필요]** = 1차 출처 재확인 대기(2차 리서치로 보강 예정).
+> 검증 표기: **[코드]** = 현 저장소 코드에서 직접 확인 / **[Apple]** = Apple 공식 문서·WWDC 근거 / **[확인필요]** = 1차 출처 재확인 대기.
 
 ## 한눈에 보는 요약
 

@@ -1,6 +1,6 @@
 # Apple Depth Pro (ml-depth-pro) — turtlemeck 적합성 비판 검증
 
-`turtlemeck`은 맥북 내장 **단일 정면 웹캠**(2D RGB, 깊이센서 없음)으로 거북목을 감지한다. 거북목의 1차 신호는 **머리가 몸통보다 카메라 쪽으로 나온 전방 깊이차**이고, 이는 단안 기하에서 가장 추정이 약한 "깊이축"이다([monocular-limits.md](../../algorithm/pose-estimation/monocular-limits.md)). 본 문서는 Apple의 단안 **metric depth** 모델 **Depth Pro**가 이 깊이차를 절대거리로 직접 잴 수 있는지, 맥북 온디바이스로 돌릴 수 있는지, 라이선스가 상용 가능한지를 1차 출처로 비판 검증한다.
+`turtlemeck`은 맥북 내장 **단일 정면 웹캠**(2D RGB, 깊이센서 없음)으로 거북목을 감지한다. 거북목의 1차 신호는 **머리가 몸통보다 카메라 쪽으로 나온 전방 깊이차**이고, 이는 단안 기하에서 가장 추정이 약한 "깊이축"이다([monocular-limits.md](../../algorithm/pose-estimation/monocular-limits.md)). 본 문서는 Apple의 단안 **metric depth** 모델 **Depth Pro**가 이 깊이차를 절대거리로 직접 잴 수 있는지, 맥북 온디바이스로 돌릴 수 있는지, 라이선스상 제품에 투입할 수 있는지를 1차 출처로 비판 검증한다.
 
 신뢰도 표기: **[high]** = 다수 1차 출처 일치 / **[검증필요]** = 1차 출처 1개 또는 간접 / **[미검증]** = 1차 근거 못 찾음(추측 금지).
 
@@ -21,8 +21,8 @@ flowchart TD
     A1 --> A2["근거리 절대오차 실측: 67cm→68-71cm,<br/>100cm→~110cm (비공식 1건)"]
     A2 --> A3["오차 수 cm = 거북목 전방이동과 동급<br/>→ 절대 단정 위험 [검증필요]"]
 
-    DP --> L1["라이선스 apple-amlr<br/>비상업 문구 없음 → 상용 가능 해석"]
-    L1 --> L2["단 Apple 공식 상용 확인은 미응답<br/>법무 검토 권장"]
+    DP --> L1["라이선스 apple-amlr<br/>Research Purposes 전용"]
+    L1 --> L2["상업적 이용·제품 개발·상용 서비스 사용 제외<br/>별도 허가 없이는 제품 투입 불가"]
 
     A3 --> V["95% 측정 목표:<br/>절대 metric으론 불가/부분<br/>baseline 상대신호 보강용으로만 유효"]
 ```
@@ -103,15 +103,14 @@ flowchart TD
 
 ---
 
-## 6. 라이선스 — 상용 가능 여부 [high]
+## 6. 라이선스 — 제품 사용 가능 여부 [high]
 
 - HuggingFace 모델 카드 라이선스 태그: **`apple-amlr`** (Apple Machine Learning Research License 계열). [high]
-- GitHub LICENSE 원문 검토 결과: **헤더는 "Copyright (C) 2024 Apple Inc."**, 권리 부여 문구는
-  > *"Apple grants you a personal, non-exclusive license ... to use, reproduce, modify and redistribute the Apple Software, with or without modifications, in source and/or binary forms"*
-- **본문 어디에도 "non-commercial"/"research purposes only" 문구가 없다.** [high] 즉 문언상 **상업적 사용을 명시적으로 금지하지 않는다.**
-- 주요 제약: ① 무수정 재배포 시 **저작권 고지·면책 문구 유지**, ② **Apple 상표/로고로 파생제품 홍보 금지**(별도 서면 허가 필요), ③ **무보증·책임면제**.
-- 단, **GitHub Issue #66**("상업적 사용 허용 여부 및 추가 제약 문의")은 **Apple/메인테이너 공식 답변 없이 미해결(open)** 상태다. [high]
-- **종합 판단:** 라이선스 문언상 **상용 사용은 가능해 보인다(비상업 제한 문구 없음)**. 그러나 Apple의 명시적 상용 확인이 부재하고 `apple-amlr`은 표준 OSS(MIT/Apache)가 아니므로, **제품 출시 전 라이선스 원문 정독 + 법무 검토**를 권장한다. 상표·홍보 제약과 가중치 재배포 조건도 별도 확인 필요. [검증필요 — 법적 확정은 본 문서 범위 밖]
+- HuggingFace LICENSE 원문은 Apple Machine Learning Research Model을 **과학 연구 목적만으로 공개**한다고 설명하고, 사용·수정·파생모델 생성·재배포 권한도 **"exclusively for Research Purposes"** 로 제한한다. [high]
+- 원문 정의상 **"Research Purposes" = 비상업적 과학 연구·학술 개발 활동**이며, **상업적 이용, 제품 개발, 상용 제품/서비스 사용은 포함하지 않는다.** [high]
+- 주요 제약: ① 재배포 시 라이선스 사본 제공 및 attribution 고지, ② 파생모델은 수정·변경 사항 표시, ③ **Apple 상표/로고로 파생모델이나 Apple과의 관계 홍보 금지**, ④ 무보증·책임면제 및 위반 시 종료 조항.
+- **GitHub Issue #66**("상업적 사용 허용 여부 및 추가 제약 문의")은 **Apple/메인테이너 공식 답변 없이 미해결(open)** 상태다. [high] 다만 라이선스 원문 자체가 research-only 범위를 명시하므로, 이 이슈는 상용 예외가 확인되지 않았다는 보조 근거로만 본다.
+- **종합 판단:** Depth Pro 모델/가중치는 **별도 Apple 허가 없이 turtlemeck 상용 제품·서비스에 넣을 수 없다.** 내부 연구·프로토타입 검증에는 쓸 수 있지만, 제품 후보로는 정확도·속도 이전에 **라이선스가 차단 조건**이다. [high — 법률 자문은 아님]
 
 ---
 
@@ -145,9 +144,10 @@ flowchart TD
 - **결론: 절대 metric depth만으로 "95% 측정"은 불가/부분이다.** 근거:
   1. **절대 거리 정확도가 신호 크기(수 cm)와 동급**이라, 단일 프레임 절대값으론 95% 신뢰 판별이 성립하지 않는다 [검증필요].
   2. 사람 상체·책상거리 metric **공식 검증 부재** → "95%"를 뒷받침할 1차 근거 없음 [미검증].
-  3. 맥북 실측 지연·일관성 데이터 부재 → 실시간성·안정성 미확인.
+  3. `apple-amlr` 라이선스가 research-only라 별도 허가 없이는 제품 투입 불가.
+  4. 맥북 실측 지연·일관성 데이터 부재 → 실시간성·안정성 미확인.
 - **다만 "부분적으로 유용"하다:** Apple Vision 단독보다 **추가 깊이 채널**을 제공하므로, **baseline 상대 전방차 + 측면 유도 + 시간 일관성**과 결합하면 *추세 신호의 신뢰도를 높이는 보조 입력*으로 가치가 있다. 즉 **"단독 95% 측정 도구"가 아니라 "상대신호 보강용 한 축"** 으로 자리매김하는 것이 정직한 평가다.
-- **권고:** 채택 전 (a) 대상 맥북 Core ML/MLX 변환 후 latency·메모리·발열 실측, (b) 책상거리 인물 상체에서 절대오차·프레임 일관성 자체 측정, (c) baseline 상대화 전제 설계 — 이 세 가지를 선결 조건으로 둘 것.
+- **권고:** 제품에는 채택하지 말고, 연구용 실험에 한정한다. 별도 상용 허가를 받는 경우에만 (a) 대상 맥북 Core ML/MLX 변환 후 latency·메모리·발열 실측, (b) 책상거리 인물 상체에서 절대오차·프레임 일관성 자체 측정, (c) baseline 상대화 전제 설계 — 이 세 가지를 선결 조건으로 둔다.
 
 ---
 

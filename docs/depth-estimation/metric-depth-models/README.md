@@ -31,7 +31,7 @@ flowchart TD
 | 핵심 아이디어 | relative backbone(MiDaS) + metric bins head로 절대화 [high] | 모든 이미지를 **canonical camera space**로 변환해 focal 모호성 제거 [high] | **camera self-prompt 모듈**이 intrinsic을 스스로 추정, pseudo-spherical 출력으로 카메라·깊이 분리 [high] |
 | metric을 얻는 법 | 학습 데이터(NYU/KITTI) 도메인 스케일을 metric bins head가 회귀. intrinsic **입력 안 받음** [high] | canonical 공간 예측 후 **focal length로 de-canonical 변환**: `D = (1/ω_d)·D_c`, ω_d = canonical/원본 초점비 [high] | 모델이 dense camera 표현(Δf, Δc)을 예측해 깊이를 conditioning. **추론 시 intrinsic 입력 불필요**(선택적으로 GT intrinsic 주입 가능) [high] |
 | **intrinsic 의존성** | 명시적 입력 없음 → 스케일이 **학습 도메인에 암묵 고정** (미지 카메라에 취약) [high/검증필요] | **focal length 필요**. 미지 시 repo는 "기본 9개 focal 설정" 제공, 틀리면 *"focal length is not properly set"* 왜곡 경고 [high] | **없음(자체 추정)** — 세 모델 중 유일하게 "intrinsic 모름"을 설계로 흡수 [high] |
-| 정확도 (zero-shot) | NYUv2: δ1=0.953, AbsRel(REL)=0.077 · KITTI: REL=0.057 [high] | NYUv2(ViT-g): δ1=0.980, AbsRel=0.067 · KITTI(ViT-g): δ1=0.977, AbsRel=0.051 [high] | NYUv2(ViT-L): δ1=0.984, A.Rel=5.78% · KITTI: δ1=0.986, A.Rel=4.21% [high] |
+| 정확도 (zero-shot) | NYUv2: δ1=0.955, AbsRel(REL)=0.075 · KITTI: REL=0.057 [high] | NYUv2(ViT-g): δ1=0.980, AbsRel=0.067 · KITTI(ViT-g): δ1=0.977, AbsRel=0.051 [high] | NYUv2(ViT-L): δ1=0.984, A.Rel=5.78%(V1; V2 ViT-L 98.8%/4.68%) · KITTI: δ1=0.986, A.Rel=4.21% [high] |
 | zero-shot 일반화 | 8개 미지 데이터셋(실내·실외). 실내 강함, 실외 일부 음수 개선(DDAD -12.8%) [high] | 16M 이미지·수천 카메라 학습 → in-the-wild 강함, KITTI/NYU/Robust-MVD 상위 [high] | 10개 데이터셋 zero-shot SOTA, KITTI 공식 벤치 published 1위(V2) [high] |
 | 백본 / 크기 | BEiT384-L (MiDaS), 총 ~344M params, 305M이 백본 [high] | DINOv2-reg ViT-S/L/giant2, ConvNeXt-L. v2-g가 최대 [high] | DINO 기반 ViT-S/B/L (+V1 ConvNeXt-L). V2-L ~34M head 외 ViT 백본 [high/검증필요] |
 | 속도 | 미명시(BEiT-L 대형, 실시간 어려움) [미검증] | 미명시. ViT-giant2는 무거움 [미검증] | V2가 V1 대비 latency 73.2→25.0ms, 연산 1/3로 경량화 [high] |
@@ -48,7 +48,7 @@ flowchart TD
 
 - **핵심 아이디어** [high]: relative depth의 일반화 장점과 metric depth의 절대 스케일을 결합. MiDaS의 relative backbone(BEiT384-L) 위에 도메인별 **metric bins module**(경량 head)을 얹어, relative 예측을 metric으로 회귀한다. 논문: *"the first approach that combines both worlds ... excellent generalization ... while maintaining metric scale."*
 - **metric 획득 / intrinsic** [high/검증필요]: ZoeDepth는 **camera intrinsic을 입력으로 받지 않는다.** 절대 스케일은 fine-tune된 도메인(NYU 실내, KITTI 실외)의 카메라·장면 통계를 metric head가 암묵 학습한 결과다. 즉 "처음 보는 카메라"에서는 학습 도메인과 다른 focal/스케일이 **보정되지 않고** 그대로 흘러나온다 → 미지 카메라에 대한 스케일 안정성은 구조적으로 약하다(이 한계는 후속 Metric3D/UniDepth가 해결 대상으로 명시).
-- **정확도** [high]: ZoeD-M12-NK — NYUv2 δ1=0.953, REL=0.077; KITTI REL=0.057. NYU 사전학습+파인튜닝으로 REL 21% 개선.
+- **정확도** [high]: ZoeD-M12-N(NYU) — NYUv2 δ1=0.955, REL=0.075; ZoeD-M12-NK는 KITTI REL=0.057. NYU 사전학습+파인튜닝으로 REL 21% 개선.
 - **일반화** [high]: 8개 미지 데이터셋에 zero-shot. 실내(SUN RGB-D, iBims-1 등) 개선 뚜렷, 실외 일부는 음수 개선(DDAD -12.8%) — 실내 도메인이 상대적 강점.
 - **한계** [high]: DDAD 등 실외 약점, 도메인을 "indoor/outdoor" 둘로만 나눠 더 세분화는 future work. 대형 백본(344M)으로 온디바이스 실시간 부담 [미검증].
 
