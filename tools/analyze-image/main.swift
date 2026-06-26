@@ -28,7 +28,10 @@ else {
 
 do {
     let detector = PoseDetector()
-    let landmarks = try detector.detect(cgImage: cgImage, include3D: include3D)
+    var landmarks = try detector.detect(cgImage: cgImage, include3D: include3D)
+    if algorithmID.requestsCoreMLRelativeDepth {
+        landmarks.relativeDepth = CoreMLRelativeDepthProvider().estimate(cgImage: cgImage, landmarks: landmarks)
+    }
 
     // 선택형 알고리즘 ID를 2번째 인자로 받을 수 있다(미지정 시 기본값 = 적응 융합). 실제 앱과 동일 경로로 분석.
     let viewpoint = ViewpointClassifier().classify(landmarks)
