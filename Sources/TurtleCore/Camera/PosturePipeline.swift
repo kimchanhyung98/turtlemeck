@@ -26,15 +26,16 @@ public final class PosturePipeline {
         activeAlgorithm = nil
     }
 
-    public func process(_ landmarks: PoseLandmarks, settings: Settings, baseline: Baseline?, timestamp: Double? = nil) -> AnalyzedFrame {
-        if activeAlgorithm != settings.postureAlgorithm {
+    public func process(_ landmarks: PoseLandmarks, settings: Settings, baseline: Baseline?, timestamp: Double? = nil, algorithmOverride: PostureAlgorithmID? = nil) -> AnalyzedFrame {
+        let effectiveAlgorithm = algorithmOverride ?? settings.postureAlgorithm
+        if activeAlgorithm != effectiveAlgorithm {
             resetAnalysisState()
-            activeAlgorithm = settings.postureAlgorithm
+            activeAlgorithm = effectiveAlgorithm
         }
 
         let rawViewpoint = classifier.classify(landmarks)
         let stableViewpoint = viewpointStabilizer.stabilize(rawViewpoint)
-        let algorithm = PostureAlgorithmFactory.make(settings.postureAlgorithm, analyzer: analyzer)
+        let algorithm = PostureAlgorithmFactory.make(effectiveAlgorithm, analyzer: analyzer)
         let context = PostureAnalysisContext(
             baseline: baseline,
             sensitivity: settings.sensitivity,
