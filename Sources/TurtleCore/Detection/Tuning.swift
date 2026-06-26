@@ -17,6 +17,9 @@ public enum Tuning {
     public static let maxHeadTiltDegrees = 28.0
     /// 3D 이마-몸통 정규화 깊이차가 baseline 대비 이만큼 더 앞으로 나오면 주의(추세 신호).
     public static let depthRelativeForward = 0.06
+    /// Core ML relative depth의 머리-어깨 closeness delta가 baseline 대비 이만큼 커지면 주의.
+    /// 절대 단위가 아니므로 자체 샘플 로그로 재튜닝해야 하는 잠정값이다.
+    public static let coreMLRelativeDepthForward = 0.08
     /// face 보조 신호: 정면 응시로 볼 yaw 상한. 이보다 크면 고개 돌림으로 보고 얼굴 위치 신호를 쓰지 않는다.
     public static let faceProxyMaxYaw = 25.0
     /// 얼굴 박스 하단 y가 baseline 대비 이만큼 낮아지면 전방머리/숙임(추세 신호). 잠정값 — 자체 로그 튜닝 필요.

@@ -15,22 +15,28 @@ public enum ViewpointBand: String, Codable, Equatable, Sendable {
 }
 
 public enum PostureAlgorithmID: String, Codable, Equatable, CaseIterable, Sendable {
+    case mlAuto
     case profileGeometry
     case frontProxy
     case bodyFrame3D
     case depthDelta
+    case coreMLRelativeDepth
     case fusion
 
     public var title: String {
         switch self {
+        case .mlAuto:
+            return "AI/ML 자동"
         case .profileGeometry:
             return "측면 기하"
         case .frontProxy:
             return "정면 보조"
         case .bodyFrame3D:
-            return "3D 신체축"
+            return "Apple Vision 3D 신체축"
         case .depthDelta:
-            return "3D 깊이차"
+            return "Apple Vision 3D 깊이차"
+        case .coreMLRelativeDepth:
+            return "Core ML Depth Anything"
         case .fusion:
             return "적응 융합"
         }
@@ -38,24 +44,54 @@ public enum PostureAlgorithmID: String, Codable, Equatable, CaseIterable, Sendab
 
     public var description: String {
         switch self {
+        case .mlAuto:
+            return "Core ML depth와 Apple Vision 3D 중 가용 ML 신호 자동 선택"
         case .profileGeometry:
             return "측면/3-4 머리-어깨 단조 각"
         case .frontProxy:
             return "정면 어깨폭 정규화 추세"
         case .bodyFrame3D:
-            return "3D 신체 좌표계 기반 시상각"
+            return "Apple Vision 3D pose의 신체 좌표계 기반 시상각"
         case .depthDelta:
-            return "이마-몸통 전방 깊이차"
+            return "Apple Vision 3D pose의 이마-몸통 전방 깊이차"
+        case .coreMLRelativeDepth:
+            return "Depth Anything V2 Small 상대깊이의 머리-어깨 추세"
         case .fusion:
             return "시점/플랫폼에 따라 자동 선택(권장)"
         }
     }
 
+    public static var userSelectableMLMethods: [PostureAlgorithmID] {
+        [.mlAuto, .coreMLRelativeDepth, .depthDelta, .bodyFrame3D]
+    }
+
+    public var isUserSelectableMLMethod: Bool {
+        Self.userSelectableMLMethods.contains(self)
+    }
+
+    /// 디버그 모드에서 수동 선택 가능한 방식. ML 방식 + 시점 라우팅 대상(측면/정면 2D)을 포함해 시점별 동작을 직접 검증할 수 있다.
+    public static var debugSelectableMethods: [PostureAlgorithmID] {
+        userSelectableMLMethods + [.profileGeometry, .frontProxy]
+    }
+
+    public var isDebugSelectableMethod: Bool {
+        Self.debugSelectableMethods.contains(self)
+    }
+
     public var requests3D: Bool {
         switch self {
-        case .bodyFrame3D, .depthDelta:
+        case .mlAuto, .bodyFrame3D, .depthDelta:
             return true
-        case .profileGeometry, .frontProxy, .fusion:
+        case .profileGeometry, .frontProxy, .coreMLRelativeDepth, .fusion:
+            return false
+        }
+    }
+
+    public var requestsCoreMLRelativeDepth: Bool {
+        switch self {
+        case .mlAuto, .coreMLRelativeDepth:
+            return true
+        case .profileGeometry, .frontProxy, .bodyFrame3D, .depthDelta, .fusion:
             return false
         }
     }
@@ -117,6 +153,7 @@ public enum SignalKind: String, Codable, Equatable, Hashable, Sendable {
     case front2D
     case body3D
     case depth3D
+    case relativeDepth
     case frontFace
 
     public var label: String {
@@ -131,6 +168,8 @@ public enum SignalKind: String, Codable, Equatable, Hashable, Sendable {
             return "3D시상각"
         case .depth3D:
             return "깊이차"
+        case .relativeDepth:
+            return "상대깊이"
         case .frontFace:
             return "얼굴위치"
         }
@@ -242,6 +281,18 @@ public struct FaceBox: Codable, Equatable, Sendable {
     public var area: Double { width * height }
 }
 
+public struct RelativeDepthSummary: Codable, Equatable, Sendable {
+    /// Core ML relative inverse-depth에서 머리 영역이 어깨/몸통 영역보다 가까운 정도.
+    /// 양수일수록 머리 영역이 더 가깝다는 뜻이며, 절대 cm가 아니다.
+    public var headCloserDelta: Double
+    public var confidence: Double
+
+    public init(headCloserDelta: Double, confidence: Double) {
+        self.headCloserDelta = headCloserDelta
+        self.confidence = confidence
+    }
+}
+
 public struct PoseLandmarks: Codable, Equatable, Sendable {
     public var nose: Point2D?
     public var leftEye: Point2D?
@@ -256,6 +307,7 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
     public var facePitchDegrees: Double?
     public var faceBoundingBox: FaceBox?
     public var pose3D: Pose3D?
+    public var relativeDepth: RelativeDepthSummary?
 
     public init(
         nose: Point2D? = nil,
@@ -270,7 +322,8 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
         faceRollDegrees: Double? = nil,
         facePitchDegrees: Double? = nil,
         faceBoundingBox: FaceBox? = nil,
-        pose3D: Pose3D? = nil
+        pose3D: Pose3D? = nil,
+        relativeDepth: RelativeDepthSummary? = nil
     ) {
         self.nose = nose
         self.leftEye = leftEye
@@ -285,6 +338,7 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
         self.facePitchDegrees = facePitchDegrees
         self.faceBoundingBox = faceBoundingBox
         self.pose3D = pose3D
+        self.relativeDepth = relativeDepth
     }
 }
 
@@ -317,14 +371,16 @@ public struct AnalyzedFrame: Codable, Equatable, Sendable {
     public var signal: PostureSignal?
     public var viewpoint: ViewpointResult?
     public var reason: String?
+    public var debugNotes: [String]
     /// 정면 응시 시 얼굴 박스 하단 y(있을 때). 신호 종류와 무관하게 보정에서 frontFace baseline 수집에 쓴다.
     public var faceBottomY: Double?
 
-    public init(assessment: PostureAssessment, signal: PostureSignal? = nil, viewpoint: ViewpointResult? = nil, reason: String? = nil, faceBottomY: Double? = nil) {
+    public init(assessment: PostureAssessment, signal: PostureSignal? = nil, viewpoint: ViewpointResult? = nil, reason: String? = nil, debugNotes: [String] = [], faceBottomY: Double? = nil) {
         self.assessment = assessment
         self.signal = signal
         self.viewpoint = viewpoint
         self.reason = reason
+        self.debugNotes = debugNotes
         self.faceBottomY = faceBottomY
     }
 }
@@ -335,6 +391,7 @@ public struct Baseline: Codable, Equatable, Sendable {
     public var threeQuarterAngle: Double?
     public var bodyFrameAngle: Double?
     public var depthDeltaNorm: Double?
+    public var relativeDepthDelta: Double?
     /// 정면 응시 시 얼굴 박스 하단 y(정규화, 좌하단 원점). 거리·높이 고정 전제에서 baseline보다 충분히 낮아지면 전방머리/숙임.
     public var frontFaceBottomY: Double?
 
@@ -344,6 +401,7 @@ public struct Baseline: Codable, Equatable, Sendable {
         threeQuarterAngle: Double?,
         bodyFrameAngle: Double? = nil,
         depthDeltaNorm: Double? = nil,
+        relativeDepthDelta: Double? = nil,
         frontFaceBottomY: Double? = nil
     ) {
         self.profileAngle = profileAngle
@@ -351,12 +409,13 @@ public struct Baseline: Codable, Equatable, Sendable {
         self.threeQuarterAngle = threeQuarterAngle
         self.bodyFrameAngle = bodyFrameAngle
         self.depthDeltaNorm = depthDeltaNorm
+        self.relativeDepthDelta = relativeDepthDelta
         self.frontFaceBottomY = frontFaceBottomY
     }
 }
 
 /// 메뉴/디버그에서 현재 측정값과 판정을 그대로 보여주기 위한 진단 스냅샷.
-public struct PostureDiagnostic: Sendable, Equatable {
+public struct PostureDiagnostic: Codable, Sendable, Equatable {
     public var algorithm: PostureAlgorithmID
     public var assessment: PostureAssessment
     public var signalKind: SignalKind?
@@ -364,6 +423,12 @@ public struct PostureDiagnostic: Sendable, Equatable {
     public var confidence: Double?
     public var viewpoint: ViewpointBand?
     public var reason: String?
+    public var frameCount: Int
+    public var validFrameCount: Int
+    public var signalFrameCount: Int
+    public var observedSignalKinds: [SignalKind]
+    public var debugNotes: [String]
+    public var debugArtifactPath: String?
 
     public init(
         algorithm: PostureAlgorithmID,
@@ -372,7 +437,13 @@ public struct PostureDiagnostic: Sendable, Equatable {
         value: Double? = nil,
         confidence: Double? = nil,
         viewpoint: ViewpointBand? = nil,
-        reason: String? = nil
+        reason: String? = nil,
+        frameCount: Int = 0,
+        validFrameCount: Int = 0,
+        signalFrameCount: Int = 0,
+        observedSignalKinds: [SignalKind] = [],
+        debugNotes: [String] = [],
+        debugArtifactPath: String? = nil
     ) {
         self.algorithm = algorithm
         self.assessment = assessment
@@ -381,5 +452,11 @@ public struct PostureDiagnostic: Sendable, Equatable {
         self.confidence = confidence
         self.viewpoint = viewpoint
         self.reason = reason
+        self.frameCount = frameCount
+        self.validFrameCount = validFrameCount
+        self.signalFrameCount = signalFrameCount
+        self.observedSignalKinds = observedSignalKinds
+        self.debugNotes = debugNotes
+        self.debugArtifactPath = debugArtifactPath
     }
 }
