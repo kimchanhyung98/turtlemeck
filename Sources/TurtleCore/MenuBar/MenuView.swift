@@ -30,6 +30,11 @@ struct MenuView: View {
 
                 Divider()
 
+                if model.settings.debugEnabled {
+                    debugSection
+                    Divider()
+                }
+
                 HStack {
                     Button(model.isPaused ? "재개" : "일시정지") {
                         model.isPaused ? model.resume() : model.pause()
@@ -55,18 +60,27 @@ struct MenuView: View {
                     )
                 }
 
-                Picker("판정 알고리즘", selection: Binding(
-                    get: { model.settings.postureAlgorithm },
-                    set: { model.setPostureAlgorithm($0) }
-                )) {
-                    ForEach(PostureAlgorithmID.allCases, id: \.self) { algorithm in
-                        Text(algorithm.title).tag(algorithm)
+                if model.settings.debugEnabled {
+                    Picker("AI/ML 분석 방식", selection: Binding(
+                        get: { model.settings.postureAlgorithm },
+                        set: { model.setPostureAlgorithm($0) }
+                    )) {
+                        ForEach(PostureAlgorithmID.debugSelectableMethods, id: \.self) { algorithm in
+                            Text(algorithm.title).tag(algorithm)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text(model.settings.postureAlgorithm.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("분석 방식: 자동 (시점 인식)")
+                        Text("정면=깊이 · 측면/3-4=2D 시상 기하를 자동 선택")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .pickerStyle(.menu)
-                Text(model.settings.postureAlgorithm.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                 Picker("민감도", selection: Binding(
                     get: { model.settings.sensitivity },
@@ -130,25 +144,31 @@ struct MenuView: View {
                 Button("종료") {
                     model.quit()
                 }
-
-                if model.settings.debugEnabled {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("디버그 측정")
-                            .font(.caption).bold()
-                        ForEach(Array(model.debugLines.enumerated()), id: \.offset) { _, line in
-                            Text(line)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
             .padding(16)
         }
         .frame(width: 320)
+    }
+
+    private var debugSection: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("디버그 측정")
+                .font(.caption).bold()
+            ForEach(Array(model.debugLines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.debugArtifactPath != nil {
+                Button("디버그 폴더 열기") {
+                    model.openDebugArtifacts()
+                }
+                .font(.caption)
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var symbolName: String {

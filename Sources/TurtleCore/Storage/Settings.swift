@@ -21,7 +21,7 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init(
         checkIntervalSeconds: Int,
-        postureAlgorithm: PostureAlgorithmID = .fusion,
+        postureAlgorithm: PostureAlgorithmID = .mlAuto,
         sensitivity: Sensitivity,
         bannerNotificationsEnabled: Bool,
         notificationSoundEnabled: Bool,
@@ -41,7 +41,7 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public static let defaults = Settings(
         checkIntervalSeconds: 60,
-        postureAlgorithm: .fusion,
+        postureAlgorithm: .mlAuto,
         sensitivity: .medium,
         bannerNotificationsEnabled: false,
         notificationSoundEnabled: false,
@@ -63,7 +63,8 @@ public struct Settings: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         storedCheckIntervalSeconds = Self.clampInterval(try container.decode(Int.self, forKey: .storedCheckIntervalSeconds))
         // 구버전 저장값(algorithm1/algorithm2 등 사라진 케이스)은 디코드 실패할 수 있으므로 try?로 흡수하고 기본값으로 마이그레이션.
-        postureAlgorithm = (try? container.decodeIfPresent(PostureAlgorithmID.self, forKey: .postureAlgorithm)) ?? .fusion
+        let decodedAlgorithm = (try? container.decodeIfPresent(PostureAlgorithmID.self, forKey: .postureAlgorithm)) ?? .mlAuto
+        postureAlgorithm = decodedAlgorithm.isDebugSelectableMethod ? decodedAlgorithm : .mlAuto
         sensitivity = try container.decode(Sensitivity.self, forKey: .sensitivity)
         bannerNotificationsEnabled = try container.decode(Bool.self, forKey: .bannerNotificationsEnabled)
         notificationSoundEnabled = try container.decode(Bool.self, forKey: .notificationSoundEnabled)
