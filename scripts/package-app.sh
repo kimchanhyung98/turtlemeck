@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export COPYFILE_DISABLE=1
 APP="$ROOT/.build/turtlemeck.app"
 ZIP="$ROOT/.build/turtlemeck.zip"
 DMG="$ROOT/.build/turtlemeck.dmg"
@@ -25,6 +26,14 @@ cp Resources/Info.plist "$CONTENTS/Info.plist"
 printf 'APPL????' > "$CONTENTS/PkgInfo"
 cp Resources/en.lproj/InfoPlist.strings "$RESOURCES/en.lproj/InfoPlist.strings"
 cp Resources/ko.lproj/InfoPlist.strings "$RESOURCES/ko.lproj/InfoPlist.strings"
+cp Resources/ThirdPartyNotices.md "$RESOURCES/ThirdPartyNotices.md"
+for ext in mlmodelc mlpackage mlmodel; do
+  model="Resources/DepthAnythingV2SmallF16.$ext"
+  if [ -e "$model" ]; then
+    cp -R "$model" "$RESOURCES/"
+  fi
+done
+xattr -cr "$APP" 2>/dev/null || true
 
 chmod +x "$MACOS/turtlemeck"
 # 안정적인 번들 식별자를 ad-hoc 서명에 포함해 재빌드 후 TCC 권한 재요청 가능성을 줄인다.
@@ -32,7 +41,10 @@ codesign --force --deep --sign - --identifier "$BUNDLE_ID" --timestamp=none "$AP
 codesign --verify --deep --strict --verbose=2 "$APP"
 lipo -info "$MACOS/turtlemeck"
 
-ditto -c -k --keepParent "$APP" "$ZIP"
+(
+  cd "$ROOT/.build"
+  zip -qry -X "$(basename "$ZIP")" "$(basename "$APP")"
+)
 if ! hdiutil create -volname "turtlemeck" -srcfolder "$APP" -ov -format UDZO "$DMG"; then
   echo "hdiutil create failed; falling back to hybrid DMG"
   rm -f "$DMG"
