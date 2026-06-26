@@ -58,6 +58,7 @@ enum ManualTestRunner {
         registerStateTests()
         registerStorageTests()
         registerSystemTests()
+        registerRoutingTests()
 
         var failures: [(String, Error)] = []
         var assertions = 0
