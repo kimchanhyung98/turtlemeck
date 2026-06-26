@@ -356,12 +356,19 @@ func registerDetectionTests() {
         try expect(staticOutput > 0 && adaptiveOutput < 100, "both filters should still smooth")
     }
 
-    // MARK: - 알고리즘 후보 5종 실행 검증
+    // MARK: - 분석 방식 실행 검증
 
     TestRegistry.test("factory builds every algorithm id") {
         for id in PostureAlgorithmID.allCases {
             try expectEqual(PostureAlgorithmFactory.make(id).id, id, "factory id roundtrip for \(id.rawValue)")
         }
+    }
+
+    TestRegistry.test("user selectable analysis methods are ML only") {
+        try expectEqual(PostureAlgorithmID.userSelectableMLMethods, [.mlAuto, .coreMLRelativeDepth, .depthDelta, .bodyFrame3D], "menu should expose only ML methods")
+        try expect(!PostureAlgorithmID.userSelectableMLMethods.contains(.profileGeometry), "geometry should stay internal")
+        try expect(!PostureAlgorithmID.userSelectableMLMethods.contains(.frontProxy), "2D proxy should stay internal")
+        try expect(!PostureAlgorithmID.userSelectableMLMethods.contains(.fusion), "legacy fusion should stay internal")
     }
 
     TestRegistry.test("monotonic profile angle clamps below-shoulder head to zero") {
@@ -424,7 +431,8 @@ func registerDetectionTests() {
             )
         )
         let viewpoint = ViewpointClassifier().classify(pose)
-        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, bodyFrameAngle: 72)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: viewpoint, systemInfo: SystemInfo(isAppleSilicon: true))
         let frame = FusionAlgorithm().analyze(pose, context: context)
         try expectEqual(frame.signal?.kind, .body3D, "low 2D confidence should not discard sane 3D")
         try expect(frame.assessment != .noEval, "sane 3D should produce a posture assessment")
@@ -435,6 +443,8 @@ func registerDetectionTests() {
         let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
         let frame = BodyFrame3DAlgorithm().analyze(pose, context: context)
         try expectEqual(frame.signal?.kind, .body3D, "3D body signal kind")
+        try expectEqual(frame.assessment, .noEval, "3D body signal should need a calibrated baseline")
+        try expectEqual(frame.reason, "3D축 baseline 필요(보정)", "missing 3D baseline reason")
     }
 
     TestRegistry.test("body-frame 3D algorithm withholds off apple silicon") {
@@ -450,6 +460,70 @@ func registerDetectionTests() {
         let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
         let frame = DepthDeltaAlgorithm().analyze(pose, context: context)
         try expectEqual(frame.signal?.kind, .depth3D, "depth signal kind")
+    }
+
+    TestRegistry.test("core ml relative depth algorithm needs depth feature") {
+        let pose = PoseLandmarks(faceYawDegrees: 0)
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = CoreMLRelativeDepthAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .noEval, "missing Core ML feature should not judge")
+        try expect(frame.signal == nil, "missing Core ML feature should not emit signal")
+    }
+
+    TestRegistry.test("core ml relative depth algorithm uses baseline for relative bad judgment") {
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            relativeDepth: RelativeDepthSummary(headCloserDelta: 0.24, confidence: 0.5)
+        )
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, relativeDepthDelta: 0.10)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = CoreMLRelativeDepthAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .relativeDepth, "relative depth signal kind")
+        try expectEqual(frame.assessment, .bad, "relative depth increase over baseline should be bad")
+    }
+
+    TestRegistry.test("core ml relative depth algorithm uses baseline for relative good judgment") {
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            relativeDepth: RelativeDepthSummary(headCloserDelta: 0.14, confidence: 0.5)
+        )
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, relativeDepthDelta: 0.10)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = CoreMLRelativeDepthAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.assessment, .good, "small relative depth change should stay good")
+    }
+
+    TestRegistry.test("core ml relative depth works on non-front calibrated view") {
+        let pose = PoseLandmarks(
+            relativeDepth: RelativeDepthSummary(headCloserDelta: 0.12, confidence: 0.5)
+        )
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, relativeDepthDelta: 0.10)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: ViewpointResult(band: .unknown, confidence: 0), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = CoreMLRelativeDepthAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .relativeDepth, "relative depth should not require front viewpoint")
+        try expectEqual(frame.assessment, .good, "baseline-relative Core ML depth should evaluate off front view")
+    }
+
+    TestRegistry.test("ML auto selects assessed core ml depth when available") {
+        let pose = PoseLandmarks(
+            faceYawDegrees: 0,
+            pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.05)),
+            relativeDepth: RelativeDepthSummary(headCloserDelta: 0.24, confidence: 0.5)
+        )
+        let baseline = Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, depthDeltaNorm: 0.10, relativeDepthDelta: 0.10)
+        let context = PostureAnalysisContext(baseline: baseline, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = MLAutoAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .relativeDepth, "ML auto should prefer Core ML depth on front view")
+        try expectEqual(frame.assessment, .bad, "Core ML relative depth should drive the assessment")
+    }
+
+    TestRegistry.test("ML auto falls back to Apple Vision 3D depth") {
+        let pose = PoseLandmarks(
+            pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.2))
+        )
+        let context = PostureAnalysisContext(baseline: Baseline(profileAngle: nil, frontHeadDropRatio: nil, threeQuarterAngle: nil, depthDeltaNorm: 0.01), sensitivity: .medium, viewpoint: ViewpointResult(band: .profileRight, confidence: 0.7, nearSide: .right), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = MLAutoAlgorithm().analyze(pose, context: context)
+        try expectEqual(frame.signal?.kind, .depth3D, "ML auto should use Vision 3D depth when Core ML front depth is unavailable")
     }
 
     TestRegistry.test("3D quality gating rejects no-proxy implausible geometry") {
@@ -620,5 +694,40 @@ func registerDetectionTests() {
             throw TestFailure(message: "calibration should accept body-only frames")
         }
         try expect(baseline.frontFaceBottomY == nil, "no face position means no face baseline")
+    }
+
+    TestRegistry.test("calibration captures core ml relative depth baseline") {
+        let frames = [0.10, 0.12, 0.14].map {
+            AnalyzedFrame(
+                assessment: .noEval,
+                signal: PostureSignal(kind: .relativeDepth, angleDegrees: $0, confidence: 0.5),
+                viewpoint: ViewpointResult(band: .front, confidence: 0.7)
+            )
+        }
+        guard case .accepted(let baseline) = Calibrator().capture(from: frames) else {
+            throw TestFailure(message: "relative depth calibration should accept")
+        }
+        try expectApprox(baseline.relativeDepthDelta ?? -1, 0.13, tolerance: 0.001, "relative depth baseline uses 75th percentile")
+    }
+
+    TestRegistry.test("ML auto calibration rejects face-only baseline") {
+        let frames = [
+            AnalyzedFrame(assessment: .noEval, viewpoint: ViewpointResult(band: .front, confidence: 0.45), faceBottomY: 0.56)
+        ]
+        let result = Calibrator().capture(from: frames, requiredAlgorithm: .mlAuto)
+        try expectEqual(result, .rejected(.noReliableFrames), "ML auto should require a Core ML or Vision 3D baseline")
+    }
+
+    TestRegistry.test("calibration captures Vision 3D ML baselines") {
+        let frames = [
+            AnalyzedFrame(assessment: .good, signal: PostureSignal(kind: .body3D, angleDegrees: 72, confidence: 0.9), viewpoint: ViewpointResult(band: .front, confidence: 0.7)),
+            AnalyzedFrame(assessment: .good, signal: PostureSignal(kind: .depth3D, angleDegrees: 0.10, confidence: 0.9), viewpoint: ViewpointResult(band: .front, confidence: 0.7)),
+            AnalyzedFrame(assessment: .good, signal: PostureSignal(kind: .depth3D, angleDegrees: 0.14, confidence: 0.9), viewpoint: ViewpointResult(band: .front, confidence: 0.7))
+        ]
+        guard case .accepted(let baseline) = Calibrator().capture(from: frames) else {
+            throw TestFailure(message: "Vision 3D calibration should accept")
+        }
+        try expectApprox(baseline.bodyFrameAngle ?? -1, 72, tolerance: 0.001, "body 3D baseline should be captured")
+        try expectApprox(baseline.depthDeltaNorm ?? -1, 0.13, tolerance: 0.001, "depth 3D baseline should use 75th percentile")
     }
 }

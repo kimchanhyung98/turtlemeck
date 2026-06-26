@@ -3,10 +3,12 @@ import Foundation
 public struct TimedFrame: Equatable, Sendable {
     public var time: Double
     public var frame: AnalyzedFrame
+    public var index: Int?
 
-    public init(time: Double, frame: AnalyzedFrame) {
+    public init(time: Double, frame: AnalyzedFrame, index: Int? = nil) {
         self.time = time
         self.frame = frame
+        self.index = index
     }
 }
 

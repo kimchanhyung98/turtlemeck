@@ -57,12 +57,20 @@ public enum PostureJudge {
         case .profile2D:
             return relativeAngle(signal.angleDegrees, baseline: baseline?.profileAngle, sensitivity: sensitivity)
         case .body3D:
-            return relativeAngle(signal.angleDegrees, baseline: baseline?.bodyFrameAngle, sensitivity: sensitivity)
+            guard let baselineAngle = baseline?.bodyFrameAngle else {
+                return .noEval
+            }
+            return relativeAngle(signal.angleDegrees, baseline: baselineAngle, sensitivity: sensitivity)
         case .depth3D:
             guard let baselineDepth = baseline?.depthDeltaNorm else {
                 return .noEval
             }
             return signal.angleDegrees > baselineDepth + Tuning.depthRelativeForward ? .bad : .good
+        case .relativeDepth:
+            guard let baselineDepth = baseline?.relativeDepthDelta else {
+                return .noEval
+            }
+            return signal.angleDegrees > baselineDepth + Tuning.coreMLRelativeDepthForward ? .bad : .good
         case .frontFace:
             // 얼굴 박스 하단 y — 작을수록 머리가 앞·아래(전방머리/숙임).
             // 카메라 높이/방향에 민감하므로 보정 baseline 없이 절대 판정하지 않는다.
@@ -304,7 +312,8 @@ public struct BodyFrame3DAlgorithm: PostureAlgorithm {
         return AnalyzedFrame(
             assessment: PostureJudge.assess(signal, baseline: context.baseline, sensitivity: context.sensitivity),
             signal: signal,
-            viewpoint: context.viewpoint
+            viewpoint: context.viewpoint,
+            reason: context.baseline?.bodyFrameAngle == nil ? "3D축 baseline 필요(보정)" : nil
         )
     }
 }
@@ -336,7 +345,122 @@ public struct DepthDeltaAlgorithm: PostureAlgorithm {
     }
 }
 
-// MARK: - 후보 E: 적응 융합 (Fusion) — 권장 기본 (시점에 따라 측면/정면 자동 선택)
+// MARK: - 후보 E: Core ML 상대깊이 (Depth Anything V2 Small 계열)
+
+public struct CoreMLRelativeDepthAlgorithm: PostureAlgorithm {
+    public let id: PostureAlgorithmID = .coreMLRelativeDepth
+    public init() {}
+
+    public func analyze(_ pose: PoseLandmarks, context: PostureAnalysisContext) -> AnalyzedFrame {
+        guard let depth = pose.relativeDepth else {
+            return AnalyzedFrame(assessment: .noEval, viewpoint: context.viewpoint, reason: "Core ML 상대깊이 없음")
+        }
+        guard depth.confidence >= Tuning.minimumTrackingConfidence else {
+            return AnalyzedFrame(assessment: .noEval, viewpoint: context.viewpoint, reason: "Core ML 상대깊이 신뢰 부족")
+        }
+
+        let signal = PostureSignal(kind: .relativeDepth, angleDegrees: depth.headCloserDelta, confidence: depth.confidence)
+        return AnalyzedFrame(
+            assessment: PostureJudge.assess(signal, baseline: context.baseline, sensitivity: context.sensitivity),
+            signal: signal,
+            viewpoint: context.viewpoint,
+            reason: context.baseline?.relativeDepthDelta == nil ? "상대깊이 baseline 필요(보정)" : nil
+        )
+    }
+}
+
+// MARK: - 후보 F: AI/ML 자동 (Core ML + Apple Vision 3D)
+
+public struct MLAutoAlgorithm: PostureAlgorithm {
+    public let id: PostureAlgorithmID = .mlAuto
+    public init() {}
+
+    private let coreML = CoreMLRelativeDepthAlgorithm()
+    private let depth3D = DepthDeltaAlgorithm()
+    private let body3D = BodyFrame3DAlgorithm()
+
+    public func analyze(_ pose: PoseLandmarks, context: PostureAnalysisContext) -> AnalyzedFrame {
+        let coreMLFrame = coreML.analyze(pose, context: context)
+        let depthFrame = depth3D.analyze(pose, context: context)
+        let bodyFrame = body3D.analyze(pose, context: context)
+
+        let candidates: [(label: String, frame: AnalyzedFrame)] = [
+            ("CoreML", coreMLFrame),
+            ("3D깊이", depthFrame),
+            ("3D축", bodyFrame)
+        ]
+        let signalCandidates = candidates.filter { $0.frame.signal != nil }
+        let reasons = candidates.compactMap { $0.frame.reason }
+
+        if let selected = signalCandidates.first(where: { $0.frame.assessment != .noEval }) {
+            return annotated(selected.frame, selectedLabel: selected.label, candidates: candidates)
+        }
+        if let selected = signalCandidates.first {
+            return annotated(selected.frame, selectedLabel: selected.label, candidates: candidates)
+        }
+
+        let reason = reasons.removingDuplicates().joined(separator: " · ")
+        let frame = AnalyzedFrame(assessment: .noEval, viewpoint: context.viewpoint, reason: reason.isEmpty ? "가용 ML 신호 없음" : reason)
+        return annotated(frame, selectedLabel: nil, candidates: candidates)
+    }
+
+    private func annotated(
+        _ frame: AnalyzedFrame,
+        selectedLabel: String?,
+        candidates: [(label: String, frame: AnalyzedFrame)]
+    ) -> AnalyzedFrame {
+        var annotated = frame
+        let summary = candidates.map { candidate in
+            if candidate.label == selectedLabel {
+                return "\(candidate.label)=선택"
+            }
+            return "\(candidate.label)=\(shortStatus(candidate.frame))"
+        }.joined(separator: " · ")
+        annotated.debugNotes = ["자동 후보  \(summary)"] + annotated.debugNotes
+        return annotated
+    }
+
+    private func shortStatus(_ frame: AnalyzedFrame) -> String {
+        if frame.signal != nil {
+            switch frame.assessment {
+            case .good:
+                return "정상후보"
+            case .bad:
+                return "주의후보"
+            case .noEval:
+                return shortReason(frame.reason) ?? "기준없음"
+            }
+        }
+        return shortReason(frame.reason) ?? "없음"
+    }
+
+    private func shortReason(_ reason: String?) -> String? {
+        guard let reason else {
+            return nil
+        }
+        if reason.contains("baseline") || reason.contains("보정") {
+            return "기준없음"
+        }
+        if reason.contains("정면 시점 아님") {
+            return "시점불일치"
+        }
+        if reason.contains("미지원") {
+            return "미지원"
+        }
+        if reason.contains("신뢰 부족") || reason.contains("품질 부족") {
+            return "신뢰부족"
+        }
+        if reason.contains("없음") {
+            return "신호없음"
+        }
+        if reason.contains("실패") {
+            return "계산실패"
+        }
+        return reason
+    }
+}
+
+// MARK: - 후보 G: 적응 융합 (Fusion) — 내부/회귀용 (시점에 따라 측면/정면 자동 선택)
 
 public struct FusionAlgorithm: PostureAlgorithm {
     public let id: PostureAlgorithmID = .fusion
@@ -427,6 +551,8 @@ private extension Array where Element: Hashable {
 public enum PostureAlgorithmFactory {
     public static func make(_ id: PostureAlgorithmID, analyzer: PostureAnalyzer = PostureAnalyzer()) -> any PostureAlgorithm {
         switch id {
+        case .mlAuto:
+            return MLAutoAlgorithm()
         case .profileGeometry:
             return ProfileGeometryAlgorithm()
         case .frontProxy:
@@ -435,6 +561,8 @@ public enum PostureAlgorithmFactory {
             return BodyFrame3DAlgorithm()
         case .depthDelta:
             return DepthDeltaAlgorithm()
+        case .coreMLRelativeDepth:
+            return CoreMLRelativeDepthAlgorithm()
         case .fusion:
             return FusionAlgorithm()
         }
