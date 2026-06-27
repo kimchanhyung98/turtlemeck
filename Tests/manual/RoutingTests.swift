@@ -3,8 +3,8 @@ import Foundation
 func registerRoutingTests() {
     // MARK: ViewpointRouter — band → 자동 선택 방식
 
-    TestRegistry.test("router maps front to Core ML relative depth") {
-        try expect(ViewpointRouter().route(.front) == .coreMLRelativeDepth, "front routes to Core ML depth")
+    TestRegistry.test("router keeps front on ML auto") {
+        try expect(ViewpointRouter().route(.front) == .mlAuto, "front keeps ML auto so 3D can fall back when 2D anchors are unavailable")
     }
 
     TestRegistry.test("router maps profile to 2D profile geometry") {

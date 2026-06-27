@@ -29,8 +29,8 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         includeDebugImage: Bool
     ) -> CoreMLRelativeDepthEstimate? {
         guard
-            let model = visionModel(),
-            let anchors = DepthAnchors(landmarks: landmarks)
+            let anchors = DepthAnchors(landmarks: landmarks),
+            let model = visionModel()
         else {
             return nil
         }
@@ -49,8 +49,8 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         includeDebugImage: Bool
     ) -> CoreMLRelativeDepthEstimate? {
         guard
-            let model = visionModel(),
-            let anchors = DepthAnchors(landmarks: landmarks)
+            let anchors = DepthAnchors(landmarks: landmarks),
+            let model = visionModel()
         else {
             return nil
         }

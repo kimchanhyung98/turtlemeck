@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct TestFailure: Error, CustomStringConvertible {
     let message: String
@@ -49,6 +50,32 @@ func lowConfidence(_ x: Double, _ y: Double) -> Point2D {
 
 func p3(_ x: Double, _ y: Double, _ z: Double) -> Point3D {
     Point3D(x: x, y: y, z: z, confidence: 0.95)
+}
+
+func tinyTestImage() throws -> CGImage {
+    let width = 2
+    let height = 2
+    let bytes: [UInt8] = [0, 64, 128, 255]
+    let data = Data(bytes)
+    guard
+        let provider = CGDataProvider(data: data as CFData),
+        let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 8,
+            bytesPerRow: width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
+    else {
+        throw TestFailure(message: "failed to create tiny test image")
+    }
+    return image
 }
 
 @main

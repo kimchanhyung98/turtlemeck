@@ -1,17 +1,18 @@
 # Handoff
 
-Last updated: 2026-06-25 18:14 KST
+Last updated: 2026-06-28 00:30 KST
 
 ## 1. Current Goal
 
 Project direction changed from hand-written posture heuristics in the product UI to local AI/ML analysis:
 
-- Product-facing analysis methods are ML-only:
+- Product-facing manual analysis choices are ML-only:
   - `AI/ML 자동`
   - `Core ML Depth Anything`
   - `Apple Vision 3D 깊이차`
   - `Apple Vision 3D 신체축`
-- Legacy geometry/fusion algorithms remain in code only for internal fallback/regression tests.
+- Legacy geometry/fusion algorithms remain in code for internal fallback/regression tests.
+- Non-debug automatic routing is not purely ML-only in the strict implementation sense: side/three-quarter views can still route to `profileGeometry`. Front view now keeps `mlAuto` so Vision 3D can be evaluated when Core ML relative-depth anchors are missing.
 - A bundled local Core ML model is now included:
   - `Resources/DepthAnythingV2SmallF16.mlpackage/`
   - `Resources/ThirdPartyNotices.md`
@@ -21,8 +22,9 @@ Project direction changed from hand-written posture heuristics in the product UI
 - User's MacBook is on the right side of the desk.
 - User is seated upright during calibration/checks.
 - This naturally produces `threeQuarterRight` or sometimes `unknown`, not a stable front view.
-- Core ML relative depth is the most useful current signal in this setup.
-- Apple Vision 3D works from normal 2D camera frames, but upper-body seated webcam use is intermittent and should remain auxiliary.
+- Earlier side/right-desk runs suggested Core ML relative depth was the strongest signal.
+- 2026-06-27 front-facing live checks contradicted that assumption on this machine: `VNDetectHumanBodyPoseRequest` 2D returned zero upper-body observations in seated front webcam framing, so Core ML relative-depth anchors could not be built.
+- In the same front-facing frames, Apple Vision 3D did return usable `depth3D` / `body3D` signals around confidence 0.70. Treat 3D as a real front-view fallback candidate, not merely an auxiliary/manual path.
 
 ## 3. What Was Implemented
 
@@ -68,6 +70,11 @@ The selected/failed candidates are exposed in debug lines as:
 Key file:
 
 - `Sources/TurtleCore/Detection/PostureAlgorithms.swift`
+
+Important current behavior:
+
+- `ViewpointRouter.route(.front)` now returns `.mlAuto`, not `.coreMLRelativeDepth`, so front routing does not exclude Vision 3D fallback.
+- `CoreMLRelativeDepthProvider` now checks `DepthAnchors` before loading the Core ML model. If 2D head/shoulder anchors are unavailable, it returns `nil` without paying the cold model-load cost.
 
 ### Calibration
 
@@ -134,7 +141,9 @@ Key files:
 - `scripts/fresh-run-app.sh`
 - `README.md`
 
-## 4. Latest Observed Runtime Result
+## 4. Runtime Results
+
+### Superseded 2026-06-25 side/right-desk result
 
 The user ran:
 
@@ -161,7 +170,17 @@ Images were also inspected:
 
 That black frame was a camera warmup artifact and was entering analysis.
 
-## 5. Final Fixes Applied After That Runtime Check
+### 2026-06-27 front-facing result
+
+Fresh front-facing runtime checks in `docs/todo/review.md` are now more authoritative for the current work:
+
+- `coreMLRelativeDepth` produced no `relativeDepth` signals in front webcam framing.
+- Root cause: Vision 2D body pose returned zero observations for seated close upper-body frames, while face detection and human rectangle detection worked.
+- `mlAuto` could produce Vision 3D fallback signals (`depth3D`, sometimes `body3D`) with confidence around 0.70.
+- Core ML inference latency after load remained good (~35ms p50 on M1 Max), but process-level model load was ~16s. Before the latest fix, `mlAuto` could trigger this cost even when 2D anchors were missing and Core ML could not produce a usable signal.
+- Current stored settings inspected on 2026-06-28: `debugEnabled=true`, `postureAlgorithm=mlAuto`, `baseline.depthDeltaNorm=0.055214207654478736`, `checkIntervalSeconds=30`.
+
+## 5. Fixes Applied After Runtime Checks
 
 After finding the black warmup frame and short effective signal span, the following fixes were added:
 
@@ -178,9 +197,25 @@ Key file:
 
 - `Sources/TurtleCore/Camera/CameraManager.swift`
 
+After the 2026-06-27 front-facing check, the following fixes were also added:
+
+- Front routing now keeps `.mlAuto` instead of forcing `.coreMLRelativeDepth`.
+- Core ML relative depth now skips model loading when 2D depth anchors are missing.
+- Added tests:
+  - `router keeps front on ML auto`
+  - `core ml depth provider does not load model without anchors`
+
+Key files:
+
+- `Sources/TurtleCore/Detection/ViewpointRouter.swift`
+- `Sources/TurtleCore/Camera/CoreMLRelativeDepthProvider.swift`
+- `Tests/manual/RoutingTests.swift`
+- `Tests/manual/DetectionTests.swift`
+- `Tests/manual/TestSupport.swift`
+
 ## 6. Verification Already Run
 
-Latest verification after final fixes:
+Latest verification after current fixes:
 
 ```bash
 make check
@@ -188,7 +223,7 @@ make check
 
 Result:
 
-- `101 tests, 101 passed, 0 failed`
+- `110 tests, 110 passed, 0 failed`
 - Swift package build passed
 
 ```bash
@@ -202,18 +237,24 @@ Result:
 - `.build/turtlemeck.dmg` generated
 - codesign verification passed inside package script
 - universal binary includes `x86_64 arm64`
+- `hdiutil create -format UDZO` failed with `장치가 구성되지 않았음`, but package script fallback `hdiutil makehybrid` succeeded.
 
-Final package timestamps seen:
+Latest package run observed:
 
-- `.build/turtlemeck.app/Contents/MacOS/turtlemeck`: 2026-06-25 17:59:13 KST
-- `.build/turtlemeck.zip`: 2026-06-25 17:59:15 KST
-- `.build/turtlemeck.dmg`: 2026-06-25 17:59:16 KST
+- 2026-06-28 00:30 KST
 
 `git diff --check` passed.
 
 ## 7. What The Next Agent Should Do First
 
-Run the new app and collect one fresh debug burst after the final fixes:
+The remaining missing proof is a fresh GUI app burst after the latest fixes. The last attempts from the Codex shell could not launch the app:
+
+- `open -n .build/turtlemeck.app` failed with `kLSNoExecutableErr`, even though the executable exists, `CFBundleExecutable=turtlemeck`, `codesign --verify` passes, and a minimal test app also failed with the same `open` error.
+- Directly running the app binary is not a valid substitute; AppKit aborts during `_RegisterApplication`.
+- A temporary headless runner using `CameraManager.runImmediateCheck` reached the camera boundary but failed with `camera permission denied`, because it did not have the GUI app's camera grant.
+- Computer Use access to `com.go.turtlemeck` and Finder was denied by MCP elicitation.
+
+Once a GUI launch path is available, run the new app and collect one fresh debug burst:
 
 ```bash
 make fresh-run
@@ -231,15 +272,15 @@ Expected after final fixes:
 - no fully black `frame-01-capture.png`
 - `frameCount` should be closer to 8 if processing keeps up
 - frame timestamps should span roughly 1.8s or more
-- `observedSignalKinds` should include `relativeDepth`
-- with current calibration, `validFrameCount` should be greater than 0
-- verdict should be `good` while user remains upright
+- in front-facing framing, `observedSignalKinds` may be `depth3D` rather than `relativeDepth` if Vision 2D body pose still returns zero observations
+- with the current `depthDeltaNorm` baseline, `validFrameCount` should be greater than 0 if Vision 3D fallback is working
+- verdict should be `good` while user remains upright; if it is `noEval`, inspect frame reasons before changing thresholds
 
 If the user recalibrates again, `analysis.json` in calibration mode should contain:
 
 - `mode = "calibration"`
 - `calibrationResult = "accepted"` when ML baseline is captured
-- `baseline.relativeDepthDelta` in later check runs
+- `baseline.depthDeltaNorm` or `baseline.bodyFrameAngle` in later check runs when front 3D fallback is the live signal
 
 ## 8. Known Risks / Follow-up Items
 
@@ -251,12 +292,12 @@ If the user recalibrates again, `analysis.json` in calibration mode should conta
    - It should be interpreted only against calibration baseline.
    - Current threshold is `Tuning.coreMLRelativeDepthForward = 0.08`; needs empirical tuning.
 
-3. **Apple Vision 3D is auxiliary.**
-   - In seated upper-body webcam views it often has low/no usable signal.
-   - Current debug output commonly shows `3D깊이=기준없음` or `신뢰부족`.
+3. **Apple Vision 3D is estimated, not metric sensor truth.**
+   - It should remain baseline-relative and quality-gated.
+   - Current front-facing evidence shows it can be the only live signal when Vision 2D body pose is empty.
 
-4. **Frame timing should be rechecked in live app.**
-   - Code now throttles frames, but the final live rerun after this fix has not been inspected yet.
+4. **Frame timing and 3D fallback should be rechecked in the GUI app.**
+   - Code now throttles frames and skips anchorless Core ML loads, but the final GUI live rerun after this fix has not been inspected yet.
    - This is the most important next verification.
 
 5. **Docs mention earlier timing assumptions.**

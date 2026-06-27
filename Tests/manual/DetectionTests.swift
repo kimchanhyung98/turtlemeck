@@ -504,6 +504,15 @@ func registerDetectionTests() {
         try expectEqual(frame.assessment, .good, "baseline-relative Core ML depth should evaluate off front view")
     }
 
+    TestRegistry.test("core ml depth provider does not load model without anchors") {
+        let provider = CoreMLRelativeDepthProvider(modelName: "MissingModelForNoAnchorTest")
+        let result = provider.estimate(cgImage: try tinyTestImage(), landmarks: PoseLandmarks(faceYawDegrees: 0))
+        let loadFailed = Mirror(reflecting: provider).children.first { $0.label == "loadFailed" }?.value as? Bool
+
+        try expect(result == nil, "provider should not estimate without head and shoulder anchors")
+        try expectEqual(loadFailed, false, "provider should not attempt model load when depth anchors are unavailable")
+    }
+
     TestRegistry.test("ML auto selects assessed core ml depth when available") {
         let pose = PoseLandmarks(
             faceYawDegrees: 0,
