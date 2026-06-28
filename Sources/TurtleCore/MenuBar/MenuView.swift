@@ -367,12 +367,12 @@ private struct MenuPanel<Content: View>: View {
 private struct MenuDisclosureRow<Content: View>: View {
     var title: String
     @Binding var isExpanded: Bool
-    private let content: Content
+    private let content: () -> Content
 
-    init(title: String, isExpanded: Binding<Bool>, @ViewBuilder content: () -> Content) {
+    init(title: String, isExpanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self._isExpanded = isExpanded
-        self.content = content()
+        self.content = content
     }
 
     var body: some View {
@@ -396,7 +396,7 @@ private struct MenuDisclosureRow<Content: View>: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                content
+                content()
                     .padding(.top, 10)
             }
         }
