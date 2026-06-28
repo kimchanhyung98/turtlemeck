@@ -74,6 +74,9 @@ struct OnboardingView: View {
                     detail: "이후에는 메뉴 막대에서 상태를 확인합니다."
                 ) {
                     Button {
+                        guard canStartTracking else {
+                            return
+                        }
                         model.markOnboardingComplete()
                         model.start()
                         onStart()
@@ -82,7 +85,7 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.settings.baseline == nil)
+                    .disabled(!canStartTracking)
                 }
 
                 HStack {
@@ -96,6 +99,10 @@ struct OnboardingView: View {
                 }
             }
         }
+    }
+
+    private var canStartTracking: Bool {
+        model.settings.baseline != nil
     }
 
     private var sensitivityPanel: some View {
