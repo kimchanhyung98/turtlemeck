@@ -82,6 +82,7 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(model.settings.baseline == nil)
                 }
 
                 HStack {
