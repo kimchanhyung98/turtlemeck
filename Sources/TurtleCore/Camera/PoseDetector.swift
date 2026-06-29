@@ -112,7 +112,7 @@ public final class PoseDetector {
         guard let recognized = try? observation.recognizedPoint(joint) else {
             return nil
         }
-        // Vision 3D 점에는 per-joint confidence가 없어 고정값을 둔다. 실제 품질 게이팅은 AlgorithmSupport.quality3D가 2D 신뢰도로 대신한다.
+        // Vision 3D 점에는 per-joint confidence가 없어 고정값을 둔다. 실제 품질 게이팅은 AlgorithmSupport.quality3D가 geometry와 신뢰도 높은 2D proxy를 함께 본다.
         let position = recognized.position
         return Point3D(
             x: Double(position.columns.3.x),

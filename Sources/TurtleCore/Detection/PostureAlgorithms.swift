@@ -205,14 +205,16 @@ enum AlgorithmSupport {
             return nil
         }
 
-        // 가려진(미추적) 머리/어깨 랜드마크는 품질 산정에서 제외한다.
-        // 한쪽 귀가 confidence 0으로 들어와 품질을 0으로 만들고도 게이트를 통과하던 문제 방지.
+        let head = pose3D.centerHead?.isTrackable == true ? pose3D.centerHead : pose3D.topHead
+        let geometryQuality = min(left.confidence, right.confidence, head?.confidence ?? 0, 0.7)
+
+        // 3D는 2D body pose가 약하거나 비는 정면 웹캠 프레임을 보완하는 경로다.
+        // 2D proxy는 신뢰도 높은 값만 품질 상한으로 참고하고, 낮은 2D confidence가 타당한 3D geometry를 끌어내리지는 않는다.
         let proxyConfidences = [pose.leftShoulder, pose.rightShoulder, pose.nose, pose.leftEar, pose.rightEar, pose.leftEye, pose.rightEye]
             .compactMap { $0 }
-            .filter { $0.isTrackable }
+            .filter { $0.isReliable }
             .map(\.confidence)
-        let proxyQuality = proxyConfidences.min() ?? 0.7
-        let quality = min(left.confidence, right.confidence, proxyQuality)
+        let quality = min(geometryQuality, proxyConfidences.min() ?? geometryQuality)
         // 추적 임계 미만이면 신뢰할 수 없는 3D로 보고 신호를 만들지 않는다(신뢰도 0 신호 차단).
         guard quality >= Tuning.minimumTrackingConfidence else {
             return nil

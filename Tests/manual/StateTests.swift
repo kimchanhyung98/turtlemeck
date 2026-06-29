@@ -35,6 +35,17 @@ func registerStateTests() {
         try expectEqual(verdict.assessment, .good, "no-eval gap should break continuous bad evidence")
     }
 
+    TestRegistry.test("burst processor preserves sparse high-confidence depth bad evidence") {
+        let frames = [
+            TimedFrame(time: 0.0, frame: AnalyzedFrame(assessment: .noEval)),
+            TimedFrame(time: 0.4, frame: AnalyzedFrame(assessment: .bad, signal: PostureSignal(kind: .depth3D, angleDegrees: 0.12, confidence: 0.7))),
+            TimedFrame(time: 0.8, frame: AnalyzedFrame(assessment: .noEval)),
+            TimedFrame(time: 1.2, frame: AnalyzedFrame(assessment: .noEval))
+        ]
+        let verdict = BurstProcessor().process(frames)
+        try expectEqual(verdict.assessment, .bad, "one high-confidence ML depth bad frame should count as sparse bad evidence")
+    }
+
     TestRegistry.test("state machine requires two bad bursts before caution") {
         var machine = PostureStateMachine(requiredBadBursts: 2)
         let first = machine.apply(BurstVerdict(assessment: .bad))

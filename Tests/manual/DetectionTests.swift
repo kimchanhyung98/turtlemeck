@@ -554,6 +554,19 @@ func registerDetectionTests() {
         try expect((frame.signal?.confidence ?? 0) >= Tuning.minimumTrackingConfidence, "occluded landmark must not drive 3D confidence to zero")
     }
 
+    TestRegistry.test("3D quality ignores weak 2D proxy when 3D geometry is plausible") {
+        let pose = PoseLandmarks(
+            nose: lowConfidence(0.5, 0.3),
+            leftShoulder: lowConfidence(0.35, 0.72),
+            rightShoulder: lowConfidence(0.65, 0.72),
+            pose3D: Pose3D(leftShoulder: p3(-0.4, 1.2, 0), rightShoulder: p3(0.4, 1.2, 0), spine: p3(0, 0, 0), centerHead: p3(0, 2.2, 0.15))
+        )
+        let context = PostureAnalysisContext(baseline: nil, sensitivity: .medium, viewpoint: ViewpointResult(band: .front, confidence: 0.7), systemInfo: SystemInfo(isAppleSilicon: true))
+        let frame = BodyFrame3DAlgorithm().analyze(pose, context: context)
+        try expect(frame.signal != nil, "plausible 3D geometry should still produce a signal")
+        try expect((frame.signal?.confidence ?? 0) >= 0.6, "weak 2D proxy should not drag plausible 3D confidence below usable ML confidence")
+    }
+
     TestRegistry.test("upright gate downgrades good to bad when head is clearly tilted") {
         let pose = PoseLandmarks(
             leftEye: confident(0.55, 0.30),
