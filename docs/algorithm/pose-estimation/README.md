@@ -27,18 +27,16 @@ flowchart TD
 
 | 문서 | 내용 |
 |---|---|
-| 본 README | 모델 개요·feature 설계·판정 파이프라인 (초안) + [검증 부록](#부록--추가-조사-보강) |
-| [cva-and-fhp-metrics.md](cva-and-fhp-metrics.md) | CVA 정의·FHP 임계 비합의·사진 CVA 한계 (동료심사 확정) |
-| [monocular-limits.md](monocular-limits.md) | 단안 3D ill-posed·정면 카메라 한계·**깊이 완화 기법(3차)**·One-Euro filter |
+| 본 README | 모델 개요·feature 설계·판정 파이프라인 + [추가 조사 보강](#추가-조사-보강) |
+| [cva-and-fhp-metrics.md](cva-and-fhp-metrics.md) | CVA 정의·FHP 임계 비합의·사진 CVA 한계 (동료심사) |
+| [monocular-limits.md](monocular-limits.md) | 단안 3D ill-posed·정면 카메라 한계·깊이 완화 기법·One-Euro filter |
 | [model-comparison.md](model-comparison.md) | 모델 비교(상체 관점)·라이선스·현 Vision 유지 타당성 |
-| [baseline-calibration.md](baseline-calibration.md) | **개인 baseline 보정·적응 전략 (3차 신규)** — percentile/median·CUSUM drift |
-| [viewpoint-robust-geometry.md](viewpoint-robust-geometry.md) | **시점 강건 머리-몸통 각도 기하 (4차 신규)** — 2D atan2 한계·body-frame 3D·정면=depth·hip-rooted root |
+| [baseline-calibration.md](baseline-calibration.md) | 개인 baseline 보정·적응 전략 — percentile/median·CUSUM drift |
+| [viewpoint-robust-geometry.md](viewpoint-robust-geometry.md) | 시점 강건 머리-몸통 각도 기하 — 2D atan2 한계·body-frame 3D·정면=depth·hip-rooted root |
 
-> CVA 임계·정면 proxy·단안 한계·One-Euro가 동료심사 문헌으로 확정됐다(1차 부록의 [미검증]/[1-1] 항목 중 확정된 것은 각 분할 문서에서 갱신).
+> CVA 임계·정면 proxy·단안 한계·One-Euro는 동료심사 문헌으로 확정됐으며, 세부는 각 분할 문서에서 다룬다. 주요 보강: (1) baseline 보정 방법론(percentile/median + CUSUM, [baseline-calibration.md](baseline-calibration.md)), (2) 단안 깊이 오차 2~3배·임상 5도 미달 정량화, (3) 깊이 완화 3수단(temporal·prior·metric-space, [monocular-limits.md §5](monocular-limits.md)), (4) 동일 jitter 조건에서 One-Euro의 Kalman/EMA 대비 lag trade-off가 유리함. Molaeifar/Work 2021 정면 proxy 주장은 성립하지 않는다([monocular-limits.md §2](monocular-limits.md)).
 >
-> 추가 검증으로: (1) baseline 보정 방법론 확보(percentile/median + CUSUM, [baseline-calibration.md](baseline-calibration.md)), (2) 단안 깊이 오차 2~3배·임상 5도 미달 정량화, (3) 깊이 완화 3수단(temporal·prior·metric-space, [monocular-limits.md §5](monocular-limits.md)), (4) One-Euro의 Kalman/EMA 대비 정량 우월 확인. **정정:** Molaeifar/Work 2021 정면 proxy 주장이 기각되어 [monocular-limits.md §2](monocular-limits.md)에서 강등됨.
->
-> 자세 추정 정확도에 집중한 추가 검증으로(알림 정책 제외): (1) 단순 2D `atan2` 각은 비단조성 수정 후에도 *단일 임계*로는 FHP/정상 분포가 겹쳐 부족 → **body-frame 3D 각 + 다중 feature**, (2) 정면 FHP는 **depth가 필요**(성공 선례 PreventFHP = Kinect depth) → Apple Vision 3D 경로·이마-몸통 depth 차이 feature, (3) Apple 3D는 **hip-rooted**라 근접착석 root 불안정 → 상체 관절 anchor + 2D/3D 융합 게이팅. 신규 문서 [viewpoint-robust-geometry.md](viewpoint-robust-geometry.md). **반증(채택 안 함):** "정면 각으로 CVA 예측", "정면 얼굴이미지 FHP 분류기".
+> 자세 추정 정확도 관점에서(알림 정책 제외): (1) 단순 2D `atan2` 각은 비단조성 수정 후에도 *단일 임계*로는 FHP/정상 분포가 겹쳐 부족하므로 **body-frame 3D 각 + 다중 feature**가 필요하고, (2) 정면 FHP는 **depth가 필요**하며(성공 선례 PreventFHP = Kinect depth) Apple Vision 3D 경로·이마-몸통 depth 차이 feature를 쓰며, (3) Apple 3D는 **hip-rooted**라 근접착석 root가 불안정하므로 상체 관절 anchor + 2D/3D 융합 게이팅이 필요하다([viewpoint-robust-geometry.md](viewpoint-robust-geometry.md)). "정면 각으로 CVA 예측"과 "정면 얼굴이미지 FHP 분류기"는 채택하지 않는다.
 
 ## 요약 결론
 
@@ -275,79 +273,80 @@ Face pose:
 
 ---
 
-# 부록 — 추가 조사 보강
+# 추가 조사 보강
 
-> 본 부록은 위 초안을 **대체하지 않고 보강**한다. 추가 검증 결과 중 **검증을 통과한 근거**만 인용과 함께 추가하고, 초안과 **관점이 다르거나 상충하는 지점**은 그대로 병기한다.
->
-> 검증 신뢰도 표기: **[검증 3-0]** = 3개 독립 검토자 만장일치 / **[검증 1-1]** = 의견 분파(논쟁적) / **[반증]** = 적대적 검토에서 기각됨.
->
-> 주의: 이번 검증 라운드는 세션 한도로 **synthesis 단계와 일부 클레임 검증이 미완**이다. 따라서 본 부록은 "확정 결론"이 아니라 "검증을 통과한 근거 + 미해결 쟁점" 모음이며, 아래 [A-5]의 미검증 항목은 추후 보완이 필요하다.
+본 절은 위 내용을 1차 출처 인용으로 보강하고, 추가 검증에서 확인된 근거와 남은 미해결 쟁점을 정리한다.
 
-## A-1. (보강) 검증된 모델 사실 — 초안 내용 강화
+## 검증된 모델 사실
 
-초안의 BlazePose / MediaPipe 서술을 1차 출처 인용으로 뒷받침한다.
+BlazePose / MediaPipe 서술을 1차 출처 인용으로 뒷받침한다.
 
-- **BlazePose는 온디바이스 실시간이 1차 출처로 확인된다.** 단일 인물 33 keypoint를 Pixel 2(모바일 CPU)에서 **30 FPS 이상**으로 추론한다. **[검증 3-0]**
+- **BlazePose는 온디바이스 실시간이 1차 출처로 확인된다.** 단일 인물 33 keypoint를 Pixel 2(모바일 CPU)에서 **30 FPS 이상**으로 추론한다.
   > "the network produces 33 body keypoints for a single person and runs at over 30 frames per second on a Pixel 2 phone." — BlazePose (arXiv:2006.10204)
-- **상체 지표에 필요한 랜드마크가 토폴로지에 포함된다** — nose, eyes, ears, mouth, left/right shoulder (0–12번). 즉 CVA류 머리-어깨 기하를 만들 재료가 있다. **[검증 3-0]**
-- **BlazePose는 상체 부분 관측(upper-body-only) 상황에서도 추적을 유지할 수 있음을 원논문에서 사례로 언급한다.** 학습 시 가림(occlusion)을 시뮬레이션하고 per-point visibility classifier로 가려진/부정확한 점을 표시해, 하체가 프레임 밖이어도 추적을 유지한다. **[검증 3-0]**
+- **상체 지표에 필요한 랜드마크가 토폴로지에 포함된다** — nose, eyes, ears, mouth, left/right shoulder (0–12번). 즉 CVA류 머리-어깨 기하를 만들 재료가 있다.
+- **BlazePose는 상체 부분 관측(upper-body-only) 상황에서도 추적을 유지할 수 있음을 원논문에서 사례로 언급한다.** 학습 시 가림(occlusion)을 시뮬레이션하고 per-point visibility classifier로 가려진/부정확한 점을 표시해, 하체가 프레임 밖이어도 추적을 유지한다.
   > "we simulate occlusions ... per-point visibility classifier ... This allows tracking a person constantly even for cases of significant occlusions, like upper body-only or when the majority of person body is out of scene." — BlazePose (arXiv:2006.10204)
   - **앱 함의:** "상체만 추적하면 된다"는 요구는 BlazePose류 모델에서도 가능한 시나리오다. 단 원논문은 이를 독립 기능/모드가 아니라 occlusion 처리 능력의 사례로 제시한다.
-- **MediaPipe Pose Landmarker = BlazePose + GHUM 3D 파이프라인**으로 33개 3D landmark를 normalized + world 좌표로 출력한다. **[검증 3-0]** 즉 초안이 분리 서술한 "BlazePose"와 "Pose Landmarker"는 사실상 같은 모델 계열의 논문/제품 두 얼굴이다 (초안의 별도 절을 통합 이해해도 무방).
+- **MediaPipe Pose Landmarker = BlazePose + GHUM 3D 파이프라인**으로 33개 3D landmark를 normalized + world 좌표로 출력한다. 즉 위에서 분리 서술한 "BlazePose"와 "Pose Landmarker"는 사실상 같은 모델 계열의 논문/제품 두 얼굴이다.
 
-## A-2. (보강) CVA 임상 정의·임계 — 초안 "CVA 동일시 금지"를 뒷받침하되 임계는 논쟁적
+## CVA 임상 정의·임계
 
-- **CVA 정의(검증됨):** 귀 tragus→C7 극돌기 선과, C7을 지나는 지면 평행 수평선 사이의 각. **[검증 3-0]** (PMC7559098)
-- **광학식(photogrammetry) CVA는 *신뢰도(재현성·평가자간 일치)* 가 확립돼 임상 스크리닝 지표로 쓰인다.** → 초안이 "앱 점수와 CVA를 동일시하지 말라"고 한 것은 맞지만, **그 반대 함의도 부분적으로 성립**한다: 측면 사진 CVA는 *재현성*이 높아 정면 proxy보다 정당하다. 따라서 앱이 **측면 뷰를 유도**할 수 있다면 CVA 유사 지표의 정당성은 초안이 시사하는 것보다 강하다.
-  - ⚠️ **정정:** 이전 판본은 이 문장 근거로 **PMC11012400을 인용했는데, 이는 오인용이다.** PMC11012400은 오히려 사진 CVA가 방사선 정렬과 **R²≈0.30**에 그쳐 *"방사선 측정을 대체할 수 없다"*고 결론한 **회의적 출처**다([cva-and-fhp-metrics.md §3](cva-and-fhp-metrics.md)에서 그 용도로 정확히 인용). 즉 사진 CVA는 *재현성(reliability)* 은 높으나 *방사선 대비 기준타당도(criterion validity)* 는 낮다 — 둘을 구분해야 한다. 측면 뷰가 정면보다 나은 근거는 "표준 기하 + 재현성"이지 "방사선 타당성"이 아니며, 어느 경우든 앱은 "측정"이 아니라 "신호"다.
-- **임계값은 단일하지 않다(논쟁적).** "CVA < ~50° → FHP (비정상 50–53° 구간)"는 **[검증 1-1]** 로 검토자 간 합의 실패. 다른 출처는 48° 기준도 제시한다. → **초안에 임계 수치를 박아 넣지 말 것.** 절대 임계 단독 의존은 위험하고, **개인 baseline 대비 변화**를 주신호로 쓰라는 초안 결론을 오히려 강화한다.
-- **변하지 않는 핵심 제약(검증됨):** CVA의 C7 기준점은 일반 웹캠 랜드마크에 **직접 존재하지 않는다.** shoulder midpoint/neck을 C7 proxy로 쓰는 것은 "자세 신호"로는 가능하나 **임상 CVA가 아니다.** → 초안의 "CVA 수치를 임상값처럼 표시 금지"는 유지.
+CVA를 앱 점수와 동일시해서는 안 되며, 임계값 또한 논쟁적이다.
 
-## A-3. (반대 의견) 정면-only 전방머리 추정 — 초안보다 더 강하게 회의적으로
+- **CVA 정의:** 귀 tragus→C7 극돌기 선과, C7을 지나는 지면 평행 수평선 사이의 각. (PMC7559098)
+- **광학식(photogrammetry) CVA는 *신뢰도(재현성·평가자간 일치)* 가 확립돼 임상 스크리닝 지표로 쓰인다.** 측면 사진 CVA는 *재현성*이 높아 정면 proxy보다 정당하다. 따라서 앱이 **측면 뷰를 유도**할 수 있다면 CVA 유사 지표의 정당성이 강해진다.
+  - 단, 사진 CVA는 *재현성(reliability)* 은 높으나 *방사선 대비 기준타당도(criterion validity)* 는 낮다 — 둘을 구분해야 한다. PMC11012400은 사진 CVA가 방사선 정렬과 **R²≈0.30**에 그쳐 *"방사선 측정을 대체할 수 없다"*고 결론한다([cva-and-fhp-metrics.md §3](cva-and-fhp-metrics.md)). 측면 뷰가 정면보다 나은 근거는 "표준 기하 + 재현성"이지 "방사선 타당성"이 아니며, 어느 경우든 앱은 "측정"이 아니라 "신호"다.
+- **임계값은 단일하지 않다.** "CVA < ~50° → FHP (비정상 50–53° 구간)"는 출처 간 합의가 없으며, 다른 출처는 48° 기준도 제시한다. **임계 수치를 하드코딩하지 말 것.** 절대 임계 단독 의존은 위험하고, **개인 baseline 대비 변화**를 주신호로 쓰는 방향을 강화한다.
+- **변하지 않는 핵심 제약:** CVA의 C7 기준점은 일반 웹캠 랜드마크에 **직접 존재하지 않는다.** shoulder midpoint/neck을 C7 proxy로 쓰는 것은 "자세 신호"로는 가능하나 **임상 CVA가 아니다.** CVA 수치를 임상값처럼 표시해서는 안 된다.
 
-초안은 정면 2D를 "보조 신호 + 강한 확신 없으면 noEval"로 다룬다. 이번 검증은 **초안보다 더 부정적인 근거**를 제공한다.
+## 정면-only 전방머리 추정의 한계
 
-- "**정면 평면 측정(흉골 midpoint + 양쪽 귀 tragus)만으로 시상면 CVA를 예측할 수 있다**"는 솔깃한 주장은 적대적 검토에서 **[반증]** 됐고, 같은 출처조차 "frontal proxy는 3D CVA와 **moderate(중등도) 상관일 뿐, 완전 대체 불가**"라고 명시한다. (WOR-213451) **3차 검증에서는 이 주장이 0-3으로 기각되어, 긍정 근거가 아니라 정면 proxy 불충분의 근거로만 남긴다**(상세 [monocular-limits.md §2](monocular-limits.md)).
-- **함의:** Mac 내장 카메라(정면) 단독으로 전방머리를 *정량화*하려는 시도는 구조적으로 오차가 크다. 초안의 "정면은 보수적/noEval" 방침을 유지하되, **한 발 더**: 정면에서는 전방머리 *심각도 점수*를 제시하지 말고 (a) baseline 대비 *상대 악화 추세*만 약한 신호로 쓰거나, (b) 사용자에게 **측면/3-4 측면 착석 또는 카메라 측면 배치를 유도**하는 편이 정직하다.
-- 정면 2D 보조 지표(머리 bbox 크기·코-어깨 수직비 등)는 3차·4차 검증에서도 실효 근거가 부족했다. 채택 전 자체 데이터 검증이 필요하다.
+정면 2D는 보조 신호로 다루고 강한 확신이 없으면 noEval로 두는 것이 적절하며, 정량화는 구조적으로 어렵다.
 
-## A-4. (보강) 모노큘러 깊이 모호성 — 3D 경로 신뢰도에 대한 경고
+- "**정면 평면 측정(흉골 midpoint + 양쪽 귀 tragus)만으로 시상면 CVA를 예측할 수 있다**"는 주장은 성립하지 않는다. 같은 출처조차 "frontal proxy는 3D CVA와 **moderate(중등도) 상관일 뿐, 완전 대체 불가**"라고 명시한다(WOR-213451). 이 주장은 긍정 근거가 아니라 정면 proxy 불충분의 근거로만 남는다(상세 [monocular-limits.md §2](monocular-limits.md)).
+- **함의:** Mac 내장 카메라(정면) 단독으로 전방머리를 *정량화*하려는 시도는 구조적으로 오차가 크다. 정면은 보수적으로/noEval로 유지하되, 전방머리 *심각도 점수*를 제시하지 말고 (a) baseline 대비 *상대 악화 추세*만 약한 신호로 쓰거나, (b) 사용자에게 **측면/3-4 측면 착석 또는 카메라 측면 배치를 유도**하는 편이 정직하다.
+- 정면 2D 보조 지표(머리 bbox 크기·코-어깨 수직비 등)는 검증에서 실효 근거가 부족했다. 채택 전 자체 데이터 검증이 필요하다.
 
-- 단일 카메라 3D 추정은 **본질적으로 ill-posed**다: 하나의 2D 관측이 카메라 광선 위 무한히 많은 3D 점과 일치(깊이 모호성). 다중 카메라/depth 센서와 달리 단안은 직접 깊이 정보가 없다. *(이 클레임군은 이번 라운드에서 검증 투표가 세션 한도로 미완 — 단, 단안 3D의 ill-posed 성질은 컴퓨터비전에서 광범위하게 합의된 사실이며 다수 출처 PMC12031093 / arXiv:2411.13026가 동일 진술.)*
-- **앱 함의:** `VNDetectHumanBodyPose3DRequest`의 head/spine 전방거리도 *추정값*이다. 초안의 "3D는 Apple Silicon에서만 강하게, 그 외 profile fallback"은 타당하다. 추가로 — **근접 착석(상체만 프레임)에서는 root(hip center)가 프레임 밖**이라 3D root/spine 신뢰도가 떨어질 수 있다(초안 174행과 동일 우려). 따라서 3D 경로도 **무조건 신뢰가 아니라 confidence gating + baseline 상대화**가 필요.
-- **온디바이스 실측(해소):** 직접 촬영 라이브 캡처(M1 Pro·macOS 15.7.2·노트북 웹캠)로 측정한 결과, 상체-only 입력에서 3D 발화는 **간헐적**(라이브 10회 중 5회; 초근접 0/3, 정상 착석 약 4/6)이고, 발화해도 hip/knee/ankle은 추론값이며, 마진 입력에서 시상각이 부정확(거북목인데 88°)했다. 또 **JPEG 재인코딩이 3D 거동을 바꿔** 정지 이미지로는 충실히 평가할 수 없음을 확인했다. ⇒ 상체-only 3D는 주 경로 부적합(실험적 보조). 상세 [algorithm-draft §0](../algorithm-draft.md).
+## 모노큘러 깊이 모호성과 3D 경로 신뢰도
 
-## A-5. 미해결·미검증 쟁점 → 2차에서 일부 해소
+- 단일 카메라 3D 추정은 **본질적으로 ill-posed**다: 하나의 2D 관측이 카메라 광선 위 무한히 많은 3D 점과 일치(깊이 모호성). 다중 카메라/depth 센서와 달리 단안은 직접 깊이 정보가 없다. 단안 3D의 ill-posed 성질은 컴퓨터비전에서 광범위하게 합의된 사실이며 다수 출처(PMC12031093 / arXiv:2411.13026)가 동일 진술한다.
+- **앱 함의:** `VNDetectHumanBodyPose3DRequest`의 head/spine 전방거리도 *추정값*이다. "3D는 Apple Silicon에서만 강하게, 그 외 profile fallback"이 타당하다. 추가로 — **근접 착석(상체만 프레임)에서는 root(hip center)가 프레임 밖**이라 3D root/spine 신뢰도가 떨어질 수 있다. 따라서 3D 경로도 **무조건 신뢰가 아니라 confidence gating + baseline 상대화**가 필요하다.
+- **온디바이스 실측:** 직접 촬영 라이브 캡처(M1 Pro·macOS 15.7.2·노트북 웹캠)로 측정한 결과, 상체-only 입력에서 3D 발화는 **간헐적**(라이브 10회 중 5회; 초근접 0/3, 정상 착석 약 4/6)이고, 발화해도 hip/knee/ankle은 추론값이며, 마진 입력에서 시상각이 부정확(거북목인데 88°)했다. 또 **JPEG 재인코딩이 3D 거동을 바꿔** 정지 이미지로는 충실히 평가할 수 없음을 확인했다. ⇒ 상체-only 3D는 주 경로 부적합(실험적 보조). 상세 [algorithm-draft §0](../algorithm-draft.md).
 
-> **갱신:** 아래 중 ✅는 동료심사 문헌으로 확정됨. ⬜는 여전히 미해결.
+## 확정된 근거와 미해결·추가 검증 필요 쟁점
 
-- ✅ **One-Euro filter** — 속도적응 cutoff·jitter↔lag 트레이드오프가 원논문(CHI 2012)으로 확정. **3차 추가:** Kalman·EMA·이동평균 대비 오차(SEM 0.004 vs 0.015)·lag 모두 우월 → 교체 불필요. → [monocular-limits.md §4](monocular-limits.md). (2-파라미터 튜닝 세부는 여전히 원논문 참조.)
-- ✅ **CVA 임계 비합의** — 1차의 [1-1]을 확정: 단일 합의 임계 없음, 증상↔무증상 중첩. → [cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md).
-- ✅ **개인 baseline 보정 전략 (3차 해소)** — rolling-window percentile/median + CUSUM drift 트리거가 인접 도메인(CGM·wearable)에서 검증됨. **단 파라미터는 도메인 특수라 자체 데이터 검증 필요.** → [baseline-calibration.md](baseline-calibration.md).
-- ✅ **단안 깊이 완화 기법 (3차 신규)** — temporal consistency·anatomical prior·metric-space heatmap. → [monocular-limits.md §5](monocular-limits.md).
-- ⚠️ **정면 proxy — 3차에서 강등(긍정→반증).** 2차에 "moderate 상관"으로 적었으나, 3차 적대적 검증에서 Molaeifar/Work 2021의 정면-proxy 타당성 주장이 **0-3 기각**. 정면 단독 정량화는 강한 근거 없음. → [monocular-limits.md §2](monocular-limits.md).
-- ✅ **주요 대안 모델 라이선스** — MediaPipe/MoveNet은 Apache-2.0, Ultralytics YOLO는 AGPL-3.0 또는 Enterprise License, OpenPose는 비상업 연구용(상용은 CMU 별도 협의)으로 공식 출처 확인. → [model-comparison.md §3](model-comparison.md).
-- ⬜ **알림 *결정* 레이어 (3차 미해소, 최대 잔여 공백)** — hysteresis/debounce/state-machine 기반 알림 전이(false-positive 억제)는 3차에서도 직접 근거 미확보. per-channel 스무딩과 구분되는 별도 주제. HCI 알림/방해 문헌으로 다음 라운드 조사 필요.
-- ⬜ **모델별 정량 벤치(mAP/FPS)** — 2·3차에서도 상호비교 가능한 통일 벤치 미확보(미확정).
-- ⚠️ **정면 2D 보조 지표(머리 bbox·코-어깨 비) 실효성 — 4차에서 더 부정적.** 카메라 거리 perspective가 비율을 왜곡(Cognition 2017)하고, 정면 FHP 성공 선례는 depth 카메라가 필요했다 → 2D 비율만으로는 약한 proxy. 미검증 가설로 유지하되 우선순위 낮음. → [viewpoint-robust-geometry.md §3](viewpoint-robust-geometry.md).
-- ✅ **[실측 해소] hip 프레임 밖 시 3D root 안정성** — 노트북 웹캠 상체 입력에서 측정: 3D 발화가 간헐적(10회 중 5회)이고, 발화 시 hip/knee/ankle은 추론값, 마진 프레임에서 head-torso 시상각이 부정확(거북목인데 88°). ⇒ 근접 착석에서 3D root/하반신은 신뢰 불가 → 3D는 실험적 보조로 격하. ([algorithm-draft §0](../algorithm-draft.md))
-- ⬜ **[4차 신규] 2D+3D 융합 게이팅 실효성** — 2D(per-joint confidence 有)로 3D(無) 관절을 cross-check 게이팅하면 self-occlusion·truncation 하 각 안정성이 개선되는가.
-- ⬜ **[4차 신규] 이마-몸통 depth 차이 feature** — PreventFHP 개념을 Apple 3D 관절만으로 데스크 거리(~50–70cm)에서 신뢰성 있게 복원 가능한가.
-- ⬜ **[4차 신규] 단일 대상 선택·미러링** — max-bbox vs center vs confidence 선택, 정면 미러 좌우 관절 swap. 연구 근거 없음, 엔지니어링 결정+테스트 필요.
-- ⬜ **MediaPipe CVA 앱(CVA-CVapp)** 실측 신뢰도 — 검증 미완.
+다음 항목은 동료심사 문헌·실측으로 확정됐다.
 
-## A-6. 종합 — 초안 결론과의 정합/차이 요약
+- **One-Euro filter** — 속도적응 cutoff·jitter↔lag 트레이드오프가 원논문(CHI 2012)으로 확정. 동일 jitter 조건의 비교에서 Kalman·EMA·이동평균보다 lag trade-off가 유리해 현재 필터를 유지할 근거가 있다. → [monocular-limits.md §4](monocular-limits.md). (2-파라미터 튜닝 세부는 원논문 참조.)
+- **CVA 임계 비합의** — 단일 합의 임계 없음, 증상↔무증상 중첩. → [cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md).
+- **개인 baseline 보정 전략** — rolling-window percentile/median + CUSUM drift 트리거가 인접 도메인(CGM·wearable)에서 검증됨. **단 파라미터는 도메인 특수라 자체 데이터 검증 필요.** → [baseline-calibration.md](baseline-calibration.md).
+- **단안 깊이 완화 기법** — temporal consistency·anatomical prior·metric-space heatmap. → [monocular-limits.md §5](monocular-limits.md).
+- **정면 proxy 한계** — Molaeifar/Work 2021의 정면-proxy 타당성 주장은 성립하지 않으며, 정면 단독 정량화는 강한 근거가 없다. → [monocular-limits.md §2](monocular-limits.md).
+- **주요 대안 모델 라이선스** — MediaPipe/MoveNet은 Apache-2.0, Ultralytics YOLO는 AGPL-3.0 또는 Enterprise License, OpenPose는 비상업 연구용(상용은 CMU 별도 협의)으로 공식 출처 확인. → [model-comparison.md §3](model-comparison.md).
+- **hip 프레임 밖 시 3D root 안정성** — 노트북 웹캠 상체 입력에서 측정: 3D 발화가 간헐적(10회 중 5회)이고, 발화 시 hip/knee/ankle은 추론값, 마진 프레임에서 head-torso 시상각이 부정확(거북목인데 88°). ⇒ 근접 착석에서 3D root/하반신은 신뢰 불가 → 3D는 실험적 보조로 다룬다. ([algorithm-draft §0](../algorithm-draft.md))
 
-| 쟁점 | 초안 입장 | 부록(검증 후) |
-|---|---|---|
-| 주 모델 | Apple Vision이 현실적 | **동의** (검증된 대안 BlazePose/MediaPipe는 통합비용 ↑) |
-| 상체-only 추적 | 전신 keypoint 불필요 | **강화** — BlazePose가 occlusion 처리 사례로 상체 부분 관측에서도 추적 가능함을 언급 [3-0] |
-| CVA 사용 | 앱 점수=CVA 동일시 금지 | **동의하되 보강** — 측면 CVA는 표준 기하·재현성 측면에서 정면 proxy보다 낫지만, 방사선 정렬 대체 지표는 아님. 임계도 논쟁적 [1-1] |
-| 정면 2D | 보조 신호/noEval | **더 회의적** — frontal-only CVA 추정은 [반증], 측면 유도 권장 |
-| 3D 경로 | Apple Silicon 한정 강사용 | **동의 + 경고** — 단안 3D ill-posed, 근접착석 root 불안정 |
-| baseline 상대화 | 절대보다 delta 우선 | **강화** — 임계 비합의가 이를 뒷받침 |
+다음 항목은 미해결이며 추가 검증이 필요하다.
 
-**한 줄 결론:** 초안의 방향(Vision 기반·상체 subset·baseline 상대화·정면 보수)은 검증과 대체로 합치한다. 가장 큰 *추가*는 — (1) BlazePose가 상체 부분 관측에서도 추적 가능함을 원논문 사례로 확인, (2) 정면-only 전방머리 정량화는 초안보다 더 부정적이며 **측면 뷰 유도**가 정공법, (3) CVA 임계는 출처마다 달라 **수치 하드코딩 금지**.
+- **알림 *결정* 레이어 (최대 잔여 공백)** — hysteresis/debounce/state-machine 기반 알림 전이(false-positive 억제)는 직접 근거 미확보. per-channel 스무딩과 구분되는 별도 주제. HCI 알림/방해 문헌 조사 필요.
+- **모델별 정량 벤치(mAP/FPS)** — 상호비교 가능한 통일 벤치 미확보.
+- **정면 2D 보조 지표(머리 bbox·코-어깨 비) 실효성** — 카메라 거리 perspective가 비율을 왜곡(Cognition 2017)하고, 정면 FHP 성공 선례는 depth 카메라가 필요했다 → 2D 비율만으로는 약한 proxy. 미검증 가설로 유지하되 우선순위 낮음. → [viewpoint-robust-geometry.md §3](viewpoint-robust-geometry.md).
+- **2D+3D 융합 게이팅 실효성** — 2D(per-joint confidence 有)로 3D(無) 관절을 cross-check 게이팅하면 self-occlusion·truncation 하 각 안정성이 개선되는가.
+- **이마-몸통 depth 차이 feature** — PreventFHP 개념을 Apple 3D 관절만으로 데스크 거리(~50–70cm)에서 신뢰성 있게 복원 가능한가.
+- **단일 대상 선택·미러링** — max-bbox vs center vs confidence 선택, 정면 미러 좌우 관절 swap. 연구 근거 없음, 엔지니어링 결정+테스트 필요.
+- **MediaPipe CVA 앱(CVA-CVapp)** 실측 신뢰도 — 미검증.
+
+## 종합 결론 요약
+
+| 쟁점 | 결론 |
+|---|---|
+| 주 모델 | Apple Vision이 현실적 (대안 BlazePose/MediaPipe는 통합비용 ↑) |
+| 상체-only 추적 | 전신 keypoint 불필요. BlazePose가 occlusion 처리 사례로 상체 부분 관측에서도 추적 가능함을 언급 |
+| CVA 사용 | 앱 점수=CVA 동일시 금지. 측면 CVA는 표준 기하·재현성 측면에서 정면 proxy보다 낫지만 방사선 정렬 대체 지표는 아니며, 임계도 논쟁적 |
+| 정면 2D | 보조 신호/noEval. frontal-only CVA 추정은 성립하지 않고 측면 유도 권장 |
+| 3D 경로 | API availability는 macOS 14+이며, 앱 정책상 Apple Silicon으로 추가 제한. 단 단안 3D는 ill-posed, 근접착석 root 불안정 |
+| baseline 상대화 | 절대보다 delta 우선. 임계 비합의가 이를 뒷받침 |
+
+**한 줄 결론:** Vision 기반·상체 subset·baseline 상대화·정면 보수의 방향이 적절하다. 핵심은 — (1) BlazePose가 상체 부분 관측에서도 추적 가능함을 원논문 사례로 확인, (2) 정면-only 전방머리 정량화는 어려우며 **측면 뷰 유도**가 정공법, (3) CVA 임계는 출처마다 달라 **수치 하드코딩 금지**.
 
 ---
 
@@ -368,7 +367,7 @@ Face pose:
 - A Computer Vision-Based Application for the Assessment of Head Posture: <https://www.mdpi.com/2076-3417/13/6/3910>
 - Modelling Proper and Improper Sitting Posture of Computer Users Using Machine Vision: <https://www.mdpi.com/2076-3417/13/9/5402>
 
-### 부록 2차 조사 인용 출처
+### 추가 조사 인용 출처
 
 - MediaPipe Pose Landmarker guide (33 3D landmarks, GHUM): <https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker>
 - 사진 CVA와 방사선 정렬 비교(R²≈0.30, 한계 근거): <https://pmc.ncbi.nlm.nih.gov/articles/PMC11012400/>

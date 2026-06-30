@@ -1,6 +1,6 @@
 # 개인 baseline 보정·적응 전략
 
-"baseline 상대화를 주신호로 쓰라"는 결론([cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md), [model-comparison.md §5](model-comparison.md))의 *방법론*(어떻게 baseline을 잡고 갱신하는가)을 채운다. 신뢰도 **[3-0]** = 3개 독립 검토자 만장일치.
+"baseline 상대화를 주신호로 쓰라"는 결론([cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md), [model-comparison.md §5](model-comparison.md))의 *방법론*(어떻게 baseline을 잡고 갱신하는가)을 채운다.
 
 > ⚠️ **도메인 전이 경고(문서 전체에 적용).** 아래 근거의 핵심은 **자세/FHP가 아닌 인접 도메인**(연속혈당, wearable 활동인식)에서 나왔다. **방법론 원리는 전이되지만 구체 파라미터(percentile 값·window 크기·임계)는 전이되지 않는다.** turtlemeck은 이를 자체 로그 데이터로 튜닝해야 한다(→ §5).
 
@@ -24,15 +24,15 @@ flowchart TD
 - 앱이 출력하는 각은 임상 CVA가 아니라 **자체 정의 신호**이며, 체형·카메라 높이·좌석에 의존한다.
 - → 절대 임계 단독보다 **개인별 좋은-자세 분포 대비 상대 변화(delta)**가 견고하다. 이 방향은 문헌으로 뒷받침된다(아래).
 
-## 2. rolling-window percentile/median baseline [3-0, 단 파라미터는 도메인 특수]
+## 2. rolling-window percentile/median baseline (단 파라미터는 도메인 특수)
 
 **검증된 원리:** 인구 임계 대신 **개인의 슬라이딩 윈도우 percentile(또는 median)**을 baseline으로 쓰는 것은 검증된 개인화 패턴이다.
 
 - 1차 근거(Frontiers in Nutrition 2023, **PMC10425768**, n=219): 연속혈당(CGM)에서 최적 basal 추정기는 **"이전 24h의 40th percentile"**이었고, 7개 percentile × 5개 window를 시험해 *"robust and unbiased estimate"*가 되도록 의도적으로 보정했다(bias −0.02 mmol/L, r=0.86, p<0.01).
 - **그러나 이 40th/24h 수치는 turtlemeck에 그대로 가져올 수 없다.** 혈당에는 보정 기준이 되는 **객관적 gold standard(공복혈당)**가 있지만, 자세/FHP에는 그런 개인 baseline 참조값이 **없다.** 전이되는 것은 *"인구 임계 대신 슬라이딩 윈도우 percentile/median을 쓰라"는 방법*뿐이다.
-- ⚠️ **반증된 과장 [1-2 기각]:** "percentile baseline이 routine 변화에 적응하면서도 개인 내에서 저분산(노이즈 적음)"이라는 주장은 적대적 검증에서 기각됐다. 즉 **고변동(high-variability) 사용자에게는 percentile baseline도 noisy**하다. 이를 전제로 설계해야 한다(고변동 사용자엔 윈도우를 늘리거나 신뢰구간을 넓힘).
+- **고변동(high-variability) 사용자에게는 percentile baseline도 noisy**하다. 이를 전제로 설계해야 한다(고변동 사용자엔 윈도우를 늘리거나 신뢰구간을 넓힘).
 
-## 3. drift 감지 → 재보정 트리거: CUSUM detect-then-update [3-0]
+## 3. drift 감지 → 재보정 트리거: CUSUM detect-then-update
 
 **검증된 원리:** 고정 타이머로 재보정하지 말고, 신호 분포가 *실제로* 바뀔 때만 재보정을 트리거한다.
 
@@ -46,7 +46,7 @@ flowchart TD
 
 1. **baseline = 좋은-자세 구간의 슬라이딩 윈도우 percentile/median.** 단일 보정 스냅샷보다 분포 기반이 노이즈에 강하다.
 2. **판정은 절대 임계가 아니라 baseline 대비 delta로.** 절대 임계는 미보정 시 *보수적 폴백*으로만(= [cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md), 현 `Tuning` 임계는 이 폴백 역할로 한정).
-3. **고변동 사용자 방어:** percentile baseline도 noisy할 수 있으므로(§2 반증), 분산이 큰 사용자는 윈도우를 넓히거나 delta 임계를 보수화.
+3. **고변동 사용자 방어:** percentile baseline도 noisy할 수 있으므로(§2), 사용자의 자세 변동성이 큰 경우에는 baseline 윈도우를 넓히거나 delta 임계를 더 보수적으로 둔다.
 4. **재보정은 CUSUM류 drift 트리거로**(§3) — 고정 타이머 대신 분포 이동 시점에. 점진 drift는 느린 윈도우로 보완.
 5. **3D root/hip 상대량은 baseline 상대화 우선.** 근접 착석 시 root는 외삽일 수 있어(=[monocular-limits.md §5](monocular-limits.md)) 절대 위치보다 baseline 대비가 안전.
 
