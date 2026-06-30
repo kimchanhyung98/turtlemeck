@@ -46,7 +46,7 @@ flowchart TD
 
 1. **baseline = 좋은-자세 구간의 슬라이딩 윈도우 percentile/median.** 단일 보정 스냅샷보다 분포 기반이 노이즈에 강하다.
 2. **판정은 절대 임계가 아니라 baseline 대비 delta로.** 절대 임계는 미보정 시 *보수적 폴백*으로만(= [cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md), 현 `Tuning` 임계는 이 폴백 역할로 한정).
-3. **고변동 사용자 방어:** percentile baseline도 noisy할 수 있으므로(§2), 분산이 큰 사용자는 윈도우를 넓히거나 delta 임계를 보수화.
+3. **고변동 사용자 방어:** percentile baseline도 noisy할 수 있으므로(§2), 사용자의 자세 변동성이 큰 경우에는 baseline 윈도우를 넓히거나 delta 임계를 더 보수적으로 둔다.
 4. **재보정은 CUSUM류 drift 트리거로**(§3) — 고정 타이머 대신 분포 이동 시점에. 점진 drift는 느린 윈도우로 보완.
 5. **3D root/hip 상대량은 baseline 상대화 우선.** 근접 착석 시 root는 외삽일 수 있어(=[monocular-limits.md §5](monocular-limits.md)) 절대 위치보다 baseline 대비가 안전.
 

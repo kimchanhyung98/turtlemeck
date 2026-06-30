@@ -64,7 +64,7 @@ flowchart TD
 
 | 기술 | 출력 | 절대 깊이 정확도(실내) | macOS 통합 | 라이선스 | 95% 절대측정 |
 |---|---|---|---|---|---|
-| **Depth-Anything-V2** | 기본 **relative**(scale·shift 미정), 별도 metric 버전 | metric AbsRel 5.6~7.3%(NYU δ1=0.961~0.984) → 60cm서 ~3.4~4.4cm, 근거리 도메인 밖이라 실제론 더 클 수 있음 [검증필요] | **우수** — Apple 공식 Core ML(`coreml-depth-anything-v2-small`) 49.8MB·M3 Max **24.58ms** [high] | Small=Apache-2.0(상용 OK), Base/Large/Giant=CC-BY-NC-4.0 [high] | **불가** |
+| **Depth-Anything-V2** | 기본 **relative**(scale·shift 미정), 별도 metric 버전 | metric AbsRel 5.6~7.3%(NYU δ1=0.961~0.984) → 60cm 기준 ~3.4~4.4cm, 근거리 도메인 밖이라 실제론 더 클 수 있음 [검증필요] | **우수** — Apple 공식 Core ML(`coreml-depth-anything-v2-small`) 49.8MB·M3 Max **24.58ms** [high] | Small=Apache-2.0(상용 OK), Base/Large/Giant=CC-BY-NC-4.0 [high] | **불가** |
 | **Apple Depth Pro** | **metric**(intrinsic 불필요) | 근거리 ~10%(67cm→68~71cm) [검증필요] | 무거움 — 504M ViT, 공식 Core ML 없음(미병합 PR뿐) [검증필요] | `apple-amlr` research-only(상업적 이용·제품 개발 제외) [high] | **불가** |
 | **Metric3D v2** | metric | AbsRel 6~8% → ~3~4cm [검증필요] | ONNX, Core ML 직접지원 없음 | BSD-2 but **focal 필수**(미지 웹캠과 충돌) | **불가** |
 | **UniDepth / UniK3D** | metric(**focal/카메라 자가추정**) | 동급 + scale 실패 자인 | ONNX(V2), Core ML 직접지원 없음 | **CC-BY-NC-4.0(상용 불가)** | **불가** |

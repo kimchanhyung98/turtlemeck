@@ -61,7 +61,7 @@ flowchart TD
 ## 5. multi-feature / 상대 판정 > 단일 각 임계
 
 - JMIR 2024가 단일 어깨 각에서 **learned GCN(다중 관절 feature)** 으로 전환한 것은 위 §1.2의 직접 귀결이다.
-- **view-invariant embedding(Pr-VIPE, ECCV 2020/IJCV 2021)** 은 2D keypoint만으로 시점 불변 표현을 학습한다. 단 이는 **pose 유사도/검색**이지 *절대 FHP 각*이 아니며 multi-view 3D 학습데이터가 필요하다 → turtlemeck엔 *상대 good/bad 분류* 개념으로만 제한 적용.
+- **view-invariant embedding(Pr-VIPE, ECCV 2020/IJCV 2021)** 은 2D keypoint만으로 시점 불변 표현을 학습한다. 단 이는 **pose 유사도/검색**이지 *절대 FHP 각*이 아니며 multi-view 3D 학습데이터가 필요하다 → turtlemeck에는 *상대 good/bad 분류* 개념으로만 제한적으로 적용 가능하다.
 - **채택하지 않는 것:** "정면 각으로 sagittal CVA를 *예측* 가능", "정면 얼굴이미지 FHP 분류기"(K-FACE, 0.69 acc). 정면 단독 정량/분류는 근거 약함.
 
 ## 6. turtlemeck 권고 요약

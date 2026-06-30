@@ -1,6 +1,6 @@
 # 시점 인식 자동 워크플로우 설계
 
-맥북 배치가 정면/측면/3-4로 바뀔 수 있으므로, **주기적으로 시점을 분석해 그 시점에 맞는 분석 방식을 자동 선택**하는 워크플로우. 사용자 요구: ① 실행 중 몇 틱마다 '시점 분석'(자세 재보정과 별개), ② 시점에 맞는 방식 자동 선택, ③ 수동 방식 선택은 디버그 모드 전용.
+맥북 배치가 정면/측면/3-4로 바뀔 수 있으므로, **각 버스트에서 시점을 분석하고 안정화된 시점에 맞는 분석 방식을 자동 선택**하는 워크플로우. 사용자 요구: ① 실행 중 시점 분석(자세 재보정과 별개), ② 시점에 맞는 방식 자동 선택, ③ 수동 방식 선택은 디버그 모드 전용.
 
 ## 설계 근거 데이터 (로컬 실측)
 
@@ -23,7 +23,7 @@
 ## 워크플로우
 
 1. **매 버스트 시점 산출.** 2D pose(귀/눈/yaw)는 depth/3D 없이 항상 가용 → `ViewpointClassifier`로 프레임별 분류, 버스트의 지배 band를 `finishBurst`(serial `queue`)에서 집계.
-2. **히스테리시스 K=2 (= "몇 틱 후 시점 분석").** 새 band가 **2버스트 연속** 지배할 때만 라우팅 방식 전환. 플래핑 억제. 교차버스트 상태(`lastStableBand`, `routedAlgorithm`, 후보 카운터)를 `CameraManager`에 신설(serial queue).
+2. **히스테리시스 K=2.** 시점 분류는 매 burst 수행하고, 새 band가 **2버스트 연속** 지배할 때만 라우팅 방식 전환. 플래핑 억제. 교차버스트 상태(`lastStableBand`, `routedAlgorithm`, 후보 카운터)를 `CameraManager`에 신설(serial queue).
 3. **라우팅 ID를 `CaptureSnapshot`에 실음.** `processSampleBuffer`가 `requests3D`/`requestsCoreMLRelativeDepth`로 입력 제공을 결정하므로, 라우팅된 ID로 입력 제공과 알고리즘 선택을 일치시킴(불일치 시 3D로 라우팅했는데 데이터가 없어 noEval).
 4. **baseline 없으면 noEval + "시점 변경 — 재보정 필요".** 라우팅 방식의 baseline 필드가 비면 자동 캡처하지 않고 안내만(`mlBaselineWarning` 재사용). 바른자세 확정은 '자세 재보정'으로만 — 요구사항의 "별개" 충족.
 5. **방식 전환 시 `noEvalStreak` 리셋.** 시점 변경의 일시 noEval로 `PostureStateMachine`이 `needsCalibration`(noEval 3연속)→카메라 정지로 가는 오발 방지.
