@@ -167,7 +167,7 @@ public final class AppModel: ObservableObject {
     }
 
     public func setPostureAlgorithm(_ algorithm: PostureAlgorithmID) {
-        settings.postureAlgorithm = algorithm
+        settings.postureAlgorithm = algorithm.isDebugSelectableMethod ? algorithm : .mlAuto
     }
 
     public func setCheckInterval(_ interval: Double) {
@@ -223,6 +223,17 @@ public final class AppModel: ObservableObject {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    public var debugArtifactPath: String? {
+        latestDiagnostic?.debugArtifactPath
+    }
+
+    public func openDebugArtifacts() {
+        guard let path = debugArtifactPath else {
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
     }
 
     public func quit() {
@@ -343,7 +354,7 @@ public final class AppModel: ObservableObject {
     public var debugLines: [String] {
         var lines: [String] = []
         if let diagnostic = latestDiagnostic {
-            lines.append("알고리즘  \(diagnostic.algorithm.title)")
+            lines.append("AI/ML 방식  \(diagnostic.algorithm.title)")
             let reason = diagnostic.reason.map { " — \($0)" } ?? ""
             lines.append("판정  \(Self.assessmentLabel(diagnostic.assessment))\(reason)")
             lines.append("시점  \(diagnostic.viewpoint.map(Self.viewpointLabel) ?? "?")")
@@ -354,9 +365,21 @@ public final class AppModel: ObservableObject {
             } else {
                 lines.append("신호  없음")
             }
+            lines.append("버스트  프레임=\(diagnostic.frameCount)  유효=\(diagnostic.validFrameCount)  신호=\(diagnostic.signalFrameCount)")
+            if !diagnostic.observedSignalKinds.isEmpty {
+                lines.append("관측  \(diagnostic.observedSignalKinds.map(\.label).joined(separator: " · "))")
+            }
+            lines.append(contentsOf: diagnostic.debugNotes)
+            if let path = diagnostic.debugArtifactPath {
+                lines.append("파일  \(path)")
+            }
         } else {
             lines.append("아직 측정 데이터 없음 (점검 대기)")
         }
+        if let warning = Self.mlBaselineWarning(settings.postureAlgorithm, baseline: settings.baseline) {
+            lines.append("주의  \(warning)")
+        }
+        lines.append(Self.mlRequestSummary(settings.postureAlgorithm))
         lines.append("보정  \(Self.baselineSummary(settings.baseline))")
         lines.append("환경  주기=\(settings.checkIntervalSeconds)s  민감도=\(settings.sensitivity.title)")
         return lines
@@ -381,7 +404,41 @@ public final class AppModel: ObservableObject {
         if let value = baseline.profileAngle { parts.append("측면 \(String(format: "%.0f", value))°") }
         if let value = baseline.threeQuarterAngle { parts.append("3-4 \(String(format: "%.0f", value))°") }
         if let value = baseline.frontHeadDropRatio { parts.append("정면 \(String(format: "%.2f", value))") }
+        if let value = baseline.bodyFrameAngle { parts.append("3D축 \(String(format: "%.0f", value))°") }
+        if let value = baseline.depthDeltaNorm { parts.append("3D깊이 \(String(format: "%.2f", value))") }
+        if let value = baseline.relativeDepthDelta { parts.append("상대깊이 \(String(format: "%.2f", value))") }
+        if let value = baseline.frontFaceBottomY { parts.append("얼굴 \(String(format: "%.2f", value))") }
         return parts.isEmpty ? "없음(미보정)" : parts.joined(separator: " · ")
+    }
+
+    private static func mlRequestSummary(_ algorithm: PostureAlgorithmID) -> String {
+        let coreML = algorithm.requestsCoreMLRelativeDepth ? "요청" : "미요청"
+        let vision3D: String
+        if algorithm.requests3D {
+            vision3D = SystemInfo.current.canRequestVision3D ? "요청" : "차단"
+        } else {
+            vision3D = "미요청"
+        }
+        return "요청  CoreML=\(coreML)  Vision3D=\(vision3D)"
+    }
+
+    private static func mlBaselineWarning(_ algorithm: PostureAlgorithmID, baseline: Baseline?) -> String? {
+        guard let baseline else {
+            return algorithm.isUserSelectableMLMethod ? "ML 기준 없음(재보정 필요)" : nil
+        }
+        switch algorithm {
+        case .mlAuto:
+            let hasMLBaseline = baseline.relativeDepthDelta != nil || baseline.depthDeltaNorm != nil || baseline.bodyFrameAngle != nil
+            return hasMLBaseline ? nil : "ML 기준 없음(재보정 필요)"
+        case .coreMLRelativeDepth:
+            return baseline.relativeDepthDelta == nil ? "Core ML 기준 없음(재보정 필요)" : nil
+        case .depthDelta:
+            return baseline.depthDeltaNorm == nil ? "3D깊이 기준 없음(재보정 필요)" : nil
+        case .bodyFrame3D:
+            return baseline.bodyFrameAngle == nil ? "3D축 기준 없음(재보정 필요)" : nil
+        case .profileGeometry, .frontProxy, .fusion:
+            return nil
+        }
     }
 
     static func describe(_ diagnostic: PostureDiagnostic) -> String {

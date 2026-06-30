@@ -4,7 +4,7 @@ func registerStorageTests() {
     TestRegistry.test("settings defaults match requirement") {
         let settings = Settings.defaults
         try expectEqual(settings.checkIntervalSeconds, 60, "default interval")
-        try expectEqual(settings.postureAlgorithm, .fusion, "default posture algorithm")
+        try expectEqual(settings.postureAlgorithm, .mlAuto, "default posture analysis method")
         try expectEqual(settings.sensitivity, .medium, "default sensitivity")
         try expect(!settings.bannerNotificationsEnabled, "banner notifications default off")
         try expect(!settings.launchAtLogin, "launch at login default off")
@@ -33,17 +33,32 @@ func registerStorageTests() {
         """
         let decoded = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
         try expectEqual(decoded.checkIntervalSeconds, 180, "decoded interval should clamp high values")
-        try expectEqual(decoded.postureAlgorithm, .fusion, "missing algorithm should migrate to default")
+        try expectEqual(decoded.postureAlgorithm, .mlAuto, "missing method should migrate to ML default")
     }
 
-    TestRegistry.test("settings codable preserves selected posture algorithm") {
+    TestRegistry.test("settings codable preserves selected ML method") {
         var settings = Settings.defaults
-        settings.postureAlgorithm = .profileGeometry
+        settings.postureAlgorithm = .depthDelta
         settings.debugEnabled = true
         let data = try JSONEncoder().encode(settings)
         let decoded = try JSONDecoder().decode(Settings.self, from: data)
-        try expectEqual(decoded.postureAlgorithm, .profileGeometry, "algorithm selection should round trip")
+        try expectEqual(decoded.postureAlgorithm, .depthDelta, "ML method selection should round trip")
         try expect(decoded.debugEnabled, "debug selection should round trip")
+    }
+
+    TestRegistry.test("settings migrate legacy non-ML method to ML auto") {
+        let json = """
+        {
+          "storedCheckIntervalSeconds": 60,
+          "postureAlgorithm": "fusion",
+          "sensitivity": "medium",
+          "bannerNotificationsEnabled": false,
+          "notificationSoundEnabled": false,
+          "launchAtLogin": false
+        }
+        """
+        let decoded = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        try expectEqual(decoded.postureAlgorithm, .mlAuto, "legacy non-ML method should migrate to ML auto")
     }
 
     TestRegistry.test("sensitivity descriptions explain alert tradeoff") {
@@ -53,7 +68,7 @@ func registerStorageTests() {
     }
 
     TestRegistry.test("baseline codable round-trips") {
-        let baseline = Baseline(profileAngle: 71.5, frontHeadDropRatio: 0.12, threeQuarterAngle: 64)
+        let baseline = Baseline(profileAngle: 71.5, frontHeadDropRatio: 0.12, threeQuarterAngle: 64, relativeDepthDelta: 0.13)
         let data = try JSONEncoder().encode(baseline)
         let decoded = try JSONDecoder().decode(Baseline.self, from: data)
         try expectEqual(decoded, baseline, "baseline json round trip")
