@@ -29,7 +29,7 @@ flowchart TD
 - **BlazePose는 상체 부분 관측(upper-body-only)에서도 추적을 유지**: 가림 시뮬레이션 학습 + per-point visibility classifier로 하체 프레임 밖에서도 추적 가능. 원논문은 "upper-body-only"를 occlusion 처리 능력의 *한 사례*로 언급할 뿐, 독립된 "설계 기능/모드"로 정의하지는 않는다.
 - **MediaPipe Pose Landmarker = BlazePose + GHUM 3D**: 33개 3D landmark(normalized + world).
 
-→ "상체만 추적" 요구는 BlazePose류·Apple Vision 모두 상체 부분 관측에서 동작하므로 충족 가능하다. 둘 다 상체 부분 관측을 처리하며, BlazePose의 upper-body 동작은 occlusion 처리의 한 사례다.
+→ "상체만 추적" 요구는 BlazePose류·Apple Vision 모두로 충족 가능하다. 다만 근거 성격은 다르다. BlazePose는 원논문에서 upper-body-only를 occlusion 처리 사례로 언급하고, Apple Vision은 공식 문서보다 현재 앱/온디바이스 실측에서 머리·목·어깨 landmark 반환을 확인한 근거가 중심이다.
 
 ---
 

@@ -36,6 +36,7 @@ flowchart TD
 - **평균이 아니라 median/percentile**으로 집계해 outlier(배경 픽셀, 깊이 경계 누출)를 억제.
 - pose landmark(코·귀·어깨)를 **앵커**로, 그 주변 작은 패치만 표본 추출(전체 머리 마스크보다 안정적일 수 있음 — 자체 비교 필요).
 - **자기가림·경계 누출 인지:** 깊이 경계가 선명한 모델(예: Depth Pro의 sharp boundary)이 영역 분리에는 유리하나, turtlemeck은 경량 DA-V2 small이 현실 경로라 경계가 무를 수 있음 → 마스크 침식(erosion)으로 경계 픽셀 제외.
+- 단, erosion은 고정 px kernel로 두지 않는다. DA-V2 Small 출력 해상도와 머리/코/귀 bbox 크기에 비례해 kernel을 정하고, 최소 표본 면적을 보존해야 작은 영역이 통째로 사라지는 실패를 막을 수 있다.
 
 ## 3. 신호의 정의 — 절대 cm가 아니라 *순서/비율*의 *변화* [high]
 

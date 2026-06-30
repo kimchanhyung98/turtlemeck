@@ -31,14 +31,14 @@ flowchart TD
 | 핵심 아이디어 | relative backbone(MiDaS) + metric bins head로 절대화 [high] | 모든 이미지를 **canonical camera space**로 변환해 focal 모호성 제거 [high] | **camera self-prompt 모듈**이 intrinsic을 스스로 추정, pseudo-spherical 출력으로 카메라·깊이 분리 [high] |
 | metric을 얻는 법 | 학습 데이터(NYU/KITTI) 도메인 스케일을 metric bins head가 회귀. intrinsic **입력 안 받음** [high] | canonical 공간 예측 후 **focal length로 de-canonical 변환**: `D = (1/ω_d)·D_c`, ω_d = canonical/원본 초점비 [high] | 모델이 dense camera 표현(Δf, Δc)을 예측해 깊이를 conditioning. **추론 시 intrinsic 입력 불필요**(선택적으로 GT intrinsic 주입 가능) [high] |
 | **intrinsic 의존성** | 명시적 입력 없음 → 스케일이 **학습 도메인에 암묵 고정** (미지 카메라에 취약) [high/검증필요] | **focal length 필요**. 미지 시 repo는 "기본 9개 focal 설정" 제공, 틀리면 *"focal length is not properly set"* 왜곡 경고 [high] | **없음(자체 추정)** — 세 모델 중 유일하게 "intrinsic 모름"을 설계로 흡수 [high] |
-| 정확도 (zero-shot) | NYUv2: δ1=0.955, AbsRel(REL)=0.075 · KITTI: REL=0.057 [high] | NYUv2(ViT-g): δ1=0.980, AbsRel=0.067 · KITTI(ViT-g): δ1=0.977, AbsRel=0.051 [high] | NYUv2(ViT-L): δ1=0.984, A.Rel=5.78%(V1; V2 ViT-L 98.8%/4.68%) · KITTI: δ1=0.986, A.Rel=4.21% [high] |
+| 정확도 (zero-shot) | NYUv2: δ1=0.955, AbsRel(REL)=0.075 · KITTI: REL=0.057 [high] | NYUv2(ViT-g): δ1=0.980, AbsRel=0.067 · KITTI(ViT-g): δ1=0.977, AbsRel=0.051 [high] | NYUv2(ViT-L): δ1=0.984, A.Rel=0.0578(V1; V2 ViT-L δ1=0.988/A.Rel=0.0468) · KITTI: δ1=0.986, A.Rel=0.0421 [high] |
 | zero-shot 일반화 | 8개 미지 데이터셋(실내·실외). 실내 강함, 실외 일부 음수 개선(DDAD -12.8%) [high] | 16M 이미지·수천 카메라 학습 → in-the-wild 강함, KITTI/NYU/Robust-MVD 상위 [high] | 10개 데이터셋 zero-shot SOTA, KITTI 공식 벤치 published 1위(V2) [high] |
 | 백본 / 크기 | BEiT384-L (MiDaS), 총 ~344M params, 305M이 백본 [high] | DINOv2-reg ViT-S/L/giant2, ConvNeXt-L. v2-g가 최대 [high] | DINO 기반 ViT-S/B/L (+V1 ConvNeXt-L). V2-L ~34M head 외 ViT 백본 [high/검증필요] |
 | 속도 | 미명시(BEiT-L 대형, 실시간 어려움) [미검증] | 미명시. ViT-giant2는 무거움 [미검증] | V2가 V1 대비 latency 73.2→25.0ms, 연산 1/3로 경량화 [high] |
 | 라이선스 | **MIT** [high] | **BSD-2-Clause** [high] | **CC BY-NC 4.0 (비상업)** [high] |
 | macOS/Core ML | ONNX 미명시(MiDaS 계열은 변환 사례 있음) [미검증] | **ONNX 공식 지원**(dynamic shape, HF 체크포인트 3종). Core ML 직접 언급 없음 [high] | **ONNX 지원(V2)**. Core ML 직접 언급 없음 [high] |
 
-> A.Rel/AbsRel/REL은 동일 계열 지표(평균 상대 오차). UniDepth는 %로, ZoeDepth/Metric3D는 소수로 표기 — 즉 NYU에서 세 모델 모두 **상대 오차 약 6~8%, δ1 0.95~0.98** 수준으로 실내 벤치 정확도는 비슷하게 높다 [high].
+> A.Rel/AbsRel/REL은 동일 계열 지표(평균 상대 오차)이며, 위 표에서는 소수 표기로 통일했다. 즉 NYU에서 세 모델 모두 **상대 오차 약 5~8%, δ1 0.95~0.99** 수준으로 실내 벤치 정확도는 비슷하게 높다 [high].
 
 ---
 
@@ -64,7 +64,7 @@ flowchart TD
 
 - **핵심 아이디어** [high]: *"directly predicts metric 3D points ... without any additional information."* 추가 정보(intrinsic) 없이 단일 이미지에서 metric 3D를 직접 예측. **self-promptable camera module**이 dense 카메라 표현을 예측하고, **pseudo-spherical 출력**으로 카메라와 깊이를 분리한다.
 - **metric 획득 / intrinsic** [high]: 세 모델 중 유일하게 **intrinsic을 입력으로 요구하지 않는다.** V2는 4개 토큰으로 `Δf_x, Δf_y, Δc_x, Δc_y`를 pinhole 초기화에 곱셈 residual로 예측 → 사실상 **focal length를 스스로 추정**한다. (선택적으로 GT intrinsic 주입도 가능: *"You can use ground truth intrinsics as input."*)
-- **정확도** [high]: NYUv2(ViT-L) δ1=98.4%/A.Rel=5.78%, KITTI δ1=98.6%/A.Rel=4.21%. 10개 데이터셋 zero-shot SOTA, V2는 KITTI 공식 published 벤치 1위.
+- **정확도** [high]: NYUv2(ViT-L) δ1=0.984/A.Rel=0.0578, KITTI δ1=0.986/A.Rel=0.0421. 10개 데이터셋 zero-shot SOTA, V2는 KITTI 공식 published 벤치 1위.
 - **일반화·한계** [high]: 광범위 도메인에 강하나, 저자 스스로 **scale 한계를 명시**: *"UniDepth could fail to capture the specific scene scales in certain cases, e.g. in ETH3D and IBims-1"* — scale-invariant 지표는 좋아져도 **scale-dependent 지표(F_A)는 크게 떨어질 수 있다**(IBims-1에서 31.4% 하락). 즉 **상대 구조는 잘 맞아도 절대 스케일은 특정 장면에서 어긋난다.** *"would still greatly benefit from domain-specific fine-tuning."* V2 결론: *"the limited diversity of training cameras remains a challenge."*
 - **속도/라이선스** [high]: V2가 V1 대비 latency 73.2→25.0ms로 1/3 경량화, ViT-S/B/L 제공, ONNX 지원. **단 CC BY-NC 4.0 — 비상업 라이선스**(상용 앱 배포에 치명적 제약).
 

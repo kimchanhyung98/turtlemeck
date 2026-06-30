@@ -42,6 +42,7 @@ flicker를 직접 겨냥한 2024–2026 모델들을 비교한다. **공통점: 
 | **StableDPT** (2601.02793, 2026) | 임의 image depth 모델 + temporal cross-attention 어댑터 | 플러그인형 | Core ML로 올린 DA-V2 small에 **시간 안정화 어댑터**를 덧대는 개념과 정합 [검증필요] |
 
 > ⚠️ 위 지표·FPS는 각 논문 자체 보고(대개 일반 영상·서버 GPU)이며, **맥북 ANE·책상 근접 인물 도메인 실측은 어느 출처에도 없다 [미검증].**
+> 또한 VDA/oVDA류는 연속 stream을 전제로 temporal context를 쌓는다. turtlemeck처럼 짧은 burst를 주기적으로 켜는 구조에서는 초기화 지연·burst 경계 불안정 때문에 장점이 줄 수 있으므로, 우선순위는 single-frame Core ML depth + burst median/One-Euro 같은 경량 안정화다.
 
 ## 3. 핵심 한계 — flicker를 없애도 절대 cm는 안 풀린다 [high]
 
