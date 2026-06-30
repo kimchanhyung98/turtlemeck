@@ -33,6 +33,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var immediateCheckPending = false
     private var routeSelector = ViewpointRouteSelector(initial: .mlAuto, hysteresis: 2)
     private var routedAlgorithm: PostureAlgorithmID = .mlAuto
+    private var isPrewarmingCoreML = false
 
     public override init() {
         super.init()
@@ -67,6 +68,22 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         @unknown default:
             return .blocked("camera permission denied")
         }
+    }
+
+    static func shouldPrewarmCoreML(effectiveAlgorithm: PostureAlgorithmID, modelLoadResolved: Bool) -> Bool {
+        effectiveAlgorithm.requestsCoreMLRelativeDepth && !modelLoadResolved
+    }
+
+    static func calibrationRequiredAlgorithm(for frames: [TimedFrame], fallback: PostureAlgorithmID) -> PostureAlgorithmID {
+        var counts: [PostureAlgorithmID: Int] = [:]
+        var order: [PostureAlgorithmID] = []
+        for algorithm in frames.compactMap(\.frame.algorithm) {
+            if counts[algorithm] == nil {
+                order.append(algorithm)
+            }
+            counts[algorithm, default: 0] += 1
+        }
+        return order.max { (counts[$0] ?? 0) < (counts[$1] ?? 0) } ?? fallback
     }
 
     deinit {
@@ -190,6 +207,10 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private func startAuthorizedBurst() {
         do {
             try configureSessionIfNeeded()
+            if Self.shouldPrewarmCoreML(effectiveAlgorithm: effectiveAlgorithm(), modelLoadResolved: relativeDepthProvider.isModelLoadResolved) {
+                prewarmCoreMLThenStartAuthorizedBurst()
+                return
+            }
             burstFrames.removeAll()
             pipeline.reset()
             let runID = nextBurstRunID()
@@ -216,6 +237,30 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             calibrationCompletion = nil
             immediateCheckPending = false
             scheduleNextBurst(after: effectiveIntervalSeconds())
+        }
+    }
+
+    private func prewarmCoreMLThenStartAuthorizedBurst() {
+        guard !isPrewarmingCoreML else {
+            return
+        }
+        isPrewarmingCoreML = true
+        let provider = relativeDepthProvider
+        analysisQueue.async { [weak self] in
+            _ = provider.prewarm()
+            guard let manager = self else {
+                return
+            }
+            manager.queue.async { [weak manager] in
+                guard let manager else {
+                    return
+                }
+                manager.isPrewarmingCoreML = false
+                guard manager.shouldStartBurst else {
+                    return
+                }
+                manager.startAuthorizedBurst()
+            }
         }
     }
 
@@ -255,6 +300,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         enqueuedFrameCount = 0
         lastEnqueuedCollectionTime = nil
         immediateCheckPending = false
+        let calibrationAlgorithm = Self.calibrationRequiredAlgorithm(for: frames, fallback: effectiveAlgorithm())
 
         // 시점 분석 틱: 이번 버스트의 지배 시점으로 라우팅 방식을 갱신(히스테리시스 K=2). 자세 재보정과 별개.
         routedAlgorithm = routeSelector.update(dominantBand: dominantViewpointBand(of: frames))
@@ -262,8 +308,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         if let completion = calibrationCompletion {
             calibrationCompletion = nil
             // 보정도 동일한 2초 버스트를 사용하되, 최종 판정 대신 Calibrator로 baseline만 만든다.
-            // 라우팅된(effective) 방식 기준으로 baseline을 요구해, 이동 후 재보정 시 올바른 시점의 baseline을 잡는다.
-            let result = Calibrator().capture(from: frames.map(\.frame), requiredAlgorithm: effectiveAlgorithm())
+            // 프레임을 실제 분석한 방식 기준으로 baseline을 요구한다. 라우팅 전환 burst에서는 새 routedAlgorithm과 프레임 신호가 다를 수 있다.
+            let result = Calibrator().capture(from: frames.map(\.frame), requiredAlgorithm: calibrationAlgorithm)
             if settings.debugEnabled {
                 var diagnostic = makeDiagnostic(assessment: .noEval, reason: "보정 \(calibrationLabel(result))", frames: frames)
                 diagnostic.debugArtifactPath = debugCaptureStore.writeFinalAnalysis(
@@ -553,6 +599,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         burstFrames.removeAll()
         calibrationCompletion = nil
         immediateCheckPending = false
+        isPrewarmingCoreML = false
     }
 
     @objc private func sessionInterrupted() {
@@ -606,7 +653,9 @@ enum CameraFrameQuality {
         }
         let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
 
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
+            return false
+        }
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
 
         switch pixelFormat {

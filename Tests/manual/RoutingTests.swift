@@ -53,4 +53,35 @@ func registerRoutingTests() {
         let afterOneProfile = selector.update(dominantBand: .profileRight)
         try expectEqual(afterOneProfile, .coreMLRelativeDepth, "unknown breaks the streak, single profile no switch")
     }
+
+    TestRegistry.test("calibration requirement follows the frame algorithm when routing flips") {
+        let frames = [
+            TimedFrame(
+                time: 0,
+                frame: AnalyzedFrame(
+                    assessment: .good,
+                    signal: PostureSignal(kind: .relativeDepth, angleDegrees: 0.12, confidence: 0.5),
+                    algorithm: .mlAuto
+                )
+            )
+        ]
+
+        let required = CameraManager.calibrationRequiredAlgorithm(for: frames, fallback: .profileGeometry)
+        try expectEqual(required, .mlAuto, "calibration should require the algorithm used to analyze captured frames")
+    }
+
+    TestRegistry.test("core ml burst prewarm is required before first unloaded ML route") {
+        try expect(
+            CameraManager.shouldPrewarmCoreML(effectiveAlgorithm: .mlAuto, modelLoadResolved: false),
+            "ML auto should prewarm before starting a burst when model load is unresolved"
+        )
+        try expect(
+            !CameraManager.shouldPrewarmCoreML(effectiveAlgorithm: .profileGeometry, modelLoadResolved: false),
+            "profile geometry should not prewarm Core ML"
+        )
+        try expect(
+            !CameraManager.shouldPrewarmCoreML(effectiveAlgorithm: .coreMLRelativeDepth, modelLoadResolved: true),
+            "already resolved Core ML load should not delay the burst"
+        )
+    }
 }

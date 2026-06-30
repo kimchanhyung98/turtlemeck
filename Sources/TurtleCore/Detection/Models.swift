@@ -370,15 +370,17 @@ public struct AnalyzedFrame: Codable, Equatable, Sendable {
     public var assessment: PostureAssessment
     public var signal: PostureSignal?
     public var viewpoint: ViewpointResult?
+    public var algorithm: PostureAlgorithmID?
     public var reason: String?
     public var debugNotes: [String]
     /// 정면 응시 시 얼굴 박스 하단 y(있을 때). 신호 종류와 무관하게 보정에서 frontFace baseline 수집에 쓴다.
     public var faceBottomY: Double?
 
-    public init(assessment: PostureAssessment, signal: PostureSignal? = nil, viewpoint: ViewpointResult? = nil, reason: String? = nil, debugNotes: [String] = [], faceBottomY: Double? = nil) {
+    public init(assessment: PostureAssessment, signal: PostureSignal? = nil, viewpoint: ViewpointResult? = nil, algorithm: PostureAlgorithmID? = nil, reason: String? = nil, debugNotes: [String] = [], faceBottomY: Double? = nil) {
         self.assessment = assessment
         self.signal = signal
         self.viewpoint = viewpoint
+        self.algorithm = algorithm
         self.reason = reason
         self.debugNotes = debugNotes
         self.faceBottomY = faceBottomY

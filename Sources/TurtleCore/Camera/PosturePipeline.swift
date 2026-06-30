@@ -43,6 +43,7 @@ public final class PosturePipeline {
         )
         let frame = algorithm.analyze(landmarks, context: context)
         var result = smooth(frame, landmarks: landmarks, baseline: baseline, sensitivity: settings.sensitivity, timestamp: timestamp)
+        result.algorithm = effectiveAlgorithm
         // 정면 응시 프레임이면 신호 종류와 무관하게 얼굴 위치를 남겨, 보정 시 frontFace baseline을 확보한다(개인화: 카메라 높이/방향).
         if let box = landmarks.faceBoundingBox, abs(landmarks.faceYawDegrees ?? 0) <= Tuning.faceProxyMaxYaw {
             result.faceBottomY = box.y

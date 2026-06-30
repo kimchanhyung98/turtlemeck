@@ -27,12 +27,29 @@ printf 'APPL????' > "$CONTENTS/PkgInfo"
 cp Resources/en.lproj/InfoPlist.strings "$RESOURCES/en.lproj/InfoPlist.strings"
 cp Resources/ko.lproj/InfoPlist.strings "$RESOURCES/ko.lproj/InfoPlist.strings"
 cp Resources/ThirdPartyNotices.md "$RESOURCES/ThirdPartyNotices.md"
-for ext in mlmodelc mlpackage mlmodel; do
-  model="Resources/DepthAnythingV2SmallF16.$ext"
-  if [ -e "$model" ]; then
-    cp -R "$model" "$RESOURCES/"
+MODEL_NAME="DepthAnythingV2SmallF16"
+compile_model() {
+  local source_model="$1"
+  if xcrun --find coremlcompiler >/dev/null 2>&1; then
+    xcrun coremlcompiler compile "$source_model" "$RESOURCES"
+    return 0
   fi
-done
+  return 1
+}
+
+if [ -d "Resources/$MODEL_NAME.mlmodelc" ]; then
+  cp -R "Resources/$MODEL_NAME.mlmodelc" "$RESOURCES/"
+elif [ -e "Resources/$MODEL_NAME.mlpackage" ]; then
+  if ! compile_model "Resources/$MODEL_NAME.mlpackage"; then
+    echo "[package] coremlcompiler not found; bundling $MODEL_NAME.mlpackage for runtime prewarm fallback" >&2
+    cp -R "Resources/$MODEL_NAME.mlpackage" "$RESOURCES/"
+  fi
+elif [ -e "Resources/$MODEL_NAME.mlmodel" ]; then
+  if ! compile_model "Resources/$MODEL_NAME.mlmodel"; then
+    echo "[package] coremlcompiler not found; bundling $MODEL_NAME.mlmodel for runtime prewarm fallback" >&2
+    cp "Resources/$MODEL_NAME.mlmodel" "$RESOURCES/"
+  fi
+fi
 xattr -cr "$APP" 2>/dev/null || true
 
 chmod +x "$MACOS/turtlemeck"

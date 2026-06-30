@@ -115,22 +115,27 @@ final class DebugCaptureStore: @unchecked Sendable {
         "frame-\(String(format: "%02d", index))"
     }
 
-    private static func defaultRootURL() -> URL {
-        if let override = ProcessInfo.processInfo.environment["TURTLEMECK_DEBUG_ROOT"], !override.isEmpty {
+    static func defaultRootURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundlePath: String = Bundle.main.bundleURL.standardizedFileURL.path,
+        executablePath: String = URL(fileURLWithPath: CommandLine.arguments.first ?? "").standardizedFileURL.path,
+        fallbackBaseURL: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    ) -> URL {
+        if let override = environment["TURTLEMECK_DEBUG_ROOT"], !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
 
-        let bundlePath = Bundle.main.bundleURL.standardizedFileURL.path
         if let projectRoot = projectRoot(containingBuildDirectoryIn: bundlePath) {
             return projectRoot.appendingPathComponent("debug", isDirectory: true)
         }
 
-        let executablePath = URL(fileURLWithPath: CommandLine.arguments.first ?? "").standardizedFileURL.path
         if let projectRoot = projectRoot(containingBuildDirectoryIn: executablePath) {
             return projectRoot.appendingPathComponent("debug", isDirectory: true)
         }
 
-        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let fallbackBaseURL = fallbackBaseURL ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        return fallbackBaseURL
+            .appendingPathComponent("turtlemeck", isDirectory: true)
             .appendingPathComponent("debug", isDirectory: true)
     }
 

@@ -12,11 +12,23 @@ struct CoreMLRelativeDepthEstimate {
 
 public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
     private let modelName: String
+    private let modelLock = NSLock()
     private var cachedModel: VNCoreMLModel?
     private var loadFailed = false
 
     public init(modelName: String = "DepthAnythingV2SmallF16") {
         self.modelName = modelName
+    }
+
+    public var isModelLoadResolved: Bool {
+        modelLock.lock()
+        defer { modelLock.unlock() }
+        return cachedModel != nil || loadFailed
+    }
+
+    @discardableResult
+    public func prewarm() -> Bool {
+        visionModel() != nil
     }
 
     public func estimate(sampleBuffer: CMSampleBuffer, landmarks: PoseLandmarks) -> RelativeDepthSummary? {
@@ -88,8 +100,11 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         let headValues: [Double]
         let shoulderValues: [Double]
         if let resultBuffer {
-            headValues = anchors.head.compactMap { sample(pixelBuffer: resultBuffer, point: $0) }
-            shoulderValues = anchors.shoulders.compactMap { sample(pixelBuffer: resultBuffer, point: $0) }
+            guard let samples = sample(pixelBuffer: resultBuffer, anchors: anchors) else {
+                return nil
+            }
+            headValues = samples.head
+            shoulderValues = samples.shoulders
         } else if let resultArray {
             headValues = anchors.head.compactMap { sample(multiArray: resultArray, point: $0) }
             shoulderValues = anchors.shoulders.compactMap { sample(multiArray: resultArray, point: $0) }
@@ -124,6 +139,9 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
     }
 
     private func visionModel() -> VNCoreMLModel? {
+        modelLock.lock()
+        defer { modelLock.unlock() }
+
         if let cachedModel {
             return cachedModel
         }
@@ -156,7 +174,18 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
             ?? Bundle.main.url(forResource: modelName, withExtension: "mlmodel")
     }
 
-    private func sample(pixelBuffer: CVPixelBuffer, point: Point2D) -> Double? {
+    private func sample(pixelBuffer: CVPixelBuffer, anchors: DepthAnchors) -> (head: [Double], shoulders: [Double])? {
+        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
+            return nil
+        }
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        return (
+            head: anchors.head.compactMap { sampleLocked(pixelBuffer: pixelBuffer, point: $0) },
+            shoulders: anchors.shoulders.compactMap { sampleLocked(pixelBuffer: pixelBuffer, point: $0) }
+        )
+    }
+
+    private func sampleLocked(pixelBuffer: CVPixelBuffer, point: Point2D) -> Double? {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         guard width > 0, height > 0 else {
@@ -165,8 +194,6 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         let x = clamp(Int((point.x * Double(width - 1)).rounded()), min: 0, max: width - 1)
         let y = clamp(Int((point.y * Double(height - 1)).rounded()), min: 0, max: height - 1)
 
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
             return nil
         }
@@ -226,7 +253,9 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
             return nil
         }
 
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
+            return nil
+        }
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
             return nil
