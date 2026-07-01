@@ -1,4 +1,4 @@
-.PHONY: help check init package run
+.PHONY: help check init package run fresh-run
 
 .DEFAULT_GOAL := help
 
@@ -15,8 +15,11 @@ check: ## 테스트 및 빌드 검사 실행
 package: ## Universal2 .app/ZIP/DMG 빌드 및 ad-hoc 서명
 	@scripts/package-app.sh
 
-run: ## 앱 패키징 후 실행
+run: ## 기존 앱 번들 실행(없으면 패키징)
 	@scripts/run-app.sh
+
+fresh-run: ## 기존 앱 종료 후 재패키징하고 새 인스턴스 실행
+	@scripts/fresh-run-app.sh
 
 init: ## 프로젝트 환경 설정
 	@if [ ! -f .env ]; then \

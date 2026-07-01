@@ -1,5 +1,6 @@
 .build/
 Samples/
+debug/
 
 # Distribution / packaging
 .Python

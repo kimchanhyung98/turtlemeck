@@ -213,26 +213,36 @@ struct MenuView: View {
         MenuPanel {
             MenuDisclosureRow(title: "고급 설정", isExpanded: $isAdvancedExpanded) {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Label("판정 알고리즘", systemImage: "function")
-                            .font(.callout)
-                        Spacer()
-                        Picker("판정 알고리즘", selection: Binding(
-                            get: { model.settings.postureAlgorithm },
-                            set: { model.setPostureAlgorithm($0) }
-                        )) {
-                            ForEach(PostureAlgorithmID.allCases, id: \.self) { algorithm in
-                                Text(algorithm.title).tag(algorithm)
+                    if model.settings.debugEnabled {
+                        HStack {
+                            Label("AI/ML 분석 방식", systemImage: "function")
+                                .font(.callout)
+                            Spacer()
+                            Picker("AI/ML 분석 방식", selection: Binding(
+                                get: { model.settings.postureAlgorithm },
+                                set: { model.setPostureAlgorithm($0) }
+                            )) {
+                                ForEach(PostureAlgorithmID.debugSelectableMethods, id: \.self) { algorithm in
+                                    Text(algorithm.title).tag(algorithm)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(width: Layout.trailingControlWidth, alignment: .trailing)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: Layout.trailingControlWidth, alignment: .trailing)
-                    }
 
-                    Text(model.settings.postureAlgorithm.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Text(model.settings.postureAlgorithm.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("분석 방식: 자동 (시점 인식)")
+                                .font(.callout)
+                            Text("정면=깊이 · 측면/3-4=2D 시상 기하를 자동 선택")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     Toggle(isOn: Binding(
                         get: { model.settings.debugEnabled },
@@ -251,6 +261,13 @@ struct MenuView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if model.debugArtifactPath != nil {
+                                Button("디버그 폴더 열기") {
+                                    model.openDebugArtifacts()
+                                }
+                                .font(.caption)
+                                .padding(.top, 2)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)

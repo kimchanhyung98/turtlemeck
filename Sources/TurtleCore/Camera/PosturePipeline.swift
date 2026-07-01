@@ -26,15 +26,16 @@ public final class PosturePipeline {
         activeAlgorithm = nil
     }
 
-    public func process(_ landmarks: PoseLandmarks, settings: Settings, baseline: Baseline?, timestamp: Double? = nil) -> AnalyzedFrame {
-        if activeAlgorithm != settings.postureAlgorithm {
+    public func process(_ landmarks: PoseLandmarks, settings: Settings, baseline: Baseline?, timestamp: Double? = nil, algorithmOverride: PostureAlgorithmID? = nil) -> AnalyzedFrame {
+        let effectiveAlgorithm = algorithmOverride ?? settings.postureAlgorithm
+        if activeAlgorithm != effectiveAlgorithm {
             resetAnalysisState()
-            activeAlgorithm = settings.postureAlgorithm
+            activeAlgorithm = effectiveAlgorithm
         }
 
         let rawViewpoint = classifier.classify(landmarks)
         let stableViewpoint = viewpointStabilizer.stabilize(rawViewpoint)
-        let algorithm = PostureAlgorithmFactory.make(settings.postureAlgorithm, analyzer: analyzer)
+        let algorithm = PostureAlgorithmFactory.make(effectiveAlgorithm, analyzer: analyzer)
         let context = PostureAnalysisContext(
             baseline: baseline,
             sensitivity: settings.sensitivity,
@@ -42,6 +43,7 @@ public final class PosturePipeline {
         )
         let frame = algorithm.analyze(landmarks, context: context)
         var result = smooth(frame, landmarks: landmarks, baseline: baseline, sensitivity: settings.sensitivity, timestamp: timestamp)
+        result.algorithm = effectiveAlgorithm
         // 정면 응시 프레임이면 신호 종류와 무관하게 얼굴 위치를 남겨, 보정 시 frontFace baseline을 확보한다(개인화: 카메라 높이/방향).
         if let box = landmarks.faceBoundingBox, abs(landmarks.faceYawDegrees ?? 0) <= Tuning.faceProxyMaxYaw {
             result.faceBottomY = box.y
