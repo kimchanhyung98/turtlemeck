@@ -54,7 +54,7 @@ PosturePipeline → viewpoint 분류 + One-Euro 스무딩
 
 ### G-3. 정면 카메라 ↔ 측면 지표의 구조적 불일치
 - Mac 내장 카메라는 정면. 그러나 거북목의 1차 신호(머리 전방 이동)는 **측면**에서 드러난다. 정면 2D에서는 전방 이동이 이미지 평면에 거의 안 나타난다(원리: 깊이축이 카메라 광학축과 평행) [Apple/가설].
-- 3D 경로가 이를 보완하도록 설계됐으나 G-1(confidence)·모노큘러 한계(→ pose-estimation A-4)로 신뢰가 제한적.
+- 3D 경로가 이를 보완하도록 설계됐으나 G-1(confidence)·모노큘러 한계(→ [`../pose-estimation/monocular-limits.md`](../pose-estimation/monocular-limits.md))로 신뢰가 제한적.
 - 개선 방향: (a) 정면에서는 *심각도*를 단정하지 말고 baseline 대비 *추세*만; (b) 사용자에게 카메라 측면 배치/3-4 측면 착석을 유도; (c) 3D를 쓰되 baseline 상대화 강제.
 
 ### G-4. 단일 인물·단일 결과 가정
@@ -74,7 +74,7 @@ PosturePipeline → viewpoint 분류 + One-Euro 스무딩
 |---|---|---|---|
 | 1 | 3D 품질 대체 신호 도입(G-1) | confidence 부재는 API 사실[Apple], 게이팅 무력화 | 정확도 직결 |
 | 2 | 정면 정책 보수화 + 측면 유도(G-3) | 정면 2D 전방머리 관측 한계 | 오판↓ |
-| 3 | baseline 상대화 강제(G-1·G-3 공통) | 절대 임계 비합의(pose-estimation A-2) | 견고성 |
+| 3 | baseline 상대화 강제(G-1·G-3 공통) | 절대 임계 비합의([`../pose-estimation/cva-and-fhp-metrics.md`](../pose-estimation/cva-and-fhp-metrics.md)) | 견고성 |
 | 4 | 어깨 보간 신뢰도 가중(G-2) | 합성 좌표 오차 | 정확도 |
 | 5 | 다인/미러/pitch 방어(G-4·5·6) | 엣지 케이스 | 견고성 |
 

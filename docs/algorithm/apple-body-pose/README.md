@@ -36,6 +36,6 @@ flowchart TD
   - `VNDetectHumanBodyPose3DRequest` — 3D 골격 17 joints, macOS 14+ [Apple]. 앱은 이를 **Apple Silicon에서만** 켜는데, 이는 **앱의 선택**이지 Apple이 요구한 게 아니다 [Apple 확정] [코드]
 - **핵심 비대칭:** 2D 관절은 Vision이 주는 *실제 confidence*를 쓰지만, **3D 관절은 confidence를 `0.9`로 하드코딩**한다 [코드, `PoseDetector.swift:97`]. 이는 **Vision 3D API에 per-joint confidence가 실제로 없기 때문**(`VNHumanBodyRecognizedPoint3D`는 `localPosition`+`parentJoint`만) [Apple 확정]. 즉 데이터 폐기가 아니라 *API 공백 우회*지만, 부작용으로 3D 신뢰도 게이팅이 무력화된다 (개선 1순위 후보 — observation 레벨 `heightEstimation`/`bodyHeight` 등으로 대체 신호 구성).
 - Vision 2D는 **정규화 좌표 + 좌하단 원점**이라, 앱은 `y → 1−y`로 뒤집어 좌상단 기준으로 변환한다 [코드, `:58`].
-- 거북목의 핵심인 "머리 전방 이동"은 **정면 단일 카메라 2D로는 거의 안 보이며**, Vision 3D도 모노큘러 추정값이라 깊이 신뢰도에 한계가 있다(→ [`../pose-estimation/`](../pose-estimation/) A-3·A-4 참조).
+- 거북목의 핵심인 "머리 전방 이동"은 **정면 단일 카메라 2D로는 거의 안 보이며**, Vision 3D도 모노큘러 추정값이라 깊이 신뢰도에 한계가 있다(→ [`../pose-estimation/monocular-limits.md`](../pose-estimation/monocular-limits.md), [`../pose-estimation/viewpoint-robust-geometry.md`](../pose-estimation/viewpoint-robust-geometry.md) 참조).
 
 자세한 내용은 위 두 문서를 참조.

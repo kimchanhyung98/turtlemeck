@@ -1,6 +1,6 @@
 # 개인 baseline 보정·적응 전략
 
-"baseline 상대화를 주신호로 쓰라"는 결론([cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md), [model-comparison.md §5](model-comparison.md))의 *방법론*(어떻게 baseline을 잡고 갱신하는가)을 채운다.
+"baseline 상대화를 주신호로 쓰라"는 결론([cva-and-fhp-metrics.md §2](cva-and-fhp-metrics.md), [model-comparison.md §4](model-comparison.md))의 *방법론*(어떻게 baseline을 잡고 갱신하는가)을 채운다.
 
 > ⚠️ **도메인 전이 경고(문서 전체에 적용).** 아래 근거의 핵심은 **자세/FHP가 아닌 인접 도메인**(연속혈당, wearable 활동인식)에서 나왔다. **방법론 원리는 전이되지만 구체 파라미터(percentile 값·window 크기·임계)는 전이되지 않는다.** turtlemeck은 이를 자체 로그 데이터로 튜닝해야 한다(→ §5).
 

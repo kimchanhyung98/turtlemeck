@@ -48,9 +48,9 @@ flowchart TD
 
 머리/몸통 분리와 깊이를 별도 파이프라인으로 묶는 대신, **사람 중심(human-centric) 모델 하나**로 2D pose·신체부위 segmentation·depth를 동시에 내는 경로도 있다.
 
-- **Sapiens** (ECCV 2024 Oral, arXiv:2408.12569): 단일 모델이 2D pose + **신체부위 segmentation** + **depth + surface normal**을 한 번에 출력. 정면 상반신 한 프레임에서 seg와 depth를 동시에 얻는 가장 on-point 후보. ⚠️ 단 대형 ViT(수억~수십억 파라미터)라 **맥북 ANE 온디바이스 현실성은 미검증**, 경량 DA-V2 small과 정반대 무게.
+- **Sapiens** (ECCV 2024 Oral, arXiv:2408.12569): 공통 pretrain 기반의 human-centric **모델 패밀리**로, 2D pose·신체부위 segmentation·depth·surface normal을 task별 fine-tuning checkpoint로 제공한다. "한 번의 추론으로 4개 출력을 동시에 얻는 단일 모델"은 아니다. ⚠️ 단 대형 ViT(수억~수십억 파라미터)라 **맥북 ANE 온디바이스 현실성은 미검증**, 경량 DA-V2 small과 정반대 무게.
 - **MP-Mat** (arXiv:2504.14606): depth-layered(multiplane) human matting — 사람 분리와 부위 깊이 층화를 함께 다룸 [검증필요 — abstract 스니펫 기반, 관련성만].
-- **함의:** 개념적으로는 "한 모델 seg+depth"가 깔끔하나, turtlemeck의 경량·상시·발열 제약에서는 **Vision 마스크(무료·내장) + DA-V2 small(경량)** 조합이 현실적이다. Sapiens류는 *정확도 상한 탐색*용 참고로 둔다.
+- **함의:** 개념적으로는 공통 backbone 기반의 human-centric task 모델군이 깔끔하나, turtlemeck의 경량·상시·발열 제약에서는 **Vision 마스크(무료·내장) + DA-V2 small(경량)** 조합이 현실적이다. Sapiens류는 *정확도 상한 탐색*용 참고로 둔다.
 
 ## 5. 인접 RGB 자세 파이프라인 — 무엇을 참고할 수 있나
 
@@ -83,7 +83,7 @@ depth 융합은 아니지만, **일반 RGB/웹캠으로 자세를 정량화·분
 ## 8. 미해결 (자체 실측 필요)
 
 - ⬜ Vision 마스크 + DA-V2 small 영역 깊이 집계의 **거북목 판정 정확도**(turtlemeck 자체 데이터, §6).
-- ⬜ Sapiens류 한-모델 seg+depth가 맥북 ANE에서 **상시 추론 가능**한가(무게·발열).
+- ⬜ Sapiens류 task별 모델 또는 통합 파이프라인이 맥북 ANE에서 **상시 추론 가능**한가(무게·발열).
 - ⬜ occlusion ordering(2504.14054)이 절대 depth 비교보다 실제로 더 견고한가(자체 비교).
 - ⬜ 무마커 정면 웹캠에서 AutoMCA/Posture Lab식 2D 각도 측정의 조건(시상면·마커·manikin)을 얼마나 제거할 수 있는가.
 

@@ -77,7 +77,7 @@ VNImageRequestHandler(이미지/샘플버퍼)  ──perform([req1, req2, req3])
 - `leftShoulder/rightShoulder` 3D가 없으면 `centerShoulder`에서 x를 ±0.2m 밀어 **합성**한다 [코드, `:74-75`] → 어깨폭 **0.4m** 가정. ⚠️ 그런데 2D 경로의 `Tuning.headOnlyShoulderWidth = 0.32`(정규화 단위)와 **다른 어깨폭 가정이 코드에 공존**한다(단위계는 다르나 일관성 검토 필요).
 
 ### 모노큘러 3D의 본질적 한계
-- 단일 RGB에서의 3D는 **추정(ill-posed)** 이다 — 같은 2D가 여러 3D에 대응(깊이 모호성). 상세 근거는 [`../pose-estimation/`](../pose-estimation/) A-4. → 3D 좌표를 "측정값"처럼 신뢰하면 안 되고 baseline 상대화가 필요.
+- 단일 RGB에서의 3D는 **추정(ill-posed)** 이다 — 같은 2D가 여러 3D에 대응(깊이 모호성). 상세 근거는 [`../pose-estimation/monocular-limits.md`](../pose-estimation/monocular-limits.md). → 3D 좌표를 "측정값"처럼 신뢰하면 안 되고 baseline 상대화가 필요.
 
 ---
 
