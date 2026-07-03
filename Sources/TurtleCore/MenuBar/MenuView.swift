@@ -238,7 +238,7 @@ struct MenuView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("분석 방식: 자동 (시점 인식)")
                                 .font(.callout)
-                            Text("정면=깊이 · 측면/3-4=2D 시상 기하를 자동 선택")
+                            Text("정면=AI/ML 자동 · 측면/3-4=2D 시상 기하")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

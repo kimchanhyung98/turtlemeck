@@ -86,7 +86,7 @@ flowchart TD
 | 카메라 권한·5fps 설정·최대 분석 프레임 | `CameraManager.configureSessionIfNeeded()` / `maximumAnalysisFrames = 8` | 공유 |
 | Vision 2D/Face/선택적 3D 감지 | `PoseDetector.detect(... include3D:)` | 공유. 단 `include3D`는 선택 알고리즘의 `requests3D`에 좌우 |
 | 시점 분류·안정화 | `ViewpointClassifier`, `ViewpointStabilizer` | 공유 |
-| 알고리즘 선택 | `PostureAlgorithmFactory.make(settings.postureAlgorithm)` | 여기만 분기 |
+| 알고리즘 선택 | `CameraManager.effectiveAlgorithm()` → `CaptureSnapshot.effectiveAlgorithm` → `PosturePipeline.process(... algorithmOverride:)` → `PostureAlgorithmFactory.make(...)` | 비디버그 모드는 시점 라우팅 결과, 디버그 모드는 사용자 선택값을 사용 |
 | 신호 스무딩·재판정 | `PosturePipeline.smooth()` + `PostureJudge.assess()` | 공유 |
 | 보정 | `Calibrator.capture()` | 공유. 단 저장하는 baseline 필드는 신호별로 확장 필요 |
 | 최종 burst 판정 | `BurstProcessor.process()` | 공유 |
@@ -114,7 +114,7 @@ flowchart TD
 | Core ML relative depth 후보 | 구현됨. `coreMLRelativeDepth` 알고리즘, `relativeDepth` 신호, `Baseline.relativeDepthDelta`, `CoreMLRelativeDepthProvider`, `Resources/DepthAnythingV2SmallF16.mlpackage` 추가 | 공통 pipeline 유지 + 새 depth feature provider 추가 | 모델 파일은 `Resources/DepthAnythingV2SmallF16.*` 중 하나로 명확히 고정. 카메라 `CMSampleBuffer`와 `analyze-image`의 `CGImage` 경로 모두 지원 |
 | Local LLM / AI CLI | 앱 런타임 미구현, 계획만 있음 | 앱 pipeline 밖의 개발자 스크립트 | `analyze-image` 결과와 이미지를 함께 넘겨 실패 원인/정성 cue 리포트 생성. 제품 판정 로직에 직접 연결하지 않음 |
 
-핵심 답: 내부 구조상 **공통 플로우 + 방식별 신호 계산**은 유지한다. 다만 제품 방향은 ML 처리이므로 사용자 UI와 기본값은 ML 방식으로 제한했다. Core ML depth는 새 입력 source가 필요하므로 `PoseLandmarks.relativeDepth` scalar feature로 시작했고, `mlAuto`가 Core ML/Vision 3D 신호 중 가용한 ML 신호를 고른다.
+핵심 답: 내부 구조상 **공통 플로우 + 방식별 신호 계산**은 유지한다. 다만 일반 UI는 시점 라우팅을 기본으로 두고, 수동 방식 선택은 디버그 모드로 제한했다. Core ML depth는 새 입력 source가 필요하므로 `PoseLandmarks.relativeDepth` scalar feature로 시작했고, 현재 `mlAuto`가 Core ML/Vision 3D 신호 중 가용한 ML 신호를 고른다. Vision 3D fallback의 제품 기본 사용 여부는 별도 리뷰 이슈로 남아 있다.
 
 ### 2.2 개발/검증용 AI CLI 파이프라인
 
