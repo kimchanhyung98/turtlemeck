@@ -102,8 +102,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     public func update(settings: Settings) {
         queue.async {
             let intervalChanged = self.settings.checkIntervalSeconds != settings.checkIntervalSeconds
+            let debugWasEnabled = self.settings.debugEnabled
             self.settings = settings
             self.baseline = settings.baseline
+            if debugWasEnabled, !settings.debugEnabled {
+                self.debugCaptureStore.clearLatestRun()
+            }
             // 점검 주기가 바뀌면 이미 걸린 예약을 새 주기로 다시 잡는다(추적 중 + burst/보정/즉시점검 중이 아닐 때만).
             if intervalChanged, self.isRunning, !self.isCollectingFrames,
                 self.calibrationCompletion == nil, !self.immediateCheckPending {

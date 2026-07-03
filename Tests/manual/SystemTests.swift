@@ -42,6 +42,21 @@ func registerSystemTests() {
         try expectEqual(url.path, "/tmp/turtlemeck-cache-test/turtlemeck/debug", "packaged app fallback should not depend on current working directory")
     }
 
+    TestRegistry.test("debug capture store clears latest run") {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("turtlemeck-debug-\(UUID().uuidString)", isDirectory: true)
+        let store = DebugCaptureStore(rootURL: root)
+        store.prepareLatestRun()
+        let marker = root.appendingPathComponent("latest", isDirectory: true).appendingPathComponent("marker.txt")
+        try "debug".write(to: marker, atomically: true, encoding: .utf8)
+        try expect(FileManager.default.fileExists(atPath: marker.path), "debug marker should exist before clear")
+
+        store.clearLatestRun()
+
+        try expect(!FileManager.default.fileExists(atPath: marker.path), "debug marker should be removed after clear")
+        try? FileManager.default.removeItem(at: root)
+    }
+
     TestRegistry.test("core ml prewarm marks missing model load as resolved") {
         let provider = CoreMLRelativeDepthProvider(modelName: "MissingModelForPrewarmTest")
         try expect(!provider.isModelLoadResolved, "new provider starts unresolved")

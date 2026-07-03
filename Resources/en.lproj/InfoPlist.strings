@@ -1,1 +1,1 @@
-"NSCameraUsageDescription" = "turtlemeck briefly uses the built-in camera on this Mac to estimate posture on device. Video is not saved, sent, or shared.";
+"NSCameraUsageDescription" = "turtlemeck briefly uses the built-in camera on this Mac to estimate posture on device. Video is not sent or shared. Debug Mode may save local diagnostic captures, which are deleted when Debug Mode is turned off.";

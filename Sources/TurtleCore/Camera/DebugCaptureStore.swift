@@ -23,6 +23,10 @@ final class DebugCaptureStore: @unchecked Sendable {
         try? FileManager.default.createDirectory(at: latestURL, withIntermediateDirectories: true)
     }
 
+    func clearLatestRun() {
+        try? FileManager.default.removeItem(at: latestURL)
+    }
+
     func inputImage(from sampleBuffer: CMSampleBuffer) -> CGImage? {
         guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return nil

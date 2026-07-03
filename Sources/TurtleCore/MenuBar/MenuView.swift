@@ -252,6 +252,13 @@ struct MenuView: View {
                             .font(.callout)
                     }
 
+                    Text(model.settings.debugEnabled
+                        ? "웹캠 캡처와 분석 JSON이 로컬 디버그 폴더에 저장됩니다. 끄면 최근 캡처가 삭제됩니다."
+                        : "켜면 수동 분석 방식 선택과 로컬 디버그 캡처 저장이 활성화됩니다.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
                     if model.settings.debugEnabled {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("디버그 측정")

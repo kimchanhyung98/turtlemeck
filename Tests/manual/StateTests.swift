@@ -225,8 +225,9 @@ func registerStateTests() {
         try expect(normal, "visible camera frame should be accepted")
     }
 
-    TestRegistry.test("disclaimer states wellness and no video storage") {
+    TestRegistry.test("disclaimer states wellness and debug capture privacy") {
         try expect(Disclaimer.text.contains("의료기기가 아니며"), "medical disclaimer")
-        try expect(Disclaimer.text.contains("영상은 저장"), "video storage disclaimer")
+        try expect(Disclaimer.text.contains("영상은 전송·공유되지 않습니다"), "video transmission disclaimer")
+        try expect(Disclaimer.text.contains("디버그 모드"), "debug capture storage disclaimer")
     }
 }

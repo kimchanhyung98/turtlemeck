@@ -175,7 +175,12 @@ public final class AppModel: ObservableObject {
     }
 
     public func setDebugEnabled(_ enabled: Bool) {
+        let wasEnabled = settings.debugEnabled
         settings.debugEnabled = enabled
+        if wasEnabled, !enabled, latestDiagnostic?.debugArtifactPath != nil {
+            latestDiagnostic = nil
+            diagnosticText = "디버그 캡처 삭제됨"
+        }
     }
 
     public func setBannerNotifications(_ enabled: Bool) {
