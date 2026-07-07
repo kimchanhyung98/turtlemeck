@@ -72,7 +72,7 @@ struct OnboardingView: View {
                     } label: {
                         Label("보정", systemImage: "scope")
                     }
-                    .disabled(!hasCameraPermission || model.postureState == .calibrating)
+                    .disabled(!canCalibrate)
                 }
 
                 Divider()
@@ -112,9 +112,23 @@ struct OnboardingView: View {
     }
 
     private var canStartTracking: Bool {
-        hasCameraPermission && model.settings.baseline != nil
+        hasCameraDevice && hasCameraPermission && model.settings.baseline != nil
             && model.postureState != .blocked
             && model.postureState != .calibrating
+    }
+
+    private var canCalibrate: Bool {
+        hasCameraDevice && hasCameraPermission
+            && model.postureState != .blocked
+            && model.postureState != .calibrating
+    }
+
+    private var hasCameraDevice: Bool {
+        !AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external],
+            mediaType: .video,
+            position: .unspecified
+        ).devices.isEmpty
     }
 
     private var hasCameraPermission: Bool {
@@ -130,14 +144,17 @@ struct OnboardingView: View {
     }
 
     private var cameraPermissionStepState: OnboardingStepState {
-        hasCameraPermission ? .complete : .active
+        guard hasCameraDevice else {
+            return .pending
+        }
+        return hasCameraPermission ? .complete : .active
     }
 
     private var calibrationStepState: OnboardingStepState {
         if model.settings.baseline != nil {
             return .complete
         }
-        return hasCameraPermission ? .active : .pending
+        return canCalibrate ? .active : .pending
     }
 
     private var startStepState: OnboardingStepState {
@@ -145,10 +162,13 @@ struct OnboardingView: View {
     }
 
     private var cameraPermissionDetail: String {
+        if !hasCameraDevice {
+            return "사용 가능한 카메라 장치가 없습니다."
+        }
         if hasCameraPermission {
             return "완료: 카메라 사용 가능"
         }
-        if model.postureState == .blocked {
+        if cameraAuthorizationStatus == .denied || cameraAuthorizationStatus == .restricted {
             return "권한이 꺼져 있습니다. 시스템 설정에서 허용해 주세요."
         }
         return "카메라 접근 권한이 필요합니다."
@@ -157,6 +177,9 @@ struct OnboardingView: View {
     private var calibrationDetail: String {
         if model.settings.baseline != nil {
             return "완료: 기준자세 저장됨"
+        }
+        if !hasCameraDevice {
+            return "카메라 장치를 연결한 뒤 보정할 수 있습니다."
         }
         if !hasCameraPermission {
             return "권한 허용 후 보정할 수 있습니다."
