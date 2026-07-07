@@ -147,6 +147,9 @@ public final class AppModel: ObservableObject {
         }
         switch status {
         case .authorized:
+            if postureState == .blocked {
+                postureState = .noEval
+            }
             statusText = "카메라 사용 가능"
         case .notDetermined:
             statusText = "카메라 권한 요청 필요"

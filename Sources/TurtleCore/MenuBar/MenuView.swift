@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MenuView: View {
     @ObservedObject var model: AppModel
-    @State private var isAdvancedExpanded = false
     @State private var isPrivacyExpanded = false
 
     private enum Layout {
@@ -17,6 +16,9 @@ struct MenuView: View {
                 todayPanel
                 settingsPanel
                 advancedPanel
+                if model.settings.debugEnabled {
+                    debugPanel
+                }
                 privacyPanel
                 footerActions
             }
@@ -45,10 +47,10 @@ struct MenuView: View {
                     Text(model.nextCheckDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(model.diagnosticText)
+                    Text(operationalStatusText)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
+                        .foregroundStyle(operationalStatusTint)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,68 +213,72 @@ struct MenuView: View {
 
     private var advancedPanel: some View {
         MenuPanel {
-            MenuDisclosureRow(title: "고급 설정", isExpanded: $isAdvancedExpanded) {
-                VStack(alignment: .leading, spacing: 10) {
-                    if model.settings.debugEnabled {
-                        HStack {
-                            Label("AI/ML 분석 방식", systemImage: "function")
-                                .font(.callout)
-                            Spacer()
-                            Picker("AI/ML 분석 방식", selection: Binding(
-                                get: { model.settings.postureAlgorithm },
-                                set: { model.setPostureAlgorithm($0) }
-                            )) {
-                                ForEach(PostureAlgorithmID.debugSelectableMethods, id: \.self) { algorithm in
-                                    Text(algorithm.title).tag(algorithm)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: Layout.trailingControlWidth, alignment: .trailing)
-                        }
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("분석")
 
-                        Text(model.settings.postureAlgorithm.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("분석 방식: 자동 (시점 인식)")
-                                .font(.callout)
-                            Text("정면=깊이 · 측면/3-4=2D 시상 기하를 자동 선택")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.settings.debugEnabled ? "분석 방식: 디버그 수동" : "분석 방식: 자동")
+                        .font(.callout)
+                    Text(analysisDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-                    Toggle(isOn: Binding(
-                        get: { model.settings.debugEnabled },
-                        set: { model.setDebugEnabled($0) }
+                Toggle(isOn: Binding(
+                    get: { model.settings.debugEnabled },
+                    set: { model.setDebugEnabled($0) }
+                )) {
+                    Label("디버그 모드", systemImage: "stethoscope")
+                        .font(.callout)
+                }
+            }
+        }
+    }
+
+    private var debugPanel: some View {
+        MenuPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("디버그")
+
+                HStack {
+                    Label("분석 방식", systemImage: "function")
+                        .font(.callout)
+                    Spacer()
+                    Picker("분석 방식", selection: Binding(
+                        get: { model.settings.postureAlgorithm },
+                        set: { model.setPostureAlgorithm($0) }
                     )) {
-                        Label("디버그 모드", systemImage: "stethoscope")
-                            .font(.callout)
-                    }
-
-                    if model.settings.debugEnabled {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("디버그 측정")
-                                .font(.caption.weight(.semibold))
-                            ForEach(Array(model.debugLines.enumerated()), id: \.offset) { _, line in
-                                Text(line)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            if model.debugArtifactPath != nil {
-                                Button("디버그 폴더 열기") {
-                                    model.openDebugArtifacts()
-                                }
-                                .font(.caption)
-                                .padding(.top, 2)
-                            }
+                        ForEach(PostureAlgorithmID.debugSelectableMethods, id: \.self) { algorithm in
+                            Text(algorithm.title).tag(algorithm)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: Layout.trailingControlWidth, alignment: .trailing)
+                }
+
+                Text(model.settings.postureAlgorithm.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(model.debugLines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if model.debugArtifactPath != nil {
+                        Button("디버그 폴더 열기") {
+                            model.openDebugArtifacts()
+                        }
+                        .font(.caption)
+                        .padding(.top, 2)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -340,6 +346,47 @@ struct MenuView: View {
             return .blue
         case .noEval:
             return .accentColor
+        }
+    }
+
+    private var analysisDescription: String {
+        if model.settings.debugEnabled {
+            return "아래 디버그 패널에서 분석 방식을 직접 선택합니다."
+        }
+        return "시점에 맞춰 정면 깊이와 측면 기하 분석을 자동 선택합니다."
+    }
+
+    private var operationalStatusText: String {
+        switch model.postureState {
+        case .good:
+            return model.settings.baseline == nil ? "기준자세 미보정" : "기준자세 저장됨"
+        case .bad:
+            return "잠시 자세를 펴고 다음 점검을 기다려 주세요"
+        case .paused:
+            return "측정과 알림이 멈춰 있습니다"
+        case .blocked:
+            return "카메라 권한 또는 장치 상태를 확인해 주세요"
+        case .calibrating:
+            return "움직이지 말고 좋은 자세를 유지해 주세요"
+        case .noEval:
+            return model.settings.baseline == nil ? "기준자세 보정이 필요합니다" : "측정 신호를 확인하는 중입니다"
+        case .needsCalibration:
+            return "바른 자세로 앉은 뒤 재보정을 실행해 주세요"
+        }
+    }
+
+    private var operationalStatusTint: Color {
+        switch model.postureState {
+        case .blocked, .needsCalibration:
+            return .red
+        case .calibrating:
+            return .blue
+        case .bad:
+            return .orange
+        case .paused:
+            return .secondary
+        case .good, .noEval:
+            return model.settings.baseline == nil ? .red : .secondary
         }
     }
 
