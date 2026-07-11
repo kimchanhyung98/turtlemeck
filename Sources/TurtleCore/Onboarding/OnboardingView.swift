@@ -1,3 +1,5 @@
+import AppKit
+import AVFoundation
 import SwiftUI
 
 struct OnboardingView: View {
@@ -15,6 +17,9 @@ struct OnboardingView: View {
         .padding(24)
         .frame(width: 500, height: 500)
         .onAppear { model.checkCameraAvailability() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.checkCameraAvailability()
+        }
     }
 
     private var header: some View {
@@ -43,13 +48,15 @@ struct OnboardingView: View {
                 OnboardingStep(
                     number: "1",
                     title: "카메라 권한 허용",
-                    detail: "상태: \(model.statusText)"
+                    detail: cameraPermissionDetail,
+                    state: cameraPermissionStepState
                 ) {
                     Button {
                         model.requestCameraPermission()
                     } label: {
                         Label("권한 요청", systemImage: "camera")
                     }
+                    .disabled(!canRequestCameraPermission)
                 }
 
                 Divider()
@@ -57,13 +64,15 @@ struct OnboardingView: View {
                 OnboardingStep(
                     number: "2",
                     title: "기준자세 보정",
-                    detail: "좋은 자세로 앉은 뒤 한 번 저장합니다."
+                    detail: calibrationDetail,
+                    state: calibrationStepState
                 ) {
                     Button {
                         model.recalibrateFromCurrentGoodSignal()
                     } label: {
                         Label("보정", systemImage: "scope")
                     }
+                    .disabled(!canCalibrate)
                 }
 
                 Divider()
@@ -71,7 +80,8 @@ struct OnboardingView: View {
                 OnboardingStep(
                     number: "3",
                     title: "시작",
-                    detail: "이후에는 메뉴 막대에서 상태를 확인합니다."
+                    detail: startDetail,
+                    state: startStepState
                 ) {
                     Button {
                         guard canStartTracking else {
@@ -102,7 +112,86 @@ struct OnboardingView: View {
     }
 
     private var canStartTracking: Bool {
-        model.settings.baseline != nil
+        hasCameraDevice && hasCameraPermission && model.settings.baseline != nil
+            && model.postureState != .blocked
+            && model.postureState != .calibrating
+    }
+
+    private var canCalibrate: Bool {
+        hasCameraDevice && hasCameraPermission
+            && model.postureState != .blocked
+            && model.postureState != .calibrating
+    }
+
+    private var hasCameraDevice: Bool {
+        !AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external],
+            mediaType: .video,
+            position: .unspecified
+        ).devices.isEmpty
+    }
+
+    private var hasCameraPermission: Bool {
+        cameraAuthorizationStatus == .authorized
+    }
+
+    private var canRequestCameraPermission: Bool {
+        cameraAuthorizationStatus == .notDetermined
+    }
+
+    private var cameraAuthorizationStatus: AVAuthorizationStatus {
+        AVCaptureDevice.authorizationStatus(for: .video)
+    }
+
+    private var cameraPermissionStepState: OnboardingStepState {
+        guard hasCameraDevice else {
+            return .pending
+        }
+        return hasCameraPermission ? .complete : .active
+    }
+
+    private var calibrationStepState: OnboardingStepState {
+        if model.settings.baseline != nil {
+            return .complete
+        }
+        return canCalibrate ? .active : .pending
+    }
+
+    private var startStepState: OnboardingStepState {
+        canStartTracking ? .active : .pending
+    }
+
+    private var cameraPermissionDetail: String {
+        if !hasCameraDevice {
+            return "사용 가능한 카메라 장치가 없습니다."
+        }
+        if hasCameraPermission {
+            return "완료: 카메라 사용 가능"
+        }
+        if cameraAuthorizationStatus == .denied || cameraAuthorizationStatus == .restricted {
+            return "권한이 꺼져 있습니다. 시스템 설정에서 허용해 주세요."
+        }
+        return "카메라 접근 권한이 필요합니다."
+    }
+
+    private var calibrationDetail: String {
+        if model.settings.baseline != nil {
+            return "완료: 기준자세 저장됨"
+        }
+        if !hasCameraDevice {
+            return "카메라 장치를 연결한 뒤 보정할 수 있습니다."
+        }
+        if !hasCameraPermission {
+            return "권한 허용 후 보정할 수 있습니다."
+        }
+        if model.postureState == .calibrating {
+            return "좋은 자세를 유지하는 중입니다."
+        }
+        return "좋은 자세로 앉은 뒤 한 번 저장합니다."
+    }
+
+    private var startDetail: String {
+        canStartTracking ? "준비 완료" : "권한과 기준자세 보정이 필요합니다."
     }
 
     private var sensitivityPanel: some View {
@@ -147,6 +236,27 @@ struct OnboardingView: View {
     }
 }
 
+private enum OnboardingStepState {
+    case complete
+    case active
+    case pending
+
+    var tint: Color {
+        switch self {
+        case .complete:
+            return .green
+        case .active:
+            return .accentColor
+        case .pending:
+            return .secondary
+        }
+    }
+
+    var isComplete: Bool {
+        self == .complete
+    }
+}
+
 private struct OnboardingPanel<Content: View>: View {
     private let content: Content
 
@@ -173,27 +283,39 @@ private struct OnboardingStep<Action: View>: View {
     var number: String
     var title: String
     var detail: String
+    var state: OnboardingStepState
     private let action: Action
 
     init(
         number: String,
         title: String,
         detail: String,
+        state: OnboardingStepState,
         @ViewBuilder action: () -> Action
     ) {
         self.number = number
         self.title = title
         self.detail = detail
+        self.state = state
         self.action = action()
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(number)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(Color.accentColor))
+            ZStack {
+                Circle()
+                    .fill(state.isComplete || state == .active ? state.tint : state.tint.opacity(0.14))
+                if state.isComplete {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Text(number)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(state == .pending ? Color.secondary : Color.white)
+                }
+            }
+            .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
