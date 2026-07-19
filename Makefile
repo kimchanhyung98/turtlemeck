@@ -1,4 +1,4 @@
-.PHONY: help check init package run fresh-run
+.PHONY: help check package run fresh-run
 
 .DEFAULT_GOAL := help
 
@@ -20,27 +20,3 @@ run: ## 기존 앱 번들 실행(없으면 패키징)
 
 fresh-run: ## 기존 앱 종료 후 재패키징하고 새 인스턴스 실행
 	@scripts/fresh-run-app.sh
-
-init: ## 프로젝트 환경 설정
-	@if [ ! -f .env ]; then \
-		echo "[init] .env not found"; \
-		exit 1; \
-	fi
-	@if ! command -v docker >/dev/null 2>&1; then \
-		echo "[init] docker not found"; \
-		exit 1; \
-	fi
-	@if ! docker compose version >/dev/null 2>&1; then \
-		echo "[init] docker compose not found"; \
-		exit 1; \
-	fi
-	@if ! docker info >/dev/null 2>&1; then \
-		echo "[init] docker is not running"; \
-		exit 1; \
-	fi
-	@if [ -f docker-compose.yml ]; then \
-		echo "[init] starting docker containers..."; \
-		docker compose up -d; \
-	fi
-	@echo "[init] installing npm packages..."
-	@docker run --rm -v $$(pwd):/app -w /app node:22-alpine sh -c "apk add --no-cache git && npm install"
