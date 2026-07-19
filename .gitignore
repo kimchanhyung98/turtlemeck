@@ -1,6 +1,10 @@
+# Turtlemeck
 .build/
-Samples/
 debug/
+Samples/
+xcuserdata/
+*.xcuserstate
+*.dSYM
 
 # Distribution / packaging
 .Python
@@ -42,6 +46,7 @@ hs_err_pid*
 .env.backup
 .env.local
 .env.local.*
+.env.prod*
 .env.production
 .env.production.*
 ENV/
@@ -54,7 +59,8 @@ venv.bak/
 .terraform/
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
 .terragrunt-cache/
 .pulumi/
 .aws/
@@ -63,7 +69,6 @@ venv.bak/
 
 # Database
 *.db
-*.sql
 *.bak
 *.sqlite
 
@@ -71,6 +76,7 @@ venv.bak/
 Dockerfile.local
 docker-compose.override.yml
 docker-compose.local.yml
+**/.docker/config.json
 .docker/
 
 # Cache
@@ -89,14 +95,27 @@ docker-compose.local.yml
 *.pem
 *.key
 *.crt
+*.cer
 *.cert
 *.p12
 *.pfx
+*.jks
+*.keystore
 secrets/
 .secrets
 .secrets/
 auth.json
 credentials.json
+application_default_credentials.json
+.ssh/
+.kube/config
+.gnupg/
+.netrc
+.npmrc
+!.npmrc.example
+.git-credentials
+id_rsa*
+id_ed25519*
 
 # IDE
 .idea/
@@ -183,8 +202,15 @@ $RECYCLE.BIN/
 .agent-os/
 agent-os/
 
+# Playwright
+.agent-browser/
+.browser/
+.chrome/
+.next-browser/
+.playwright/
+.playwright-mcp/
+
 # etc
 .cmux/
 .omx/
-.remember/
-.playwright-mcp/
+.remember
