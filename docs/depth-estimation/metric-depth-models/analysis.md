@@ -13,7 +13,7 @@
 
 ### ZoeDepth
 
-relative-depth backbone과 metric bins module을 결합해 metric depth를 예측한다. 추론 시 camera intrinsic을 명시적으로 입력하지 않고, 학습 데이터의 실내·실외 scale을 통해 metric 값을 회귀한다. 새로운 카메라와 근거리 상체에서 scale이 얼마나 안정적인지는 별도 검증이 필요하다. 공식 저장소 라이선스는 MIT다.
+relative-depth backbone과 metric bins module을 결합해 metric depth를 예측한다. 추론 시 camera intrinsic을 명시적으로 입력하지 않고, 학습 데이터의 실내·실외 scale을 통해 metric 값을 회귀한다. 새로운 카메라와 근거리 상체에서 scale이 얼마나 안정적인지는 별도 검증이 필요하다. 공식 저장소는 2025년 5월부터 보관 상태이며 라이선스는 MIT다.
 
 ### Metric3D v2
 

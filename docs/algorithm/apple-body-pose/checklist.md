@@ -9,7 +9,7 @@
 | 다루는 범위 | 입력, 신체 추정, ROI, depth, baseline, 판정 계약 |
 | 제품 내 역할 | 구현이 목표 설계와 일치하는지 기록하며 설계 자체는 변경하지 않음 |
 
-이 문서는 현재 코드를 설명하는 문서가 아니며, 현재 코드에 맞춰 설계를 바꾸는 기준도 아니다. [`posture-analysis-workflow.md`](../posture-analysis-workflow.md)의 목표 설계를 구현 단계에서 검증하기 위한 비규범 체크리스트다.
+이 문서는 현재 코드를 설명하는 문서가 아니며, 현재 코드에 맞춰 설계를 바꾸는 기준도 아니다. [`posture-analysis-workflow.md`](../posture-analysis-workflow.md)의 상세 흐름과 채택·제외 범위를 구현 단계에서 검증하기 위한 비규범 체크리스트다. [`../../workflow.md`](../../workflow.md)는 상위 개론으로만 사용한다.
 
 API 사실은 [analysis.md](analysis.md), 목표 알고리즘은 [`posture-analysis-workflow.md`](../posture-analysis-workflow.md)를 기준으로 한다. 구현 상태·완료 여부·특정 코드 라인은 이 문서의 근거로 사용하지 않는다.
 
@@ -32,6 +32,8 @@ flowchart TD
 ## 1. 입력 계약
 
 - 프레임 orientation과 미러링 정보를 실제 입력과 일치시킨다.
+- 분석 세션을 최소 20초 간격으로 실행한다.
+- 한 번의 분석에서 3~5장의 짧은 이미지 버스트를 사용한다.
 - 한 burst 안에서 같은 대상 사람을 추적한다.
 - 다인 장면에서는 `first` 같은 배열 순서가 아니라 명시적인 대상 선택 규칙을 사용한다.
 - 사람 전체가 아닌 머리·어깨·상부 몸통이 필요한 비율로 보이는지 확인한다.
@@ -59,9 +61,9 @@ flowchart TD
 - DA-V2 출력이 affine-invariant inverse depth임을 전제로 한다.
 - 절대 cm, 카메라와의 실제 거리, 임상 심각도 점수로 변환하지 않는다.
 - 단순 ROI 평균 차이나 비율만을 최종 feature로 확정하지 않는다.
-- 목표 feature는 landmark 기반 reference ROI의 robust scale로 정규화한 머리-몸통 대비 또는 rank 기반 표현이다.
+- 목표 feature는 landmark 기반 reference ROI의 robust scale로 정규화한 머리-몸통 대비다.
 - 출력 near/far 방향은 고정 fixture로 확인한다.
-- ROI IQR이 너무 작거나 depth가 유효하지 않으면 `noEval`로 처리한다.
+- reference ROI의 IQR이 너무 작거나 depth가 유효하지 않으면 `noEval`로 처리한다.
 
 ## 5. Apple Vision 3D 제외 계약
 
@@ -102,7 +104,8 @@ flowchart TD
 
 ## 참고 자료
 
-- 목표 알고리즘: [`../posture-analysis-workflow.md`](../posture-analysis-workflow.md)
+- 상위 개론: [`../../workflow.md`](../../workflow.md)
+- 상세 목표 알고리즘과 채택·제외 범위: [`../posture-analysis-workflow.md`](../posture-analysis-workflow.md)
 - Apple Vision API: [analysis.md](analysis.md)
 - depth feature: [`../../depth-estimation/etc/related-feature-design.md`](../../depth-estimation/etc/related-feature-design.md)
 - baseline: [`../pose-estimation/related-baseline-calibration.md`](../pose-estimation/related-baseline-calibration.md)

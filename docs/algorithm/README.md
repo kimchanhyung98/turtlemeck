@@ -8,13 +8,14 @@
 
 | 우선순위 | 문서 | 역할 |
 |---:|---|---|
-| 1 | [posture-analysis-workflow.md](posture-analysis-workflow.md) | 현재 제품 플로우와 채택·제외 범위를 정의하는 규범 문서 |
-| 2 | [apple-body-pose/checklist.md](apple-body-pose/checklist.md) | 목표 설계가 구현 단계에서 지켜졌는지 확인하는 비규범 체크리스트 |
-| 3 | [apple-body-pose/](apple-body-pose/README.md) | Apple Vision API의 제공 정보와 한계에 관한 리서치 |
-| 3 | [pose-estimation/](pose-estimation/README.md) | 자세 추정 모델·기하·baseline·단안 한계에 관한 리서치 |
-| 3 | [../depth-estimation/](../depth-estimation/README.md) | 단안 깊이 모델과 자세 신호 적용 가능성에 관한 리서치 |
+| 1 | [posture-analysis-workflow.md](posture-analysis-workflow.md) | 전체 처리 순서, 상세 판단 로직과 채택·제외 범위를 정의하는 규범 문서 |
+| 2 | [../workflow.md](../workflow.md) | 제품 플로우와 역할 분담을 빠르게 이해하기 위한 개론 |
+| 3 | [apple-body-pose/checklist.md](apple-body-pose/checklist.md) | 목표 설계가 구현 단계에서 지켜졌는지 확인하는 비규범 체크리스트 |
+| 4 | [apple-body-pose/](apple-body-pose/README.md) | Apple Vision API의 제공 정보와 한계에 관한 리서치 |
+| 4 | [pose-estimation/](pose-estimation/README.md) | 자세 추정 모델·기하·baseline·단안 한계에 관한 리서치 |
+| 4 | [../depth-estimation/](../depth-estimation/README.md) | 단안 깊이 모델과 자세 신호 적용 가능성에 관한 리서치 |
 
-내용이 충돌하면 `posture-analysis-workflow.md`의 확정 설계를 우선한다. 리서치 결과로 목표 설계를 바꿀 때는 리서치 문서를 구현 기준으로 직접 사용하지 않고, 먼저 확정 워크플로우를 명시적으로 수정한다.
+내용이 충돌하면 상세 규범 문서인 `posture-analysis-workflow.md`를 우선한다. 상위 `workflow.md`는 개론이므로 상세 판단을 새로 정의하거나 하위 문서의 결정을 바꾸지 않는다. 리서치 결과로 목표 설계를 바꿀 때는 리서치 문서를 구현 기준으로 직접 사용하지 않고, 먼저 상세 워크플로우를 수정한 뒤 개론을 동기화한다.
 
 ## 알고리즘·방식별 공통 파일
 
@@ -95,7 +96,7 @@
 ```text
 algorithm/
 ├── README.md                         # 문서 체계와 상태 용어
-├── posture-analysis-workflow.md      # 규범: 확정 워크플로우와 제외 범위
+├── posture-analysis-workflow.md      # 규범: 상세 처리·판정 로직과 제외 범위
 ├── apple-body-pose/
 │   ├── README.md                     # Apple Vision 리서치 진입점
 │   ├── analysis.md                   # API·처리 로직 분석

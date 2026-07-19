@@ -36,7 +36,7 @@ Video Depth Anything의 기본 출력도 affine-invariant이므로 video 모델 
 ## 검증 항목
 
 - 고정 자세에서 프레임별 feature 분산
-- 버스트 크기에 따른 분산 감소와 지연
+- 3~5장 범위의 프레임 수에 따른 분산 감소와 지연
 - 움직임 직후 안정화 시간
 - 전체 Mac 지연·발열·배터리
 

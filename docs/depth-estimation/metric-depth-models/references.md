@@ -19,7 +19,7 @@
 ## 공식 문서와 1차 자료
 
 - ZoeDepth 논문: <https://arxiv.org/abs/2302.12288>
-- ZoeDepth 공식 저장소(MIT): <https://github.com/isl-org/ZoeDepth>
+- ZoeDepth 공식 저장소(2025년 5월 보관, MIT): <https://github.com/isl-org/ZoeDepth>
 - Metric3D v2 논문: <https://arxiv.org/abs/2404.15506>
 - Metric3D 공식 저장소(BSD-2-Clause): <https://github.com/YvanYin/Metric3D>
 - UniDepth 논문: <https://arxiv.org/abs/2403.18913>

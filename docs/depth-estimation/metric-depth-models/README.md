@@ -20,7 +20,7 @@
 
 | 모델 | metric scale 처리 | 현재 미채택 이유 |
 |---|---|---|
-| ZoeDepth | 학습된 metric bins로 depth 회귀 | 카메라·도메인 변화와 Mac 배포 경로를 별도 검증해야 함 |
+| ZoeDepth | 학습된 metric bins로 depth 회귀 | 공식 저장소가 보관 상태이며 카메라·도메인 변화와 Mac 배포 경로를 별도 검증해야 함 |
 | Metric3D v2 | canonical camera space와 focal length로 scale 복원 | focal length 입력·추정 경로와 Mac 배포를 별도 검증해야 함 |
 | UniDepth | camera module이 intrinsic을 함께 추정 | scale 실패 가능성, 비상업 라이선스, 별도 런타임 |
 
