@@ -1,4 +1,5 @@
 import Foundation
+@testable import TurtleCore
 
 func registerRoutingTests() {
     // MARK: ViewpointRouter — band → 자동 선택 방식

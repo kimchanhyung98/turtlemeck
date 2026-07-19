@@ -26,6 +26,7 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "turtlemeck", dependencies: ["TurtleCore"]),
-        .executableTarget(name: "analyze-image", dependencies: ["TurtleCore"], path: "tools/analyze-image")
+        .executableTarget(name: "analyze-image", dependencies: ["TurtleCore"], path: "tools/analyze-image"),
+        .testTarget(name: "TurtleCoreTests", dependencies: ["TurtleCore"])
     ]
 )

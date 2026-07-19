@@ -1,5 +1,7 @@
-import Foundation
 import CoreGraphics
+import Foundation
+import Testing
+@testable import TurtleCore
 
 struct TestFailure: Error, CustomStringConvertible {
     let message: String
@@ -9,13 +11,17 @@ struct TestFailure: Error, CustomStringConvertible {
     }
 }
 
-struct TestCase {
+struct TestCase: @unchecked Sendable, CustomTestStringConvertible {
     let name: String
     let run: () throws -> Void
+
+    var testDescription: String {
+        name
+    }
 }
 
 enum TestRegistry {
-    static var tests: [TestCase] = []
+    nonisolated(unsafe) static var tests: [TestCase] = []
 
     static func test(_ name: String, _ body: @escaping () throws -> Void) {
         tests.append(TestCase(name: name, run: body))
@@ -78,33 +84,20 @@ func tinyTestImage() throws -> CGImage {
     return image
 }
 
-@main
-enum ManualTestRunner {
-    static func main() {
-        registerDetectionTests()
-        registerStateTests()
-        registerStorageTests()
-        registerSystemTests()
-        registerRoutingTests()
+private let testCases: [TestCase] = {
+    registerDetectionTests()
+    registerStateTests()
+    registerStorageTests()
+    registerSystemTests()
+    registerRoutingTests()
 
-        var failures: [(String, Error)] = []
-        var assertions = 0
+    return TestRegistry.tests
+}()
 
-        for test in TestRegistry.tests {
-            do {
-                try test.run()
-                assertions += 1
-                print("PASS \(test.name)")
-            } catch {
-                failures.append((test.name, error))
-                print("FAIL \(test.name): \(error)")
-            }
-        }
-
-        print("\n\(TestRegistry.tests.count) tests, \(assertions) passed, \(failures.count) failed")
-
-        if !failures.isEmpty {
-            exit(1)
-        }
+@Suite("TurtleCore")
+struct TurtleCoreTests {
+    @Test(arguments: testCases)
+    func run(_ testCase: TestCase) throws {
+        try testCase.run()
     }
 }

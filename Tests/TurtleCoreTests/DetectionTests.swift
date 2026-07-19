@@ -1,4 +1,5 @@
 import Foundation
+@testable import TurtleCore
 
 func registerDetectionTests() {
     TestRegistry.test("CVA angle is vertical when head is directly above shoulder") {

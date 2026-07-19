@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+@testable import TurtleCore
 
 func registerSystemTests() {
     TestRegistry.test("system info detects Apple Silicon from runtime hardware flag") {
@@ -50,7 +51,7 @@ func registerSystemTests() {
     }
 
     TestRegistry.test("package script compiles Core ML source models before bundling") {
-        let script = try String(contentsOfFile: "scripts/package-app.sh", encoding: .utf8)
+        let script = try String(contentsOfFile: "package.sh", encoding: .utf8)
         try expect(script.contains("coremlcompiler compile"), "package script should compile mlpackage/mlmodel into mlmodelc")
         try expect(!script.contains("for ext in mlmodelc mlpackage mlmodel"), "package script should not bundle source model packages by default")
     }

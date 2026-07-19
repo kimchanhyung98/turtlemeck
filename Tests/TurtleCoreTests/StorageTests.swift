@@ -1,4 +1,5 @@
 import Foundation
+@testable import TurtleCore
 
 func registerStorageTests() {
     TestRegistry.test("settings defaults match requirement") {

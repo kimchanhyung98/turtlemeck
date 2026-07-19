@@ -1,4 +1,5 @@
 import Foundation
+@testable import TurtleCore
 
 func registerStateTests() {
     TestRegistry.test("burst processor marks sustained bad frames bad") {
