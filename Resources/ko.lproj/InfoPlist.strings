@@ -1,1 +1,1 @@
-"NSCameraUsageDescription" = "turtlemeck은 이 Mac의 내장 카메라를 짧게 켜 자세를 기기 안에서 추정합니다. 영상은 저장·전송·공유되지 않습니다.";
+"NSCameraUsageDescription" = "turtlemeck은 내장 카메라를 짧게 켜 자세를 기기 안에서 추정합니다. 프레임은 전송하지 않으며 디버그 모드를 직접 켠 경우에만 로컬에 저장합니다.";

@@ -1,7 +1,7 @@
 {
-  "name": "base",
+  "name": "turtlemeck",
   "version": "1.0.0",
-  "description": "Base project template with automated Git hooks and commit validation",
+  "description": "Local Git hook tooling for the turtlemeck macOS app",
   "author": "kimchanhyung98",
   "scripts": {
     "prepare": "husky"

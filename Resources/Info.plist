@@ -10,6 +10,8 @@
 	<string>turtlemeck</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.go.turtlemeck</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -27,7 +29,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>turtlemeck briefly uses the built-in camera on this Mac to estimate posture on device. Video is not saved, sent, or shared.</string>
+	<string>turtlemeck briefly uses the built-in camera to estimate posture on device. Frames are not sent and are saved locally only when you enable Debug Mode.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 kimchanhyung98</string>
 </dict>
