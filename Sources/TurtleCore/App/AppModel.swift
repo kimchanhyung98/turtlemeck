@@ -35,9 +35,7 @@ public final class AppModel: ObservableObject {
         todayStats = (try? statsStore.load().first { $0.day == Self.todayKey() }) ?? DailyPostureStats(day: Self.todayKey())
 
         cameraManager.onVerdict = { [weak self] verdict in
-            Task { @MainActor in
-                self?.handle(verdict)
-            }
+            self?.handle(verdict) ?? .noEval
         }
         cameraManager.onNextCheckUpdate = { [weak self] seconds in
             Task { @MainActor in
@@ -169,10 +167,6 @@ public final class AppModel: ObservableObject {
         settings.sensitivity = sensitivity
     }
 
-    public func setPostureAlgorithm(_ algorithm: PostureAlgorithmID) {
-        settings.postureAlgorithm = algorithm.isDebugSelectableMethod ? algorithm : .mlAuto
-    }
-
     public func setCheckInterval(_ interval: Double) {
         settings.checkIntervalSeconds = Int(interval.rounded())
     }
@@ -215,9 +209,7 @@ public final class AppModel: ObservableObject {
         postureState = .calibrating
         statusText = "기준 자세 수집 중"
         cameraManager.runCalibration(settings: settings, baseline: settings.baseline) { [weak self] result in
-            Task { @MainActor in
-                self?.handleCalibration(result)
-            }
+            self?.handleCalibration(result) ?? .noEval
         }
     }
 
@@ -243,18 +235,21 @@ public final class AppModel: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
-    private func handle(_ verdict: BurstVerdict) {
+    private func handle(_ verdict: BurstVerdict) -> PostureState {
         recordElapsedStats()
         let transition = stateMachine.apply(verdict)
-        postureState = transition.state
-        statusText = title(for: transition.state)
+        if settings.baseline == nil || verdict.requiresCalibration {
+            stateMachine.reset(to: .noEval)
+            postureState = .needsCalibration
+            statusText = title(for: .needsCalibration)
+            nextCheckDescription = "바른 자세로 ‘재보정’을 눌러 주세요"
+        } else {
+            postureState = transition.state
+            statusText = title(for: transition.state)
+        }
         if transition.state == .paused {
             isPaused = true
             nextCheckDescription = "일시정지"
-            cameraManager.stop()
-        } else if transition.state == .needsCalibration {
-            // 추적이 지속 실패했다 — 조용히 멈추지 않고 기준자세 보정을 요청한다(개인화로 카메라 시점/방향에 맞춤).
-            nextCheckDescription = "바른 자세로 ‘재보정’을 눌러 주세요"
             cameraManager.stop()
         }
 
@@ -273,6 +268,7 @@ public final class AppModel: ObservableObject {
             }
         }
         saveStats()
+        return postureState
     }
 
     private func recordElapsedStats(now: Date = Date()) {
@@ -311,22 +307,23 @@ public final class AppModel: ObservableObject {
         try? statsStore.save(allStats)
     }
 
-    private func handleCalibration(_ result: CalibrationResult) {
+    private func handleCalibration(_ result: CalibrationResult) -> PostureState {
         switch result {
         case .accepted(let baseline):
             settings.baseline = baseline
             postureState = .noEval
             stateMachine.reset(to: .noEval)
             statusText = "기준 자세 저장됨"
-        case .rejected(.alreadySlouched):
+        case .rejected(.unstableBaseline):
             postureState = .noEval
             stateMachine.reset(to: .noEval)
-            statusText = "보정 실패: 자세를 편 뒤 다시 시도"
-        case .rejected(.noReliableFrames):
+            statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
+        case .rejected(.noReliableBursts):
             postureState = .noEval
             stateMachine.reset(to: .noEval)
             statusText = "보정 실패: 자세 신호 부족"
         }
+        return postureState
     }
 
     private func handleBlocked(reason: String) {
@@ -353,39 +350,97 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 디버그 패널용 상세 측정 라인. 시점·신호·3D 사용여부·보정상태·환경을 한눈에 보여준다.
+    /// 공통 분석 결과를 읽기만 하는 디버그 표시다. 이 값은 판정 경로에 입력되지 않는다.
     public var debugLines: [String] {
         var lines: [String] = []
         if let diagnostic = latestDiagnostic {
-            lines.append("AI/ML 방식  \(diagnostic.algorithm.title)")
             let reason = diagnostic.reason.map { " — \($0)" } ?? ""
-            lines.append("판정  \(Self.assessmentLabel(diagnostic.assessment))\(reason)")
-            lines.append("시점  \(diagnostic.viewpoint.map(Self.viewpointLabel) ?? "?")")
-            if let kind = diagnostic.signalKind {
-                let value = diagnostic.value.map { String(format: "%.1f", $0) } ?? "-"
-                let confidence = diagnostic.confidence.map { String(format: "%.2f", $0) } ?? "-"
-                lines.append("신호  \(kind.label)=\(value)  신뢰=\(confidence)")
-            } else {
-                lines.append("신호  없음")
+            lines.append("제품 상태  \(diagnostic.productState.rawValue)")
+            lines.append("이번 버스트  \(Self.assessmentLabel(diagnostic.assessment))\(reason)")
+            lines.append("증거  \(diagnostic.evidence.rawValue)")
+            let summary = diagnostic.summary
+            lines.append("버스트  프레임=\(summary.totalFrameCount)  유효=\(summary.validFrameCount)")
+            if let feature = summary.medianFeature, let mad = summary.featureMAD {
+                lines.append("feature  중앙값=\(String(format: "%.3f", feature))  MAD=\(String(format: "%.3f", mad))")
             }
-            lines.append("버스트  프레임=\(diagnostic.frameCount)  유효=\(diagnostic.validFrameCount)  신호=\(diagnostic.signalFrameCount)")
-            if !diagnostic.observedSignalKinds.isEmpty {
-                lines.append("관측  \(diagnostic.observedSignalKinds.map(\.label).joined(separator: " · "))")
+            if let center = diagnostic.baselineCenter {
+                let delta = diagnostic.baselineDelta.map { String(format: "%.3f", $0) } ?? "-"
+                lines.append("baseline  중심=\(String(format: "%.3f", center))  delta=\(delta)")
             }
-            lines.append(contentsOf: diagnostic.debugNotes)
+            if !summary.exclusionCounts.isEmpty {
+                let exclusions = summary.exclusionCounts
+                    .sorted { $0.key.rawValue < $1.key.rawValue }
+                    .map { "\($0.key.rawValue)=\($0.value)" }
+                    .joined(separator: " · ")
+                lines.append("제외  \(exclusions)")
+            }
+            for frame in diagnostic.frames.sorted(by: { $0.index < $1.index }) {
+                let analysis = frame.analysis
+                let feature = analysis.feature.map { String(format: "%.3f", $0) } ?? "-"
+                let exclusion = analysis.exclusionReason?.rawValue ?? "none"
+                lines.append("프레임 \(frame.index)  feature=\(feature)  제외=\(exclusion)")
+                lines.append("landmark  \(Self.landmarkSummary(analysis.landmarks))")
+                lines.append("ROI  \(Self.roiSummary(analysis.rois))")
+                lines.append("depth·품질  \(Self.depthAndQualitySummary(analysis))")
+            }
+            if !diagnostic.stageProcessingMilliseconds.isEmpty {
+                let timings = diagnostic.stageProcessingMilliseconds
+                    .sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\(String(format: "%.1f", $0.value))ms" }
+                    .joined(separator: " · ")
+                lines.append("처리 시간  \(timings)")
+            }
             if let path = diagnostic.debugArtifactPath {
                 lines.append("파일  \(path)")
+            } else if settings.debugEnabled {
+                lines.append("파일  출력 불가 — 프로젝트 root 또는 TURTLEMECK_DEBUG_ROOT 확인")
             }
         } else {
             lines.append("아직 측정 데이터 없음 (점검 대기)")
         }
-        if let warning = Self.mlBaselineWarning(settings.postureAlgorithm, baseline: settings.baseline) {
-            lines.append("주의  \(warning)")
-        }
-        lines.append(Self.mlRequestSummary(settings.postureAlgorithm))
         lines.append("보정  \(Self.baselineSummary(settings.baseline))")
         lines.append("환경  주기=\(settings.checkIntervalSeconds)s  민감도=\(settings.sensitivity.title)")
         return lines
+    }
+
+    private static func landmarkSummary(_ landmarks: PoseLandmarks) -> String {
+        [
+            ("nose", landmarks.nose),
+            ("leftEye", landmarks.leftEye),
+            ("rightEye", landmarks.rightEye),
+            ("leftEar", landmarks.leftEar),
+            ("rightEar", landmarks.rightEar),
+            ("neck", landmarks.neck),
+            ("leftShoulder", landmarks.leftShoulder),
+            ("rightShoulder", landmarks.rightShoulder)
+        ].map { name, point in
+            guard let point else { return "\(name)=-" }
+            return "\(name)=(\(String(format: "%.2f", point.x)),\(String(format: "%.2f", point.y)),c=\(String(format: "%.2f", point.confidence)))"
+        }.joined(separator: " · ")
+    }
+
+    private static func roiSummary(_ rois: PostureROIs?) -> String {
+        guard let rois else { return "-" }
+        func describe(_ rect: NormalizedRect) -> String {
+            "(\(String(format: "%.2f", rect.x)),\(String(format: "%.2f", rect.y)),\(String(format: "%.2f", rect.width)),\(String(format: "%.2f", rect.height)))"
+        }
+        return "head=\(describe(rois.head)) · torso=\(describe(rois.torso)) · reference=\(describe(rois.reference))"
+    }
+
+    private static func depthAndQualitySummary(_ analysis: FrameAnalysis) -> String {
+        let depth: String
+        if let summary = analysis.depth {
+            let range = if let minimum = summary.minimum, let maximum = summary.maximum {
+                "\(String(format: "%.3f", minimum))...\(String(format: "%.3f", maximum))"
+            } else {
+                "-"
+            }
+            depth = "\(summary.width)x\(summary.height) \(summary.direction.rawValue) range=\(range)"
+        } else {
+            depth = "-"
+        }
+        let quality = analysis.quality
+        return "\(depth) · confidence=\(String(format: "%.2f", quality.landmarkConfidence)) · pixels=\(String(format: "%.2f", quality.headValidPixelRatio))/\(String(format: "%.2f", quality.torsoValidPixelRatio))/\(String(format: "%.2f", quality.referenceValidPixelRatio)) · IQR=\(quality.referenceIQR.map { String(format: "%.3f", $0) } ?? "-")"
     }
 
     private static func assessmentLabel(_ assessment: PostureAssessment) -> String {
@@ -403,72 +458,12 @@ public final class AppModel: ObservableObject {
         guard let baseline else {
             return "없음(미보정)"
         }
-        var parts: [String] = []
-        if let value = baseline.profileAngle { parts.append("측면 \(String(format: "%.0f", value))°") }
-        if let value = baseline.threeQuarterAngle { parts.append("3-4 \(String(format: "%.0f", value))°") }
-        if let value = baseline.frontHeadDropRatio { parts.append("정면 \(String(format: "%.2f", value))") }
-        if let value = baseline.bodyFrameAngle { parts.append("3D축 \(String(format: "%.0f", value))°") }
-        if let value = baseline.depthDeltaNorm { parts.append("3D깊이 \(String(format: "%.2f", value))") }
-        if let value = baseline.relativeDepthDelta { parts.append("상대깊이 \(String(format: "%.2f", value))") }
-        if let value = baseline.frontFaceBottomY { parts.append("얼굴 \(String(format: "%.2f", value))") }
-        return parts.isEmpty ? "없음(미보정)" : parts.joined(separator: " · ")
-    }
-
-    private static func mlRequestSummary(_ algorithm: PostureAlgorithmID) -> String {
-        let coreML = algorithm.requestsCoreMLRelativeDepth ? "요청" : "미요청"
-        let vision3D: String
-        if algorithm.requests3D {
-            vision3D = SystemInfo.current.canRequestVision3D ? "요청" : "차단"
-        } else {
-            vision3D = "미요청"
-        }
-        return "요청  CoreML=\(coreML)  Vision3D=\(vision3D)"
-    }
-
-    private static func mlBaselineWarning(_ algorithm: PostureAlgorithmID, baseline: Baseline?) -> String? {
-        guard let baseline else {
-            return algorithm.isUserSelectableMLMethod ? "ML 기준 없음(재보정 필요)" : nil
-        }
-        switch algorithm {
-        case .mlAuto:
-            let hasMLBaseline = baseline.relativeDepthDelta != nil || baseline.depthDeltaNorm != nil || baseline.bodyFrameAngle != nil
-            return hasMLBaseline ? nil : "ML 기준 없음(재보정 필요)"
-        case .coreMLRelativeDepth:
-            return baseline.relativeDepthDelta == nil ? "Core ML 기준 없음(재보정 필요)" : nil
-        case .depthDelta:
-            return baseline.depthDeltaNorm == nil ? "3D깊이 기준 없음(재보정 필요)" : nil
-        case .bodyFrame3D:
-            return baseline.bodyFrameAngle == nil ? "3D축 기준 없음(재보정 필요)" : nil
-        case .profileGeometry, .frontProxy, .fusion:
-            return nil
-        }
+        return "중심 \(String(format: "%.3f", baseline.center)) · 변동 \(String(format: "%.3f", baseline.dispersion)) · \(baseline.burstCount)회"
     }
 
     static func describe(_ diagnostic: PostureDiagnostic) -> String {
-        guard let kind = diagnostic.signalKind else {
-            return diagnostic.reason ?? "측정 신호 없음"
-        }
-        let value = diagnostic.value.map { String(format: "%.1f", $0) } ?? "-"
-        let confidence = diagnostic.confidence.map { String(format: "%.2f", $0) } ?? "-"
-        let viewpoint = diagnostic.viewpoint.map(Self.viewpointLabel) ?? "?"
-        return "[\(diagnostic.algorithm.title)] \(kind.label) \(value) · 신뢰 \(confidence) · \(viewpoint)"
-    }
-
-    private static func viewpointLabel(_ band: ViewpointBand) -> String {
-        switch band {
-        case .front:
-            return "정면"
-        case .profileLeft:
-            return "좌측면"
-        case .profileRight:
-            return "우측면"
-        case .threeQuarterLeft:
-            return "좌3-4"
-        case .threeQuarterRight:
-            return "우3-4"
-        case .unknown:
-            return "시점 미상"
-        }
+        let feature = diagnostic.summary.medianFeature.map { String(format: "%.3f", $0) } ?? "-"
+        return "\(assessmentLabel(diagnostic.assessment)) · feature \(feature) · \(diagnostic.evidence.rawValue)"
     }
 
     private static func todayKey() -> String {

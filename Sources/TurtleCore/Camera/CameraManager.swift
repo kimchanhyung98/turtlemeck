@@ -4,7 +4,7 @@ import CoreMedia
 import Foundation
 
 public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoDataOutputSampleBufferDelegate {
-    public var onVerdict: (@Sendable (BurstVerdict) -> Void)?
+    public var onVerdict: (@MainActor @Sendable (BurstVerdict) -> PostureState)?
     public var onNextCheckUpdate: (@Sendable (Int) -> Void)?
     public var onBlocked: (@Sendable (String) -> Void)?
     public var onDiagnostic: (@Sendable (PostureDiagnostic) -> Void)?
@@ -13,27 +13,35 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private let queue = DispatchQueue(label: "com.go.turtlemeck.camera.control", qos: .utility)
     private let sampleBufferQueue = DispatchQueue(label: "com.go.turtlemeck.camera.samples", qos: .utility)
     private let analysisQueue = DispatchQueue(label: "com.go.turtlemeck.camera.analysis", qos: .utility)
+    private let outputQueue = DispatchQueue(label: "com.go.turtlemeck.debug-output", qos: .utility)
+    private let localAnalysisQueue = DispatchQueue(label: "com.go.turtlemeck.local-analysis", qos: .utility)
     private let detector = PoseDetector()
-    private let relativeDepthProvider = CoreMLRelativeDepthProvider()
-    private let debugCaptureStore = DebugCaptureStore()
-    private let pipeline = PosturePipeline()
+    private let depthProvider = CoreMLRelativeDepthProvider()
+    private let frameAnalyzer = PostureFrameAnalyzer()
     private let burstProcessor = BurstProcessor()
+    private let debugStore = DebugCaptureStore()
+    private let localAnalysisRunner = LocalAIAnalysisRunner()
+
     private var session: AVCaptureSession?
+    private var captureConfiguration: CaptureConfiguration?
     private var settings = Settings.defaults
     private var baseline: Baseline?
-    private var burstFrames: [TimedFrame] = []
+    private var frames: [TimedFrame] = []
+    private var pendingFrameOutputs: [PendingFrameOutput] = []
+    private var subjectSelector = UpperBodySubjectSelector()
     private var burstStartDate: Date?
     private var isCollectingFrames = false
     private var enqueuedFrameCount = 0
     private var lastEnqueuedCollectionTime: Double?
+    private var currentDebugSession: DebugCaptureSession?
     private var isRunning = false
     private var scheduledWorkItem: DispatchWorkItem?
-    private var calibrationCompletion: (@Sendable (CalibrationResult) -> Void)?
+    private var calibrationCompletion: (@MainActor @Sendable (CalibrationResult) -> PostureState)?
+    private var calibrationSummaries: [BurstSummary] = []
+    private var calibrationAttempts = 0
     private var burstRunID = 0
     private var immediateCheckPending = false
-    private var routeSelector = ViewpointRouteSelector(initial: .mlAuto, hysteresis: 2)
-    private var routedAlgorithm: PostureAlgorithmID = .mlAuto
-    private var isPrewarmingCoreML = false
+    private var isPrewarmingModel = false
 
     public override init() {
         super.init()
@@ -57,37 +65,17 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         )
     }
 
-    static func authorizationAction(for status: AVAuthorizationStatus) -> CameraAuthorizationAction {
-        switch status {
-        case .authorized:
-            return .start
-        case .notDetermined:
-            return .requestAccess
-        case .denied, .restricted:
-            return .blocked("camera permission denied")
-        @unknown default:
-            return .blocked("camera permission denied")
-        }
-    }
-
-    static func shouldPrewarmCoreML(effectiveAlgorithm: PostureAlgorithmID, modelLoadResolved: Bool) -> Bool {
-        effectiveAlgorithm.requestsCoreMLRelativeDepth && !modelLoadResolved
-    }
-
-    static func calibrationRequiredAlgorithm(for frames: [TimedFrame], fallback: PostureAlgorithmID) -> PostureAlgorithmID {
-        var counts: [PostureAlgorithmID: Int] = [:]
-        var order: [PostureAlgorithmID] = []
-        for algorithm in frames.compactMap(\.frame.algorithm) {
-            if counts[algorithm] == nil {
-                order.append(algorithm)
-            }
-            counts[algorithm, default: 0] += 1
-        }
-        return order.max { (counts[$0] ?? 0) < (counts[$1] ?? 0) } ?? fallback
-    }
-
     deinit {
         NotificationCenter.default.removeObserver(self)
+    }
+
+    public static func authorizationAction(for status: AVAuthorizationStatus) -> CameraAuthorizationAction {
+        switch status {
+        case .authorized: .start
+        case .notDetermined: .requestAccess
+        case .denied, .restricted: .blocked("camera permission denied")
+        @unknown default: .blocked("camera permission denied")
+        }
     }
 
     public func start(settings: Settings, baseline: Baseline?) {
@@ -104,9 +92,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             let intervalChanged = self.settings.checkIntervalSeconds != settings.checkIntervalSeconds
             self.settings = settings
             self.baseline = settings.baseline
-            // 점검 주기가 바뀌면 이미 걸린 예약을 새 주기로 다시 잡는다(추적 중 + burst/보정/즉시점검 중이 아닐 때만).
-            if intervalChanged, self.isRunning, !self.isCollectingFrames,
-                self.calibrationCompletion == nil, !self.immediateCheckPending {
+            if intervalChanged, self.isRunning, self.burstStartDate == nil, self.calibrationCompletion == nil {
                 self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
             }
         }
@@ -125,23 +111,38 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     public func runImmediateCheck(settings: Settings, baseline: Baseline?) {
         queue.async {
+            // 보정 중의 즉시 점검은 보정 버스트로 흡수되므로 보정이 끝날 때까지 받지 않는다.
+            guard self.calibrationCompletion == nil else { return }
             self.settings = settings
             self.baseline = baseline
-            // 진행 중 예약을 취소해 runCalibration과 동작을 일관화한다(직렬 큐라 안전하나 의미상 경쟁 제거 — R-4).
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
+            if self.burstStartDate != nil {
+                self.session?.stopRunning()
+                self.invalidateCurrentBurst()
+            }
             self.immediateCheckPending = true
             self.performBurst()
         }
     }
 
-    public func runCalibration(settings: Settings, baseline: Baseline?, completion: @Sendable @escaping (CalibrationResult) -> Void) {
+    public func runCalibration(
+        settings: Settings,
+        baseline: Baseline?,
+        completion: @MainActor @Sendable @escaping (CalibrationResult) -> PostureState
+    ) {
         queue.async {
             self.settings = settings
             self.baseline = baseline
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
+            if self.burstStartDate != nil {
+                self.session?.stopRunning()
+                self.invalidateCurrentBurst()
+            }
             self.immediateCheckPending = false
+            self.calibrationSummaries.removeAll()
+            self.calibrationAttempts = 0
             self.calibrationCompletion = completion
             self.performBurst()
         }
@@ -149,272 +150,343 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     private func scheduleNextBurst(after seconds: Int) {
         scheduledWorkItem?.cancel()
-        guard isRunning else {
-            return
-        }
-
-        let callback = onNextCheckUpdate
-        DispatchQueue.main.async {
-            callback?(seconds)
-        }
-
-        let item = DispatchWorkItem { [weak self] in
-            self?.performBurst()
-        }
+        guard isRunning else { return }
+        emitNextCheck(seconds)
+        let item = DispatchWorkItem { [weak self] in self?.performBurst() }
         scheduledWorkItem = item
         queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
     }
 
     private func performBurst() {
-        guard shouldStartBurst else {
-            return
-        }
-
+        guard burstStartDate == nil, isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
         switch Self.authorizationAction(for: AVCaptureDevice.authorizationStatus(for: .video)) {
         case .start:
             startAuthorizedBurst()
         case .requestAccess:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
-                guard let self else {
-                    return
-                }
-                self.queue.async {
-                    guard self.shouldStartBurst else {
-                        return
-                    }
-                    if allowed {
-                        self.startAuthorizedBurst()
-                    } else {
-                        self.emitBlocked("camera permission denied")
-                        self.calibrationCompletion = nil
-                        self.immediateCheckPending = false
-                        self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
-                    }
+                guard let manager = self else { return }
+                manager.queue.async {
+                    if allowed { manager.startAuthorizedBurst() } else { manager.failToStart("camera permission denied") }
                 }
             }
         case .blocked(let reason):
-            emitBlocked(reason)
-            calibrationCompletion = nil
-            immediateCheckPending = false
-            scheduleNextBurst(after: effectiveIntervalSeconds())
+            failToStart(reason)
         }
-    }
-
-    private var shouldStartBurst: Bool {
-        isRunning || calibrationCompletion != nil || immediateCheckPending
     }
 
     private func startAuthorizedBurst() {
         do {
             try configureSessionIfNeeded()
-            if Self.shouldPrewarmCoreML(effectiveAlgorithm: effectiveAlgorithm(), modelLoadResolved: relativeDepthProvider.isModelLoadResolved) {
-                prewarmCoreMLThenStartAuthorizedBurst()
+            if !depthProvider.isModelLoadResolved {
+                prewarmModelThenStart()
                 return
             }
-            burstFrames.removeAll()
-            pipeline.reset()
+            frames.removeAll()
+            pendingFrameOutputs.removeAll()
+            analysisQueue.async { self.subjectSelector.reset() }
             let runID = nextBurstRunID()
+            currentDebugSession = settings.debugEnabled || localAnalysisRunner.isEnabled
+                ? debugStore.prepareRun()
+                : nil
+            session?.startRunning()
             burstStartDate = Date()
             isCollectingFrames = true
             enqueuedFrameCount = 0
             lastEnqueuedCollectionTime = nil
-            if settings.debugEnabled {
-                debugCaptureStore.prepareLatestRun()
-            }
-            session?.startRunning()
             emitCaptureActivity(true)
             queue.asyncAfter(deadline: .now() + CameraBurstTiming.totalDuration) {
-                self.stopCaptureForCurrentBurst(runID: runID)
+                self.stopCapture(runID: runID)
             }
             queue.asyncAfter(deadline: .now() + CameraBurstTiming.finishDelay) {
-                guard self.burstRunID == runID else {
-                    return
-                }
                 self.finishBurst(runID: runID)
             }
         } catch {
-            emitBlocked("camera unavailable")
-            calibrationCompletion = nil
-            immediateCheckPending = false
-            scheduleNextBurst(after: effectiveIntervalSeconds())
+            failToStart("camera unavailable")
         }
     }
 
-    private func prewarmCoreMLThenStartAuthorizedBurst() {
-        guard !isPrewarmingCoreML else {
-            return
-        }
-        isPrewarmingCoreML = true
-        let provider = relativeDepthProvider
+    private func prewarmModelThenStart() {
+        guard !isPrewarmingModel else { return }
+        isPrewarmingModel = true
+        let provider = depthProvider
         analysisQueue.async { [weak self] in
+            guard let manager = self else { return }
             _ = provider.prewarm()
-            guard let manager = self else {
-                return
-            }
-            manager.queue.async { [weak manager] in
-                guard let manager else {
-                    return
-                }
-                manager.isPrewarmingCoreML = false
-                guard manager.shouldStartBurst else {
-                    return
-                }
+            manager.queue.async {
+                manager.isPrewarmingModel = false
                 manager.startAuthorizedBurst()
             }
         }
     }
 
-    private func stopCaptureForCurrentBurst(runID: Int) {
-        guard burstRunID == runID, isCollectingFrames else {
-            return
-        }
+    private func stopCapture(runID: Int) {
+        guard burstRunID == runID, isCollectingFrames else { return }
         isCollectingFrames = false
         session?.stopRunning()
         emitCaptureActivity(false)
-    }
-
-    /// 디버그 모드면 사용자가 고른 방식, 아니면 시점 라우팅이 고른 방식을 쓴다.
-    private func effectiveAlgorithm() -> PostureAlgorithmID {
-        settings.debugEnabled ? settings.postureAlgorithm : routedAlgorithm
-    }
-
-    /// 버스트 프레임들의 지배 시점 band. 알려진 band를 우선하고, 전부 미상이면 .unknown.
-    private func dominantViewpointBand(of frames: [TimedFrame]) -> ViewpointBand {
-        let bands = frames.compactMap { $0.frame.viewpoint?.band }
-        let known = bands.filter { $0 != .unknown }
-        let pool = known.isEmpty ? bands : known
-        guard !pool.isEmpty else { return .unknown }
-        let counts = Dictionary(grouping: pool, by: { $0 }).mapValues(\.count)
-        return counts.max(by: { $0.value < $1.value })?.key ?? .unknown
     }
 
     private func finishBurst(runID: Int) {
-        guard burstRunID == runID else {
-            return
-        }
+        guard burstRunID == runID else { return }
         session?.stopRunning()
         emitCaptureActivity(false)
         isCollectingFrames = false
-        let frames = burstFrames
+        let aggregationStart = Date()
+        let completedFrames = frames.sorted { $0.index < $1.index }
+        let completedFrameOutputs = pendingFrameOutputs.sorted { $0.index < $1.index }
+        let summary = burstProcessor.summarize(completedFrames)
+        var stageTimings = averageStageTimings(completedFrames)
+        stageTimings["burstAggregation"] = Date().timeIntervalSince(aggregationStart) * 1_000
+        let debugSession = currentDebugSession
         burstStartDate = nil
         enqueuedFrameCount = 0
         lastEnqueuedCollectionTime = nil
+        currentDebugSession = nil
         immediateCheckPending = false
-        let calibrationAlgorithm = Self.calibrationRequiredAlgorithm(for: frames, fallback: effectiveAlgorithm())
-
-        // 시점 분석 틱: 이번 버스트의 지배 시점으로 라우팅 방식을 갱신(히스테리시스 K=2). 자세 재보정과 별개.
-        routedAlgorithm = routeSelector.update(dominantBand: dominantViewpointBand(of: frames))
+        frames.removeAll()
+        pendingFrameOutputs.removeAll()
 
         if let completion = calibrationCompletion {
-            calibrationCompletion = nil
-            // 보정도 동일한 2초 버스트를 사용하되, 최종 판정 대신 Calibrator로 baseline만 만든다.
-            // 프레임을 실제 분석한 방식 기준으로 baseline을 요구한다. 라우팅 전환 burst에서는 새 routedAlgorithm과 프레임 신호가 다를 수 있다.
-            let result = Calibrator().capture(from: frames.map(\.frame), requiredAlgorithm: calibrationAlgorithm)
-            if settings.debugEnabled {
-                var diagnostic = makeDiagnostic(assessment: .noEval, reason: "보정 \(calibrationLabel(result))", frames: frames)
-                diagnostic.debugArtifactPath = debugCaptureStore.writeFinalAnalysis(
-                    mode: "calibration",
+            calibrationAttempts += 1
+            calibrationSummaries.append(summary)
+            if calibrationAttempts < CameraBurstTiming.maximumCalibrationAttempts,
+               calibrationSummaries.filter({ $0.validFrameCount >= Tuning.minimumValidFrames }).count < Tuning.requiredCalibrationBursts {
+                let diagnostic = calibrationDiagnostic(
+                    result: nil,
+                    productState: .calibrating,
+                    summary: summary,
+                    frames: completedFrames,
+                    stageTimings: stageTimings
+                )
+                deliverDiagnostic(
+                    diagnostic,
+                    session: debugSession,
                     verdict: nil,
-                    calibrationResult: result,
-                    diagnostic: diagnostic,
-                    frames: frames,
-                    settings: settings,
-                    baseline: baseline
-                )
-                emitDiagnostic(diagnostic)
-            }
-            emitCalibration(result, completion: completion)
-        } else {
-            let verdict = burstProcessor.process(frames)
-            var diagnostic = makeDiagnostic(assessment: verdict.assessment, frames: frames)
-            if settings.debugEnabled {
-                diagnostic.debugArtifactPath = debugCaptureStore.writeFinalAnalysis(
-                    mode: "check",
-                    verdict: verdict,
                     calibrationResult: nil,
-                    diagnostic: diagnostic,
-                    frames: frames,
-                    settings: settings,
-                    baseline: baseline
+                    baseline: baseline,
+                    frameOutputs: completedFrameOutputs,
+                    afterOutput: {
+                        self.queue.asyncAfter(deadline: .now() + 0.5) { self.performBurst() }
+                    }
                 )
+                return
             }
-            emit(verdict)
-            emitDiagnostic(diagnostic)
-        }
-        burstFrames.removeAll()
-
-        if isRunning {
-            scheduleNextBurst(after: effectiveIntervalSeconds())
+            calibrationCompletion = nil
+            let calibrationStart = Date()
+            let result = Calibrator().capture(
+                from: calibrationSummaries,
+                captureConfiguration: captureConfiguration
+            )
+            stageTimings["calibration"] = Date().timeIntervalSince(calibrationStart) * 1_000
+            let stateStart = Date()
+            let productState = resolveCalibration(result, completion: completion)
+            stageTimings["stateTransition"] = Date().timeIntervalSince(stateStart) * 1_000
+            let diagnostic = calibrationDiagnostic(
+                result: result,
+                productState: productState,
+                summary: summary,
+                frames: completedFrames,
+                stageTimings: stageTimings
+            )
+            deliverDiagnostic(
+                diagnostic,
+                session: debugSession,
+                verdict: nil,
+                calibrationResult: result,
+                baseline: baselineForSession(result),
+                frameOutputs: completedFrameOutputs,
+                afterOutput: { self.scheduleFollowingBurstIfNeeded() }
+            )
+        } else {
+            let verdictStart = Date()
+            let verdict = burstProcessor.process(
+                completedFrames,
+                baseline: baseline,
+                captureConfiguration: captureConfiguration,
+                sensitivity: settings.sensitivity
+            )
+            stageTimings["baselineComparison"] = Date().timeIntervalSince(verdictStart) * 1_000
+            let stateStart = Date()
+            let productState = resolveVerdict(verdict)
+            stageTimings["stateTransition"] = Date().timeIntervalSince(stateStart) * 1_000
+            let diagnostic = PostureDiagnostic(
+                assessment: verdict.assessment,
+                productState: productState,
+                evidence: verdict.evidence,
+                summary: verdict.summary,
+                baselineCenter: baseline?.center,
+                baselineDelta: verdict.baselineDelta,
+                reason: verdict.reason,
+                frames: completedFrames,
+                stageProcessingMilliseconds: stageTimings
+            )
+            deliverDiagnostic(
+                diagnostic,
+                session: debugSession,
+                verdict: verdict,
+                calibrationResult: nil,
+                baseline: baseline,
+                frameOutputs: completedFrameOutputs,
+                afterOutput: { self.scheduleFollowingBurstIfNeeded() }
+            )
         }
     }
 
-    private func emit(_ verdict: BurstVerdict) {
-        let callback = onVerdict
-        DispatchQueue.main.async {
-            callback?(verdict)
+    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let sample = SampleBufferBox(sampleBuffer: sampleBuffer)
+        queue.async { [weak self] in
+            guard
+                let self,
+                let snapshot = self.reserveSnapshot()
+            else { return }
+            guard CameraFrameQuality.isUsable(sample.sampleBuffer) else {
+                self.analysisQueue.async { [weak self] in
+                    self?.processRejectedCapture(sample, snapshot: snapshot)
+                }
+                return
+            }
+            self.analysisQueue.async { [weak self] in
+                self?.process(sample, snapshot: snapshot)
+            }
         }
     }
 
-    private func makeDiagnostic(assessment: PostureAssessment, reason: String? = nil, frames: [TimedFrame]) -> PostureDiagnostic {
-        // 신호가 있는 가장 최근 프레임을 대표로 삼아 현재 측정값을 보여준다.
-        let analyzedFrames = frames.map(\.frame)
-        let representative = analyzedFrames.last(where: { $0.signal != nil }) ?? analyzedFrames.last
-        var observedSignalKinds: [SignalKind] = []
-        for kind in analyzedFrames.compactMap({ $0.signal?.kind }) where !observedSignalKinds.contains(kind) {
-            observedSignalKinds.append(kind)
+    private func processRejectedCapture(_ sample: SampleBufferBox, snapshot: CaptureSnapshot) {
+        guard isBurstCurrent(snapshot.runID) else { return }
+        let analysis = FrameAnalysis(
+            landmarks: PoseLandmarks(),
+            exclusionReason: .unstableCapture,
+            processingMilliseconds: ["captureQuality": 0]
+        )
+        queue.async {
+            guard self.burstRunID == snapshot.runID, self.burstStartDate != nil else { return }
+            self.frames.append(TimedFrame(time: snapshot.timestamp, analysis: analysis, index: snapshot.frameIndex))
+            guard let session = snapshot.debugSession else { return }
+            self.pendingFrameOutputs.append(PendingFrameOutput(
+                session: session,
+                index: snapshot.frameIndex,
+                time: snapshot.timestamp,
+                sample: sample,
+                depthMap: nil,
+                analysis: analysis
+            ))
         }
-        return PostureDiagnostic(
-            algorithm: settings.postureAlgorithm,
-            assessment: assessment,
-            signalKind: representative?.signal?.kind,
-            value: representative?.signal?.angleDegrees,
-            confidence: representative?.signal?.confidence,
-            viewpoint: representative?.viewpoint?.band,
-            reason: reason ?? representative?.reason,
-            frameCount: analyzedFrames.count,
-            validFrameCount: analyzedFrames.filter { $0.assessment != .noEval }.count,
-            signalFrameCount: analyzedFrames.filter { $0.signal != nil }.count,
-            observedSignalKinds: observedSignalKinds,
-            debugNotes: representative?.debugNotes ?? []
+    }
+
+    private func reserveSnapshot() -> CaptureSnapshot? {
+        let now = Date()
+        guard
+            isCollectingFrames,
+            let startDate = burstStartDate,
+            let timestamp = CameraBurstTiming.collectionTime(elapsed: now.timeIntervalSince(startDate)),
+            enqueuedFrameCount < CameraBurstTiming.maximumAnalysisFrames,
+            CameraBurstTiming.shouldSample(collectionTime: timestamp, after: lastEnqueuedCollectionTime)
+        else { return nil }
+        enqueuedFrameCount += 1
+        lastEnqueuedCollectionTime = timestamp
+        return CaptureSnapshot(
+            runID: burstRunID,
+            startDate: startDate,
+            timestamp: timestamp,
+            frameIndex: enqueuedFrameCount,
+            debugSession: currentDebugSession
         )
     }
 
-    private func calibrationLabel(_ result: CalibrationResult) -> String {
-        switch result {
-        case .accepted:
-            return "성공"
-        case .rejected(.alreadySlouched):
-            return "실패: 구부정"
-        case .rejected(.noReliableFrames):
-            return "실패: 신호 부족"
+    private func process(_ sample: SampleBufferBox, snapshot: CaptureSnapshot) {
+        guard Date().timeIntervalSince(snapshot.startDate) <= CameraBurstTiming.finishDelay, isBurstCurrent(snapshot.runID) else { return }
+        let visionStart = Date()
+        let candidates = (try? detector.detectCandidates(sampleBuffer: sample.sampleBuffer, orientation: .up)) ?? []
+        let visionMilliseconds = Date().timeIntervalSince(visionStart) * 1_000
+        let selection = subjectSelector.select(from: candidates)
+        let depthStart = Date()
+        let depthMap = depthProvider.estimate(sampleBuffer: sample.sampleBuffer)
+        let depthMilliseconds = Date().timeIntervalSince(depthStart) * 1_000
+        var analysis: FrameAnalysis
+        let featureStart: Date
+        switch selection {
+        case .selected(let landmarks):
+            featureStart = Date()
+            analysis = frameAnalyzer.analyze(landmarks: landmarks, depthMap: depthMap)
+        case .rejected(let reason):
+            featureStart = Date()
+            analysis = FrameAnalysis(
+                landmarks: PoseLandmarks(),
+                depth: depthMap.map(DepthSummary.init),
+                exclusionReason: reason
+            )
+        }
+        analysis.processingMilliseconds = [
+            "vision2D": visionMilliseconds,
+            "depthAnythingV2": depthMilliseconds,
+            "feature": Date().timeIntervalSince(featureStart) * 1_000
+        ]
+
+        let completedAnalysis = analysis
+        queue.async {
+            guard self.burstRunID == snapshot.runID, self.burstStartDate != nil else { return }
+            self.frames.append(TimedFrame(time: snapshot.timestamp, analysis: completedAnalysis, index: snapshot.frameIndex))
+            guard let session = snapshot.debugSession else { return }
+            self.pendingFrameOutputs.append(PendingFrameOutput(
+                session: session,
+                index: snapshot.frameIndex,
+                time: snapshot.timestamp,
+                sample: sample,
+                depthMap: depthMap,
+                analysis: completedAnalysis
+            ))
         }
     }
 
-    private func emitDiagnostic(_ diagnostic: PostureDiagnostic) {
-        let callback = onDiagnostic
-        DispatchQueue.main.async {
-            callback?(diagnostic)
-        }
+    private func configureSessionIfNeeded() throws {
+        guard session == nil else { return }
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera],
+            mediaType: .video,
+            position: .unspecified
+        )
+        guard let device = discovery.devices.first else { throw CameraError.noCamera }
+        try device.lockForConfiguration()
+        configureFrameRate(for: device)
+        device.unlockForConfiguration()
+
+        let session = AVCaptureSession()
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        session.sessionPreset = .vga640x480
+        let input = try AVCaptureDeviceInput(device: device)
+        guard session.canAddInput(input) else { throw CameraError.cannotAddInput }
+        session.addInput(input)
+        let output = AVCaptureVideoDataOutput()
+        output.alwaysDiscardsLateVideoFrames = true
+        output.setSampleBufferDelegate(self, queue: sampleBufferQueue)
+        guard session.canAddOutput(output) else { throw CameraError.cannotAddOutput }
+        session.addOutput(output)
+        self.session = session
+        captureConfiguration = CaptureConfiguration(
+            cameraUniqueID: device.uniqueID,
+            width: 640,
+            height: 480,
+            orientation: "up-unmirrored"
+        )
     }
 
-    private func emitCaptureActivity(_ active: Bool) {
-        let callback = onCaptureActivity
-        DispatchQueue.main.async {
-            callback?(active)
-        }
+    private func configureFrameRate(for device: AVCaptureDevice) {
+        let desired = 5.0
+        guard device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= desired && desired <= $0.maxFrameRate }) else { return }
+        let duration = CMTime(value: 1, timescale: 5)
+        device.activeVideoMinFrameDuration = duration
+        device.activeVideoMaxFrameDuration = duration
     }
 
-    private func emitCalibration(_ result: CalibrationResult, completion: @Sendable @escaping (CalibrationResult) -> Void) {
-        DispatchQueue.main.async {
-            completion(result)
+    private func failToStart(_ reason: String) {
+        emitBlocked(reason)
+        if let completion = calibrationCompletion {
+            calibrationCompletion = nil
+            _ = resolveCalibration(.rejected(.noReliableBursts), completion: completion)
         }
-    }
-
-    private func emitBlocked(_ reason: String) {
-        let callback = onBlocked
-        DispatchQueue.main.async {
-            callback?(reason)
-        }
+        immediateCheckPending = false
+        if isRunning { scheduleNextBurst(after: effectiveIntervalSeconds()) }
     }
 
     private func effectiveIntervalSeconds() -> Int {
@@ -424,165 +496,106 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         return settings.checkIntervalSeconds
     }
 
-    private func configureSessionIfNeeded() throws {
-        guard session == nil else {
-            return
+    private func calibrationDiagnostic(
+        result: CalibrationResult?,
+        productState: PostureState,
+        summary: BurstSummary,
+        frames: [TimedFrame],
+        stageTimings: [String: Double]
+    ) -> PostureDiagnostic {
+        let reason: String
+        switch result {
+        case .none: reason = "calibration collecting \(calibrationAttempts)/\(Tuning.requiredCalibrationBursts)"
+        case .some(.accepted): reason = "calibration accepted"
+        case .some(.rejected(let rejectReason)): reason = "calibration rejected: \(rejectReason.rawValue)"
         }
-
-        let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera],
-            mediaType: .video,
-            position: .unspecified
-        )
-
-        guard let device = discovery.devices.first else {
-            throw CameraError.noCamera
-        }
-
-        try device.lockForConfiguration()
-        defer {
-            device.unlockForConfiguration()
-        }
-        configureFrameRate(for: device)
-
-        let session = AVCaptureSession()
-        session.beginConfiguration()
-        defer {
-            session.commitConfiguration()
-        }
-        session.sessionPreset = .vga640x480
-
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else {
-            throw CameraError.cannotAddInput
-        }
-        session.addInput(input)
-
-        let output = AVCaptureVideoDataOutput()
-        output.alwaysDiscardsLateVideoFrames = true
-        output.setSampleBufferDelegate(self, queue: sampleBufferQueue)
-        guard session.canAddOutput(output) else {
-            throw CameraError.cannotAddOutput
-        }
-        session.addOutput(output)
-
-        self.session = session
-    }
-
-    private func configureFrameRate(for device: AVCaptureDevice) {
-        let desiredFrameRate = 5.0
-        let desiredDuration = CMTime(value: 1, timescale: 5)
-        let ranges = device.activeFormat.videoSupportedFrameRateRanges
-
-        let duration: CMTime
-        if ranges.contains(where: { $0.minFrameRate <= desiredFrameRate && desiredFrameRate <= $0.maxFrameRate }) {
-            duration = desiredDuration
-        } else if let slowestRange = ranges.max(by: { CMTimeCompare($0.maxFrameDuration, $1.maxFrameDuration) < 0 }) {
-            duration = slowestRange.maxFrameDuration
+        let acceptedCenter: Double?
+        if case .some(.accepted(let accepted)) = result {
+            acceptedCenter = accepted.center
         } else {
-            return
+            acceptedCenter = baseline?.center
         }
-
-        device.activeVideoMinFrameDuration = duration
-        device.activeVideoMaxFrameDuration = duration
-    }
-
-    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        let sample = SampleBufferBox(sampleBuffer: sampleBuffer)
-        queue.async { [weak self] in
-            guard
-                let self,
-                CameraFrameQuality.isUsable(sample.sampleBuffer),
-                let snapshot = self.reserveCaptureSnapshotOnQueue()
-            else {
-                return
-            }
-            self.analysisQueue.async { [weak self] in
-                self?.processSampleBuffer(sample.sampleBuffer, snapshot: snapshot)
-            }
-        }
-    }
-
-    private func reserveCaptureSnapshotOnQueue() -> CaptureSnapshot? {
-        let now = Date()
-        guard
-            isCollectingFrames,
-            let startDate = burstStartDate,
-            let timestamp = CameraBurstTiming.collectionTime(elapsed: now.timeIntervalSince(startDate)),
-            enqueuedFrameCount < CameraBurstTiming.maximumAnalysisFrames,
-            CameraBurstTiming.shouldSample(collectionTime: timestamp, after: lastEnqueuedCollectionTime)
-        else {
-            return nil
-        }
-        let frameIndex = enqueuedFrameCount + 1
-        enqueuedFrameCount += 1
-        lastEnqueuedCollectionTime = timestamp
-        return CaptureSnapshot(
-            runID: burstRunID,
-            startDate: startDate,
-            timestamp: timestamp,
-            frameIndex: frameIndex,
-            settings: settings,
-            baseline: baseline,
-            effectiveAlgorithm: effectiveAlgorithm()
+        return PostureDiagnostic(
+            assessment: .noEval,
+            productState: productState,
+            evidence: .noEval,
+            summary: summary,
+            baselineCenter: acceptedCenter,
+            reason: reason,
+            frames: frames,
+            stageProcessingMilliseconds: stageTimings
         )
     }
 
-    private func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, snapshot: CaptureSnapshot) {
-        guard Date().timeIntervalSince(snapshot.startDate) <= CameraBurstTiming.finishDelay else {
-            return
-        }
-        guard isBurstCurrent(snapshot.runID) else {
-            return
-        }
+    private func baselineForSession(_ result: CalibrationResult) -> Baseline? {
+        if case .accepted(let accepted) = result { return accepted }
+        return baseline
+    }
 
-        let include3D = snapshot.effectiveAlgorithm.requests3D && SystemInfo.current.canRequestVision3D
-        let inputImage = snapshot.settings.debugEnabled ? debugCaptureStore.inputImage(from: sampleBuffer) : nil
-        var depthImage: CGImage?
-        var landmarks = (try? detector.detect(sampleBuffer: sampleBuffer, include3D: include3D)) ?? PoseLandmarks()
-        if snapshot.effectiveAlgorithm.requestsCoreMLRelativeDepth {
-            if snapshot.settings.debugEnabled {
-                let estimate = relativeDepthProvider.estimateWithDebugImage(
-                    sampleBuffer: sampleBuffer,
-                    landmarks: landmarks,
-                    includeDebugImage: true
+    private func averageStageTimings(_ frames: [TimedFrame]) -> [String: Double] {
+        var totals: [String: Double] = [:]
+        var counts: [String: Int] = [:]
+        for frame in frames {
+            for (stage, milliseconds) in frame.analysis.processingMilliseconds {
+                totals[stage, default: 0] += milliseconds
+                counts[stage, default: 0] += 1
+            }
+        }
+        return totals.reduce(into: [:]) { result, entry in
+            result[entry.key] = entry.value / Double(counts[entry.key] ?? 1)
+        }
+    }
+
+    private func deliverDiagnostic(
+        _ diagnostic: PostureDiagnostic,
+        session: DebugCaptureSession?,
+        verdict: BurstVerdict?,
+        calibrationResult: CalibrationResult?,
+        baseline: Baseline?,
+        frameOutputs: [PendingFrameOutput],
+        afterOutput: @Sendable @escaping () -> Void
+    ) {
+        guard let session else {
+            emitDiagnostic(diagnostic)
+            afterOutput()
+            return
+        }
+        let store = debugStore
+        let runner = localAnalysisRunner
+        outputQueue.async {
+            var completed = diagnostic
+            for frame in frameOutputs {
+                store.writeFrame(
+                    session: frame.session,
+                    index: frame.index,
+                    time: frame.time,
+                    inputImage: store.inputImage(from: frame.sample.sampleBuffer),
+                    depthImage: frame.depthMap.flatMap { self.depthProvider.debugImage(for: $0) },
+                    analysis: frame.analysis
                 )
-                landmarks.relativeDepth = estimate?.summary
-                depthImage = estimate?.debugImage
-            } else {
-                landmarks.relativeDepth = relativeDepthProvider.estimate(sampleBuffer: sampleBuffer, landmarks: landmarks)
             }
-        }
-        let processedLandmarks = landmarks
-        guard Date().timeIntervalSince(snapshot.startDate) <= CameraBurstTiming.finishDelay else {
-            return
-        }
-        if snapshot.settings.debugEnabled {
-            debugCaptureStore.writeImages(index: snapshot.frameIndex, inputImage: inputImage, depthImage: depthImage)
-        }
-
-        queue.async {
-            guard self.burstRunID == snapshot.runID, self.burstStartDate != nil else {
-                return
-            }
-            let frame = self.pipeline.process(
-                processedLandmarks,
-                settings: snapshot.settings,
-                baseline: snapshot.baseline,
-                timestamp: snapshot.timestamp,
-                algorithmOverride: snapshot.effectiveAlgorithm
+            let path = store.writeSession(
+                session: session,
+                verdict: verdict,
+                calibrationResult: calibrationResult,
+                diagnostic: diagnostic,
+                baseline: baseline
             )
-            self.burstFrames.append(TimedFrame(time: snapshot.timestamp, frame: frame, index: snapshot.frameIndex))
-            if snapshot.settings.debugEnabled {
-                self.debugCaptureStore.writeFrameAnalysis(index: snapshot.frameIndex, time: snapshot.timestamp, frame: frame)
+            if !path.isEmpty { completed.debugArtifactPath = path }
+            self.emitDiagnostic(completed)
+            self.queue.async(execute: afterOutput)
+            if runner.isEnabled, !path.isEmpty {
+                self.localAnalysisQueue.async { runner.run(commonSessionPath: path) }
             }
         }
+    }
+
+    private func scheduleFollowingBurstIfNeeded() {
+        if isRunning { scheduleNextBurst(after: effectiveIntervalSeconds()) }
     }
 
     private func isBurstCurrent(_ runID: Int) -> Bool {
-        queue.sync {
-            burstRunID == runID && burstStartDate != nil
-        }
+        queue.sync { burstRunID == runID && burstStartDate != nil }
     }
 
     private func nextBurstRunID() -> Int {
@@ -596,10 +609,62 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         isCollectingFrames = false
         enqueuedFrameCount = 0
         lastEnqueuedCollectionTime = nil
-        burstFrames.removeAll()
-        calibrationCompletion = nil
+        currentDebugSession = nil
+        frames.removeAll()
+        pendingFrameOutputs.removeAll()
         immediateCheckPending = false
-        isPrewarmingCoreML = false
+        isPrewarmingModel = false
+        calibrationCompletion = nil
+        calibrationSummaries.removeAll()
+        calibrationAttempts = 0
+    }
+
+    private func resolveVerdict(_ verdict: BurstVerdict) -> PostureState {
+        guard let callback = onVerdict else {
+            return switch verdict.assessment {
+            case .good: .good
+            case .bad: .bad
+            case .noEval: .noEval
+            }
+        }
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { callback(verdict) }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { callback(verdict) }
+        }
+    }
+
+    private func emitDiagnostic(_ diagnostic: PostureDiagnostic) {
+        let callback = onDiagnostic
+        DispatchQueue.main.async { callback?(diagnostic) }
+    }
+
+    private func resolveCalibration(
+        _ result: CalibrationResult,
+        completion: @MainActor @Sendable @escaping (CalibrationResult) -> PostureState
+    ) -> PostureState {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { completion(result) }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { completion(result) }
+        }
+    }
+
+    private func emitBlocked(_ reason: String) {
+        let callback = onBlocked
+        DispatchQueue.main.async { callback?(reason) }
+    }
+
+    private func emitCaptureActivity(_ active: Bool) {
+        let callback = onCaptureActivity
+        DispatchQueue.main.async { callback?(active) }
+    }
+
+    private func emitNextCheck(_ seconds: Int) {
+        let callback = onNextCheckUpdate
+        DispatchQueue.main.async { callback?(seconds) }
     }
 
     @objc private func sessionInterrupted() {
@@ -607,10 +672,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.session?.stopRunning()
             self.emitCaptureActivity(false)
             self.invalidateCurrentBurst()
-            self.emit(BurstVerdict(assessment: .noEval))
-            if self.isRunning {
-                self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
-            }
+            if self.isRunning { self.scheduleNextBurst(after: self.effectiveIntervalSeconds()) }
         }
     }
 
@@ -624,10 +686,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     @objc private func screensDidWake() {
         queue.async {
-            guard self.isRunning else {
-                return
-            }
-            self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
+            if self.isRunning { self.scheduleNextBurst(after: self.effectiveIntervalSeconds()) }
         }
     }
 }
@@ -637,25 +696,28 @@ private struct CaptureSnapshot: Sendable {
     let startDate: Date
     let timestamp: Double
     let frameIndex: Int
-    let settings: Settings
-    let baseline: Baseline?
-    let effectiveAlgorithm: PostureAlgorithmID
+    let debugSession: DebugCaptureSession?
 }
 
 private struct SampleBufferBox: @unchecked Sendable {
     let sampleBuffer: CMSampleBuffer
 }
 
-enum CameraFrameQuality {
-    static func isUsable(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            return false
-        }
+private struct PendingFrameOutput: @unchecked Sendable {
+    let session: DebugCaptureSession
+    let index: Int
+    let time: Double
+    let sample: SampleBufferBox
+    let depthMap: RelativeDepthMap?
+    let analysis: FrameAnalysis
+}
+
+public enum CameraFrameQuality {
+    public static func isUsable(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return false }
         let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
 
-        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
-            return false
-        }
+        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return false }
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
 
         switch pixelFormat {
@@ -665,21 +727,16 @@ enum CameraFrameQuality {
         case kCVPixelFormatType_32BGRA, kCVPixelFormatType_32ARGB, kCVPixelFormatType_32RGBA:
             return isUsableRGB(pixelBuffer, pixelFormat: pixelFormat)
         default:
-            return true
+            return false
         }
     }
 
     private static func isUsableLumaPlane(_ pixelBuffer: CVPixelBuffer) -> Bool {
         let width = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
         let height = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
-        guard
-            width > 0,
-            height > 0,
-            let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0)
-        else {
+        guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) else {
             return false
         }
-
         let bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
         return isUsableSampleGrid(width: width, height: height) { x, y in
             let row = base.advanced(by: y * bytesPerRow)
@@ -690,14 +747,9 @@ enum CameraFrameQuality {
     private static func isUsableRGB(_ pixelBuffer: CVPixelBuffer, pixelFormat: OSType) -> Bool {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
-        guard
-            width > 0,
-            height > 0,
-            let base = CVPixelBufferGetBaseAddress(pixelBuffer)
-        else {
+        guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
             return false
         }
-
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
         return isUsableSampleGrid(width: width, height: height) { x, y in
             let row = base.advanced(by: y * bytesPerRow)
@@ -723,24 +775,26 @@ enum CameraFrameQuality {
         }
     }
 
-    static func isUsableSampleGrid(width: Int, height: Int, sample: (Int, Int) -> Double) -> Bool {
+    public static func isUsableSampleGrid(
+        width: Int,
+        height: Int,
+        sample: (Int, Int) -> Double
+    ) -> Bool {
+        guard width > 0, height > 0 else { return false }
         let columns = 12
         let rows = 8
         var total = 0.0
         var maximum = 0.0
-        let count = columns * rows
-
         for row in 0..<rows {
-            let y = min(height - 1, max(0, (row * height) / rows))
+            let y = min(height - 1, row * height / rows)
             for column in 0..<columns {
-                let x = min(width - 1, max(0, (column * width) / columns))
+                let x = min(width - 1, column * width / columns)
                 let value = sample(x, y)
                 total += value
                 maximum = max(maximum, value)
             }
         }
-
-        let average = total / Double(count)
+        let average = total / Double(columns * rows)
         return maximum >= 24 || average >= 8
     }
 }
@@ -751,42 +805,29 @@ private enum CameraError: Error {
     case cannotAddOutput
 }
 
-enum CameraAuthorizationAction: Equatable {
+public enum CameraAuthorizationAction: Equatable {
     case start
     case requestAccess
     case blocked(String)
 }
 
-enum CameraBurstTiming {
-    static let warmupSeconds = 0.8
-    static let collectionSeconds = 3.0
-    static let processingGraceSeconds = 2.0
-    static let maximumAnalysisFrames = 8
-    static let minimumAnalysisFrameInterval = 0.3
-    static var totalDuration: Double {
-        warmupSeconds + collectionSeconds
-    }
-    static var finishDelay: Double {
-        totalDuration + processingGraceSeconds
-    }
+public enum CameraBurstTiming {
+    public static let warmupSeconds = 0.8
+    public static let collectionSeconds = 2.4
+    public static let processingGraceSeconds = 2.0
+    public static let maximumAnalysisFrames = 5
+    public static let minimumAnalysisFrameInterval = 0.4
+    public static let maximumCalibrationAttempts = 5
+    public static var totalDuration: Double { warmupSeconds + collectionSeconds }
+    public static var finishDelay: Double { totalDuration + processingGraceSeconds }
 
-    static func isCollecting(elapsed: Double) -> Bool {
-        elapsed >= warmupSeconds
-    }
-
-    static func collectionTime(elapsed: Double) -> Double? {
-        // 수집 창[warmup, total]을 벗어난 늦은 프레임은 처리하지 않는다(3D 처리 적체로 stop이 밀려
-        // 카메라가 필요 이상 켜져 있는 것을 줄임).
-        guard isCollecting(elapsed: elapsed), elapsed <= totalDuration else {
-            return nil
-        }
+    public static func collectionTime(elapsed: Double) -> Double? {
+        guard elapsed >= warmupSeconds, elapsed <= totalDuration else { return nil }
         return elapsed - warmupSeconds
     }
 
-    static func shouldSample(collectionTime: Double, after previousCollectionTime: Double?) -> Bool {
-        guard let previousCollectionTime else {
-            return true
-        }
-        return collectionTime - previousCollectionTime >= minimumAnalysisFrameInterval
+    public static func shouldSample(collectionTime: Double, after previous: Double?) -> Bool {
+        guard let previous else { return true }
+        return collectionTime - previous >= minimumAnalysisFrameInterval
     }
 }

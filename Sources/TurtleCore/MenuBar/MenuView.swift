@@ -160,7 +160,7 @@ struct MenuView: View {
                             get: { model.settings.checkIntervalSeconds },
                             set: { model.setCheckInterval(Double($0)) }
                         )) {
-                            ForEach(stride(from: 10, through: 180, by: 10).map { $0 }, id: \.self) { seconds in
+                            ForEach(stride(from: 20, through: 180, by: 10).map { $0 }, id: \.self) { seconds in
                                 Text("\(seconds)초").tag(seconds)
                             }
                         }
@@ -217,7 +217,7 @@ struct MenuView: View {
                 sectionTitle("분석")
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.settings.debugEnabled ? "분석 방식: 디버그 수동" : "분석 방식: 자동")
+                    Text("분석 방식: 공통 relative-depth 파이프라인")
                         .font(.callout)
                     Text(analysisDescription)
                         .font(.caption)
@@ -240,24 +240,7 @@ struct MenuView: View {
             VStack(alignment: .leading, spacing: 10) {
                 sectionTitle("디버그")
 
-                HStack {
-                    Label("분석 방식", systemImage: "function")
-                        .font(.callout)
-                    Spacer()
-                    Picker("분석 방식", selection: Binding(
-                        get: { model.settings.postureAlgorithm },
-                        set: { model.setPostureAlgorithm($0) }
-                    )) {
-                        ForEach(PostureAlgorithmID.debugSelectableMethods, id: \.self) { algorithm in
-                            Text(algorithm.title).tag(algorithm)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: Layout.trailingControlWidth, alignment: .trailing)
-                }
-
-                Text(model.settings.postureAlgorithm.description)
+                Text("디버그는 공통 판정 결과와 중간 품질 값만 추가로 표시합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -351,9 +334,9 @@ struct MenuView: View {
 
     private var analysisDescription: String {
         if model.settings.debugEnabled {
-            return "아래 디버그 패널에서 분석 방식을 직접 선택합니다."
+            return "같은 판정 경로의 landmark·ROI·depth·feature를 파일로 출력합니다."
         }
-        return "시점에 맞춰 정면 깊이와 측면 기하 분석을 자동 선택합니다."
+        return "Vision 2D ROI와 Depth Anything V2 상대 깊이를 개인 baseline과 비교합니다."
     }
 
     private var operationalStatusText: String {

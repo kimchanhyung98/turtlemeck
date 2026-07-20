@@ -1,49 +1,41 @@
 import Foundation
 
+/// 제품 데이터 검증 전의 잠정 품질·판정 값이다. 모델이나 도메인 흐름을 선택하는 설정이 아니다.
 public enum Tuning {
-    /// 보정 저장/통계에 사용할 높은 신뢰도 기준.
     public static let minimumLandmarkConfidence = 0.5
-    /// 실시간 추적은 Vision 웹캠 confidence가 낮게 나오는 경우가 많아 더 낮은 기준으로 신호를 만든다.
-    public static let minimumTrackingConfidence = 0.2
-    public static let profileBaselineRejectAngle = 55.0
-    public static let mediumAbsoluteBadAngle = 58.0
-    public static let frontRelativeDrop = 0.08
-    public static let frontAbsoluteGoodRatio = 0.82
-    public static let profileRelativeDrop = 7.0
-    public static let headOnlyShoulderWidth = 0.32
-    /// 양 눈을 잇는 선의 수평 대비 기울기(도). 이보다 크면 머리가 명확히 기울거나(삐딱) 크게 돌아간 것으로 보고
-    /// "바른 자세(good)"에서 제외한다. 웹캠에서 바른 자세의 눈선 기울기 변동(실측 0~19°)보다 충분히 높게 잡아
-    /// 바른 자세 오탐(false-bad)을 막는 보수적 값. 단일 프레임 노이즈는 버스트/상태기계 지속 요건이 흡수한다.
-    public static let maxHeadTiltDegrees = 28.0
-    /// 3D 이마-몸통 정규화 깊이차가 baseline 대비 이만큼 더 앞으로 나오면 주의(추세 신호).
-    public static let depthRelativeForward = 0.06
-    /// Core ML relative depth의 머리-어깨 closeness delta가 baseline 대비 이만큼 커지면 주의.
-    /// 절대 단위가 아니므로 자체 샘플 로그로 재튜닝해야 하는 잠정값이다.
-    public static let coreMLRelativeDepthForward = 0.08
-    /// face 보조 신호: 정면 응시로 볼 yaw 상한. 이보다 크면 고개 돌림으로 보고 얼굴 위치 신호를 쓰지 않는다.
-    public static let faceProxyMaxYaw = 25.0
-    /// 얼굴 박스 하단 y가 baseline 대비 이만큼 낮아지면 전방머리/숙임(추세 신호). 잠정값 — 자체 로그 튜닝 필요.
-    public static let frontFaceRelativeDrop = 0.18
+    public static let minimumShoulderWidth = 0.08
+    public static let maximumShoulderSlope = 0.18
+    public static let frameBoundaryMargin = 0.015
+    public static let roiErosionFraction = 0.15
+    public static let maximumROIBoundaryContactRatio = 0.0
+    public static let maximumROIOverlapRatio = 0.2
+    public static let minimumROIPixels = 12
+    public static let minimumValidDepthRatio = 0.8
+    public static let minimumReferenceIQR = 1e-6
+    public static let maximumSubjectJump = 0.3
+    public static let minimumSubjectSeparation = 0.04
+    public static let ambiguousSubjectSizeRatio = 0.8
+    public static let maximumBurstMAD = 0.35
+    public static let minimumValidFrames = 3
+    public static let minimumValidFrameRatio = 0.6
+    public static let requiredCalibrationBursts = 3
+    public static let maximumCalibrationMAD = 0.25
+    public static let requiredBadBursts = 2
+    public static let requiredRecoveryBursts = 2
+    public static let requiredNoEvalBursts = 3
+    public static let defaultDepthDirection: DepthDirection = .largerIsNear
 
-    public static func absoluteBadAngle(for sensitivity: Sensitivity) -> Double {
+    public static func worseningMargin(for sensitivity: Sensitivity, baselineDispersion: Double) -> Double {
+        let floor: Double
         switch sensitivity {
-        case .low:
-            return 52
-        case .medium:
-            return mediumAbsoluteBadAngle
-        case .high:
-            return 64
+        case .low: floor = 0.45
+        case .medium: floor = 0.35
+        case .high: floor = 0.25
         }
+        return max(floor, baselineDispersion * 3)
     }
 
-    public static func frontAbsoluteBadRatio(for sensitivity: Sensitivity) -> Double {
-        switch sensitivity {
-        case .low:
-            return 0.55
-        case .medium:
-            return 0.68
-        case .high:
-            return 0.78
-        }
+    public static func recoveryMargin(baselineDispersion: Double) -> Double {
+        max(0.12, baselineDispersion * 1.5)
     }
 }

@@ -13,20 +13,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "TurtleCore",
-            exclude: [
-                "App/CLAUDE.md",
-                "Camera/CLAUDE.md",
-                "Detection/CLAUDE.md",
-                "Launch/CLAUDE.md",
-                "MenuBar/CLAUDE.md",
-                "Notifications/CLAUDE.md",
-                "Onboarding/CLAUDE.md",
-                "Storage/CLAUDE.md"
-            ]
+            name: "TurtleCore"
         ),
         .executableTarget(name: "turtlemeck", dependencies: ["TurtleCore"]),
         .executableTarget(name: "analyze-image", dependencies: ["TurtleCore"], path: "tools/analyze-image"),
-        .testTarget(name: "TurtleCoreTests", dependencies: ["TurtleCore"])
+        .executableTarget(name: "workflow-tests", dependencies: ["TurtleCore"], path: "Tests/TurtleCoreTests")
     ]
 )

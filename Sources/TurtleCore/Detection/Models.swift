@@ -1,102 +1,5 @@
 import Foundation
 
-public enum Side: String, Codable, Equatable, Sendable {
-    case left
-    case right
-}
-
-public enum ViewpointBand: String, Codable, Equatable, Sendable {
-    case front
-    case threeQuarterLeft
-    case threeQuarterRight
-    case profileLeft
-    case profileRight
-    case unknown
-}
-
-public enum PostureAlgorithmID: String, Codable, Equatable, CaseIterable, Sendable {
-    case mlAuto
-    case profileGeometry
-    case frontProxy
-    case bodyFrame3D
-    case depthDelta
-    case coreMLRelativeDepth
-    case fusion
-
-    public var title: String {
-        switch self {
-        case .mlAuto:
-            return "AI/ML 자동"
-        case .profileGeometry:
-            return "측면 기하"
-        case .frontProxy:
-            return "정면 보조"
-        case .bodyFrame3D:
-            return "Apple Vision 3D 신체축"
-        case .depthDelta:
-            return "Apple Vision 3D 깊이차"
-        case .coreMLRelativeDepth:
-            return "Core ML Depth Anything"
-        case .fusion:
-            return "적응 융합"
-        }
-    }
-
-    public var description: String {
-        switch self {
-        case .mlAuto:
-            return "Core ML depth와 Apple Vision 3D 중 가용 ML 신호 자동 선택"
-        case .profileGeometry:
-            return "측면/3-4 머리-어깨 단조 각"
-        case .frontProxy:
-            return "정면 어깨폭 정규화 추세"
-        case .bodyFrame3D:
-            return "Apple Vision 3D pose의 신체 좌표계 기반 시상각"
-        case .depthDelta:
-            return "Apple Vision 3D pose의 이마-몸통 전방 깊이차"
-        case .coreMLRelativeDepth:
-            return "Depth Anything V2 Small 상대깊이의 머리-어깨 추세"
-        case .fusion:
-            return "시점/플랫폼에 따라 자동 선택(권장)"
-        }
-    }
-
-    public static var userSelectableMLMethods: [PostureAlgorithmID] {
-        [.mlAuto, .coreMLRelativeDepth, .depthDelta, .bodyFrame3D]
-    }
-
-    public var isUserSelectableMLMethod: Bool {
-        Self.userSelectableMLMethods.contains(self)
-    }
-
-    /// 디버그 모드에서 수동 선택 가능한 방식. ML 방식 + 시점 라우팅 대상(측면/정면 2D)을 포함해 시점별 동작을 직접 검증할 수 있다.
-    public static var debugSelectableMethods: [PostureAlgorithmID] {
-        userSelectableMLMethods + [.profileGeometry, .frontProxy]
-    }
-
-    public var isDebugSelectableMethod: Bool {
-        Self.debugSelectableMethods.contains(self)
-    }
-
-    public var requests3D: Bool {
-        switch self {
-        case .mlAuto, .bodyFrame3D, .depthDelta:
-            return true
-        case .profileGeometry, .frontProxy, .coreMLRelativeDepth, .fusion:
-            return false
-        }
-    }
-
-    public var requestsCoreMLRelativeDepth: Bool {
-        switch self {
-        case .mlAuto, .coreMLRelativeDepth:
-            return true
-        case .profileGeometry, .frontProxy, .bodyFrame3D, .depthDelta, .fusion:
-            return false
-        }
-    }
-}
-
 public enum Sensitivity: String, Codable, Equatable, CaseIterable, Sendable {
     case low
     case medium
@@ -104,23 +7,17 @@ public enum Sensitivity: String, Codable, Equatable, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .low:
-            return "낮음"
-        case .medium:
-            return "보통"
-        case .high:
-            return "높음"
+        case .low: "낮음"
+        case .medium: "보통"
+        case .high: "높음"
         }
     }
 
     public var description: String {
         switch self {
-        case .low:
-            return "큰 구부정만 알림(알림 적음)"
-        case .medium:
-            return "정확도와 알림 빈도의 균형"
-        case .high:
-            return "작은 구부정도 일찍 포착(알림 많음)"
+        case .low: "큰 변화만 알림"
+        case .medium: "정확도와 알림 빈도의 균형"
+        case .high: "작은 변화도 일찍 감지"
         }
     }
 }
@@ -138,7 +35,6 @@ public enum PostureState: String, Codable, Equatable, Sendable {
     case noEval
     case paused
     case blocked
-    /// 자세 추적이 지속적으로 실패해(noEval 연속) 개인 기준자세 데이터가 필요한 상태.
     case needsCalibration
 }
 
@@ -147,32 +43,12 @@ public enum AlertEvent: String, Codable, Equatable, Sendable {
     case recovered
 }
 
-public enum SignalKind: String, Codable, Equatable, Hashable, Sendable {
-    case profile2D
-    case threeQuarter2D
-    case front2D
-    case body3D
-    case depth3D
-    case relativeDepth
-    case frontFace
+public enum DepthDirection: String, Codable, Equatable, Sendable {
+    case largerIsNear
+    case smallerIsNear
 
-    public var label: String {
-        switch self {
-        case .profile2D:
-            return "측면각"
-        case .threeQuarter2D:
-            return "3-4각"
-        case .front2D:
-            return "정면비"
-        case .body3D:
-            return "3D시상각"
-        case .depth3D:
-            return "깊이차"
-        case .relativeDepth:
-            return "상대깊이"
-        case .frontFace:
-            return "얼굴위치"
-        }
+    var multiplier: Double {
+        self == .largerIsNear ? 1 : -1
     }
 }
 
@@ -190,81 +66,9 @@ public struct Point2D: Codable, Equatable, Sendable {
     public var isReliable: Bool {
         confidence >= Tuning.minimumLandmarkConfidence
     }
-
-    public var isTrackable: Bool {
-        confidence >= Tuning.minimumTrackingConfidence
-    }
 }
 
-public struct Point3D: Codable, Equatable, Sendable {
-    public var x: Double
-    public var y: Double
-    public var z: Double
-    public var confidence: Double
-
-    public init(x: Double, y: Double, z: Double, confidence: Double) {
-        self.x = x
-        self.y = y
-        self.z = z
-        self.confidence = confidence
-    }
-
-    public var isReliable: Bool {
-        confidence >= Tuning.minimumLandmarkConfidence
-    }
-
-    public var isTrackable: Bool {
-        confidence >= Tuning.minimumTrackingConfidence
-    }
-}
-
-public struct Pose3D: Codable, Equatable, Sendable {
-    public var leftShoulder: Point3D?
-    public var rightShoulder: Point3D?
-    public var spine: Point3D?
-    public var centerHead: Point3D?
-    public var topHead: Point3D?
-
-    public init(
-        leftShoulder: Point3D? = nil,
-        rightShoulder: Point3D? = nil,
-        spine: Point3D? = nil,
-        centerHead: Point3D? = nil,
-        topHead: Point3D? = nil
-    ) {
-        self.leftShoulder = leftShoulder
-        self.rightShoulder = rightShoulder
-        self.spine = spine
-        self.centerHead = centerHead
-        self.topHead = topHead
-    }
-
-    public func rotatedAroundY(degrees: Double) -> Pose3D {
-        Pose3D(
-            leftShoulder: leftShoulder?.rotatedAroundY(degrees: degrees),
-            rightShoulder: rightShoulder?.rotatedAroundY(degrees: degrees),
-            spine: spine?.rotatedAroundY(degrees: degrees),
-            centerHead: centerHead?.rotatedAroundY(degrees: degrees),
-            topHead: topHead?.rotatedAroundY(degrees: degrees)
-        )
-    }
-}
-
-private extension Point3D {
-    func rotatedAroundY(degrees: Double) -> Point3D {
-        let radians = degrees * .pi / 180
-        let cosValue = cos(radians)
-        let sinValue = sin(radians)
-        return Point3D(
-            x: x * cosValue + z * sinValue,
-            y: y,
-            z: -x * sinValue + z * cosValue,
-            confidence: confidence
-        )
-    }
-}
-
-public struct FaceBox: Codable, Equatable, Sendable {
+public struct NormalizedRect: Codable, Equatable, Sendable {
     public var x: Double
     public var y: Double
     public var width: Double
@@ -277,19 +81,35 @@ public struct FaceBox: Codable, Equatable, Sendable {
         self.height = height
     }
 
-    /// 정규화 얼굴 영역 넓이(0~1). 카메라 거리 고정 전제에서 클수록 머리가 카메라에 가까움(전방머리 추정 보조).
-    public var area: Double { width * height }
-}
+    public var maxX: Double { x + width }
+    public var maxY: Double { y + height }
+    public var area: Double { max(0, width) * max(0, height) }
+    public var isInsideUnitSquare: Bool {
+        x >= 0 && y >= 0 && maxX <= 1 && maxY <= 1 && width > 0 && height > 0
+    }
 
-public struct RelativeDepthSummary: Codable, Equatable, Sendable {
-    /// Core ML relative inverse-depth에서 머리 영역이 어깨/몸통 영역보다 가까운 정도.
-    /// 양수일수록 머리 영역이 더 가깝다는 뜻이며, 절대 cm가 아니다.
-    public var headCloserDelta: Double
-    public var confidence: Double
+    public func intersectionArea(with other: NormalizedRect) -> Double {
+        let intersectionWidth = max(0, min(maxX, other.maxX) - max(x, other.x))
+        let intersectionHeight = max(0, min(maxY, other.maxY) - max(y, other.y))
+        return intersectionWidth * intersectionHeight
+    }
 
-    public init(headCloserDelta: Double, confidence: Double) {
-        self.headCloserDelta = headCloserDelta
-        self.confidence = confidence
+    public var boundaryContactRatio: Double {
+        guard area > 0 else { return 1 }
+        if isInsideUnitSquare { return 0 }
+        let insideWidth = max(0, min(maxX, 1) - max(x, 0))
+        let insideHeight = max(0, min(maxY, 1) - max(y, 0))
+        return 1 - (insideWidth * insideHeight / area)
+    }
+
+    public func inset(by fraction: Double) -> NormalizedRect {
+        let fraction = min(0.49, max(0, fraction))
+        return NormalizedRect(
+            x: x + width * fraction,
+            y: y + height * fraction,
+            width: width * (1 - fraction * 2),
+            height: height * (1 - fraction * 2)
+        )
     }
 }
 
@@ -302,12 +122,6 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
     public var neck: Point2D?
     public var leftShoulder: Point2D?
     public var rightShoulder: Point2D?
-    public var faceYawDegrees: Double?
-    public var faceRollDegrees: Double?
-    public var facePitchDegrees: Double?
-    public var faceBoundingBox: FaceBox?
-    public var pose3D: Pose3D?
-    public var relativeDepth: RelativeDepthSummary?
 
     public init(
         nose: Point2D? = nil,
@@ -317,13 +131,7 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
         rightEar: Point2D? = nil,
         neck: Point2D? = nil,
         leftShoulder: Point2D? = nil,
-        rightShoulder: Point2D? = nil,
-        faceYawDegrees: Double? = nil,
-        faceRollDegrees: Double? = nil,
-        facePitchDegrees: Double? = nil,
-        faceBoundingBox: FaceBox? = nil,
-        pose3D: Pose3D? = nil,
-        relativeDepth: RelativeDepthSummary? = nil
+        rightShoulder: Point2D? = nil
     ) {
         self.nose = nose
         self.leftEye = leftEye
@@ -333,132 +141,279 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
         self.neck = neck
         self.leftShoulder = leftShoulder
         self.rightShoulder = rightShoulder
-        self.faceYawDegrees = faceYawDegrees
-        self.faceRollDegrees = faceRollDegrees
-        self.facePitchDegrees = facePitchDegrees
-        self.faceBoundingBox = faceBoundingBox
-        self.pose3D = pose3D
-        self.relativeDepth = relativeDepth
+    }
+
+    public var reliableHeadAnchors: [Point2D] {
+        [nose, leftEye, rightEye, leftEar, rightEar].compactMap { $0 }.filter(\.isReliable)
     }
 }
 
-public struct ViewpointResult: Codable, Equatable, Sendable {
-    public var band: ViewpointBand
-    public var confidence: Double
-    public var nearSide: Side?
+public struct RelativeDepthMap: Codable, Equatable, Sendable {
+    public var width: Int
+    public var height: Int
+    public var values: [Double]
+    public var direction: DepthDirection
 
-    public init(band: ViewpointBand, confidence: Double, nearSide: Side? = nil) {
-        self.band = band
-        self.confidence = confidence
-        self.nearSide = nearSide
+    public init(width: Int, height: Int, values: [Double], direction: DepthDirection) {
+        self.width = width
+        self.height = height
+        self.values = values
+        self.direction = direction
+    }
+
+    public var isValid: Bool {
+        width > 0 && height > 0 && values.count == width * height
+    }
+
+    public func values(in rect: NormalizedRect) -> [Double] {
+        guard isValid, rect.isInsideUnitSquare else { return [] }
+        let lowerX = max(0, min(width - 1, Int((rect.x * Double(width)).rounded(.down))))
+        let upperX = max(lowerX, min(width - 1, Int((rect.maxX * Double(width)).rounded(.up)) - 1))
+        let lowerY = max(0, min(height - 1, Int((rect.y * Double(height)).rounded(.down))))
+        let upperY = max(lowerY, min(height - 1, Int((rect.maxY * Double(height)).rounded(.up)) - 1))
+        var result: [Double] = []
+        result.reserveCapacity((upperX - lowerX + 1) * (upperY - lowerY + 1))
+        for y in lowerY...upperY {
+            for x in lowerX...upperX {
+                let value = values[y * width + x]
+                if value.isFinite { result.append(value) }
+            }
+        }
+        return result
     }
 }
 
-public struct PostureSignal: Codable, Equatable, Sendable {
-    public var kind: SignalKind
-    public var angleDegrees: Double
-    public var confidence: Double
+public struct DepthSummary: Codable, Equatable, Sendable {
+    public var width: Int
+    public var height: Int
+    public var direction: DepthDirection
+    public var minimum: Double?
+    public var maximum: Double?
 
-    public init(kind: SignalKind, angleDegrees: Double, confidence: Double) {
-        self.kind = kind
-        self.angleDegrees = angleDegrees
-        self.confidence = confidence
+    public init(map: RelativeDepthMap) {
+        width = map.width
+        height = map.height
+        direction = map.direction
+        var lower: Double?
+        var upper: Double?
+        for value in map.values where value.isFinite {
+            lower = lower.map { Swift.min($0, value) } ?? value
+            upper = upper.map { Swift.max($0, value) } ?? value
+        }
+        minimum = lower
+        maximum = upper
     }
 }
 
-public struct AnalyzedFrame: Codable, Equatable, Sendable {
-    public var assessment: PostureAssessment
-    public var signal: PostureSignal?
-    public var viewpoint: ViewpointResult?
-    public var algorithm: PostureAlgorithmID?
+public struct PostureROIs: Codable, Equatable, Sendable {
+    public var head: NormalizedRect
+    public var torso: NormalizedRect
+    public var reference: NormalizedRect
+
+    public init(head: NormalizedRect, torso: NormalizedRect, reference: NormalizedRect) {
+        self.head = head
+        self.torso = torso
+        self.reference = reference
+    }
+}
+
+public enum FrameExclusionReason: String, Codable, Equatable, Hashable, Sendable {
+    case unstableCapture
+    case noSubject
+    case ambiguousSubject
+    case missingHeadAnchor
+    case missingNeck
+    case missingShoulder
+    case croppedUpperBody
+    case excessiveRotation
+    case invalidROIGeometry
+    case insufficientDepthPixels
+    case insufficientDepthRange
+    case modelFailure
+}
+
+public struct FrameQuality: Codable, Equatable, Sendable {
+    public var landmarkConfidence: Double
+    public var headValidPixelRatio: Double
+    public var torsoValidPixelRatio: Double
+    public var referenceValidPixelRatio: Double
+    public var referenceIQR: Double?
+    public var roiBoundaryContactRatio: Double
+    public var roiErosionFraction: Double
+
+    public init(
+        landmarkConfidence: Double = 0,
+        headValidPixelRatio: Double = 0,
+        torsoValidPixelRatio: Double = 0,
+        referenceValidPixelRatio: Double = 0,
+        referenceIQR: Double? = nil,
+        roiBoundaryContactRatio: Double = 0,
+        roiErosionFraction: Double = Tuning.roiErosionFraction
+    ) {
+        self.landmarkConfidence = landmarkConfidence
+        self.headValidPixelRatio = headValidPixelRatio
+        self.torsoValidPixelRatio = torsoValidPixelRatio
+        self.referenceValidPixelRatio = referenceValidPixelRatio
+        self.referenceIQR = referenceIQR
+        self.roiBoundaryContactRatio = roiBoundaryContactRatio
+        self.roiErosionFraction = roiErosionFraction
+    }
+}
+
+public struct FrameAnalysis: Codable, Equatable, Sendable {
+    public var landmarks: PoseLandmarks
+    public var rois: PostureROIs?
+    public var depth: DepthSummary?
+    public var feature: Double?
+    public var quality: FrameQuality
+    public var exclusionReason: FrameExclusionReason?
+    public var processingMilliseconds: [String: Double]
+
+    public init(
+        landmarks: PoseLandmarks,
+        rois: PostureROIs? = nil,
+        depth: DepthSummary? = nil,
+        feature: Double? = nil,
+        quality: FrameQuality = FrameQuality(),
+        exclusionReason: FrameExclusionReason? = nil,
+        processingMilliseconds: [String: Double] = [:]
+    ) {
+        self.landmarks = landmarks
+        self.rois = rois
+        self.depth = depth
+        self.feature = feature
+        self.quality = quality
+        self.exclusionReason = exclusionReason
+        self.processingMilliseconds = processingMilliseconds
+    }
+
+    public var isValid: Bool { feature != nil && exclusionReason == nil }
+}
+
+public enum BurstEvidence: String, Codable, Equatable, Sendable {
+    case normal
+    case worsened
+    case insufficient
+    case noEval
+}
+
+public struct BurstSummary: Codable, Equatable, Sendable {
+    public var totalFrameCount: Int
+    public var validFrameCount: Int
+    public var medianFeature: Double?
+    public var featureMAD: Double?
+    public var exclusionCounts: [FrameExclusionReason: Int]
+
+    public init(
+        totalFrameCount: Int,
+        validFrameCount: Int,
+        medianFeature: Double?,
+        featureMAD: Double?,
+        exclusionCounts: [FrameExclusionReason: Int]
+    ) {
+        self.totalFrameCount = totalFrameCount
+        self.validFrameCount = validFrameCount
+        self.medianFeature = medianFeature
+        self.featureMAD = featureMAD
+        self.exclusionCounts = exclusionCounts
+    }
+}
+
+public struct BurstVerdict: Codable, Equatable, Sendable {
+    public var evidence: BurstEvidence
+    public var summary: BurstSummary
+    public var baselineDelta: Double?
     public var reason: String?
-    public var debugNotes: [String]
-    /// 정면 응시 시 얼굴 박스 하단 y(있을 때). 신호 종류와 무관하게 보정에서 frontFace baseline 수집에 쓴다.
-    public var faceBottomY: Double?
 
-    public init(assessment: PostureAssessment, signal: PostureSignal? = nil, viewpoint: ViewpointResult? = nil, algorithm: PostureAlgorithmID? = nil, reason: String? = nil, debugNotes: [String] = [], faceBottomY: Double? = nil) {
-        self.assessment = assessment
-        self.signal = signal
-        self.viewpoint = viewpoint
-        self.algorithm = algorithm
+    public init(evidence: BurstEvidence, summary: BurstSummary, baselineDelta: Double? = nil, reason: String? = nil) {
+        self.evidence = evidence
+        self.summary = summary
+        self.baselineDelta = baselineDelta
         self.reason = reason
-        self.debugNotes = debugNotes
-        self.faceBottomY = faceBottomY
+    }
+
+    public var assessment: PostureAssessment {
+        switch evidence {
+        case .normal: .good
+        case .worsened: .bad
+        case .insufficient, .noEval: .noEval
+        }
+    }
+
+    public var requiresCalibration: Bool {
+        reason == "baseline required" || reason == "capture configuration changed"
     }
 }
 
 public struct Baseline: Codable, Equatable, Sendable {
-    public var profileAngle: Double?
-    public var frontHeadDropRatio: Double?
-    public var threeQuarterAngle: Double?
-    public var bodyFrameAngle: Double?
-    public var depthDeltaNorm: Double?
-    public var relativeDepthDelta: Double?
-    /// 정면 응시 시 얼굴 박스 하단 y(정규화, 좌하단 원점). 거리·높이 고정 전제에서 baseline보다 충분히 낮아지면 전방머리/숙임.
-    public var frontFaceBottomY: Double?
+    public var center: Double
+    public var dispersion: Double
+    public var burstCount: Int
+    public var createdAt: Date
+    public var captureConfiguration: CaptureConfiguration
 
     public init(
-        profileAngle: Double?,
-        frontHeadDropRatio: Double?,
-        threeQuarterAngle: Double?,
-        bodyFrameAngle: Double? = nil,
-        depthDeltaNorm: Double? = nil,
-        relativeDepthDelta: Double? = nil,
-        frontFaceBottomY: Double? = nil
+        center: Double,
+        dispersion: Double,
+        burstCount: Int,
+        createdAt: Date = Date(),
+        captureConfiguration: CaptureConfiguration
     ) {
-        self.profileAngle = profileAngle
-        self.frontHeadDropRatio = frontHeadDropRatio
-        self.threeQuarterAngle = threeQuarterAngle
-        self.bodyFrameAngle = bodyFrameAngle
-        self.depthDeltaNorm = depthDeltaNorm
-        self.relativeDepthDelta = relativeDepthDelta
-        self.frontFaceBottomY = frontFaceBottomY
+        self.center = center
+        self.dispersion = dispersion
+        self.burstCount = burstCount
+        self.createdAt = createdAt
+        self.captureConfiguration = captureConfiguration
     }
 }
 
-/// 메뉴/디버그에서 현재 측정값과 판정을 그대로 보여주기 위한 진단 스냅샷.
-public struct PostureDiagnostic: Codable, Sendable, Equatable {
-    public var algorithm: PostureAlgorithmID
+public struct CaptureConfiguration: Codable, Equatable, Sendable {
+    public var cameraUniqueID: String
+    public var width: Int
+    public var height: Int
+    public var orientation: String
+
+    public init(cameraUniqueID: String, width: Int, height: Int, orientation: String) {
+        self.cameraUniqueID = cameraUniqueID
+        self.width = width
+        self.height = height
+        self.orientation = orientation
+    }
+}
+
+public struct PostureDiagnostic: Codable, Equatable, Sendable {
     public var assessment: PostureAssessment
-    public var signalKind: SignalKind?
-    public var value: Double?
-    public var confidence: Double?
-    public var viewpoint: ViewpointBand?
+    public var productState: PostureState
+    public var evidence: BurstEvidence
+    public var summary: BurstSummary
+    public var baselineCenter: Double?
+    public var baselineDelta: Double?
     public var reason: String?
-    public var frameCount: Int
-    public var validFrameCount: Int
-    public var signalFrameCount: Int
-    public var observedSignalKinds: [SignalKind]
-    public var debugNotes: [String]
+    public var frames: [TimedFrame]
+    public var stageProcessingMilliseconds: [String: Double]
     public var debugArtifactPath: String?
 
     public init(
-        algorithm: PostureAlgorithmID,
         assessment: PostureAssessment,
-        signalKind: SignalKind? = nil,
-        value: Double? = nil,
-        confidence: Double? = nil,
-        viewpoint: ViewpointBand? = nil,
+        productState: PostureState = .noEval,
+        evidence: BurstEvidence,
+        summary: BurstSummary,
+        baselineCenter: Double? = nil,
+        baselineDelta: Double? = nil,
         reason: String? = nil,
-        frameCount: Int = 0,
-        validFrameCount: Int = 0,
-        signalFrameCount: Int = 0,
-        observedSignalKinds: [SignalKind] = [],
-        debugNotes: [String] = [],
+        frames: [TimedFrame] = [],
+        stageProcessingMilliseconds: [String: Double] = [:],
         debugArtifactPath: String? = nil
     ) {
-        self.algorithm = algorithm
         self.assessment = assessment
-        self.signalKind = signalKind
-        self.value = value
-        self.confidence = confidence
-        self.viewpoint = viewpoint
+        self.productState = productState
+        self.evidence = evidence
+        self.summary = summary
+        self.baselineCenter = baselineCenter
+        self.baselineDelta = baselineDelta
         self.reason = reason
-        self.frameCount = frameCount
-        self.validFrameCount = validFrameCount
-        self.signalFrameCount = signalFrameCount
-        self.observedSignalKinds = observedSignalKinds
-        self.debugNotes = debugNotes
+        self.frames = frames
+        self.stageProcessingMilliseconds = stageProcessingMilliseconds
         self.debugArtifactPath = debugArtifactPath
     }
 }

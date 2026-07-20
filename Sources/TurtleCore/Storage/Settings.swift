@@ -2,7 +2,6 @@ import Foundation
 
 public struct Settings: Codable, Equatable, Sendable {
     private var storedCheckIntervalSeconds: Int
-    public var postureAlgorithm: PostureAlgorithmID
     public var sensitivity: Sensitivity
     public var bannerNotificationsEnabled: Bool
     public var notificationSoundEnabled: Bool
@@ -21,7 +20,6 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init(
         checkIntervalSeconds: Int,
-        postureAlgorithm: PostureAlgorithmID = .mlAuto,
         sensitivity: Sensitivity,
         bannerNotificationsEnabled: Bool,
         notificationSoundEnabled: Bool,
@@ -30,7 +28,6 @@ public struct Settings: Codable, Equatable, Sendable {
         baseline: Baseline? = nil
     ) {
         self.storedCheckIntervalSeconds = Self.clampInterval(checkIntervalSeconds)
-        self.postureAlgorithm = postureAlgorithm
         self.sensitivity = sensitivity
         self.bannerNotificationsEnabled = bannerNotificationsEnabled
         self.notificationSoundEnabled = notificationSoundEnabled
@@ -41,7 +38,6 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public static let defaults = Settings(
         checkIntervalSeconds: 60,
-        postureAlgorithm: .mlAuto,
         sensitivity: .medium,
         bannerNotificationsEnabled: false,
         notificationSoundEnabled: false,
@@ -50,7 +46,6 @@ public struct Settings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case storedCheckIntervalSeconds
-        case postureAlgorithm
         case sensitivity
         case bannerNotificationsEnabled
         case notificationSoundEnabled
@@ -62,22 +57,18 @@ public struct Settings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         storedCheckIntervalSeconds = Self.clampInterval(try container.decode(Int.self, forKey: .storedCheckIntervalSeconds))
-        // 구버전 저장값(algorithm1/algorithm2 등 사라진 케이스)은 디코드 실패할 수 있으므로 try?로 흡수하고 기본값으로 마이그레이션.
-        let decodedAlgorithm = (try? container.decodeIfPresent(PostureAlgorithmID.self, forKey: .postureAlgorithm)) ?? .mlAuto
-        postureAlgorithm = decodedAlgorithm.isDebugSelectableMethod ? decodedAlgorithm : .mlAuto
         sensitivity = try container.decode(Sensitivity.self, forKey: .sensitivity)
         bannerNotificationsEnabled = try container.decode(Bool.self, forKey: .bannerNotificationsEnabled)
         notificationSoundEnabled = try container.decode(Bool.self, forKey: .notificationSoundEnabled)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         debugEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .debugEnabled)) ?? false
-        baseline = try container.decodeIfPresent(Baseline.self, forKey: .baseline)
-        // 구버전에 있던 cameraPlacement 키는 더 이상 사용하지 않으며, 존재해도 디코딩에서 무시된다.
+        // 이전 다중 알고리즘 baseline은 현재 단일 relative-depth 계약과 호환되지 않으므로 재보정한다.
+        baseline = (try? container.decodeIfPresent(Baseline.self, forKey: .baseline)) ?? nil
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(checkIntervalSeconds, forKey: .storedCheckIntervalSeconds)
-        try container.encode(postureAlgorithm, forKey: .postureAlgorithm)
         try container.encode(sensitivity, forKey: .sensitivity)
         try container.encode(bannerNotificationsEnabled, forKey: .bannerNotificationsEnabled)
         try container.encode(notificationSoundEnabled, forKey: .notificationSoundEnabled)
@@ -87,6 +78,6 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     private static func clampInterval(_ value: Int) -> Int {
-        min(180, max(10, value))
+        min(180, max(20, value))
     }
 }

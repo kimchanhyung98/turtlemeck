@@ -6,18 +6,23 @@ import Foundation
 import Vision
 
 struct CoreMLRelativeDepthEstimate {
-    var summary: RelativeDepthSummary
+    var map: RelativeDepthMap
     var debugImage: CGImage?
 }
 
 public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
     private let modelName: String
+    private let direction: DepthDirection
     private let modelLock = NSLock()
     private var cachedModel: VNCoreMLModel?
     private var loadFailed = false
 
-    public init(modelName: String = "DepthAnythingV2SmallF16") {
+    public init(
+        modelName: String = "DepthAnythingV2SmallF16",
+        direction: DepthDirection = Tuning.defaultDepthDirection
+    ) {
         self.modelName = modelName
+        self.direction = direction
     }
 
     public var isModelLoadResolved: Bool {
@@ -31,50 +36,33 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         visionModel() != nil
     }
 
-    public func estimate(sampleBuffer: CMSampleBuffer, landmarks: PoseLandmarks) -> RelativeDepthSummary? {
-        estimateWithDebugImage(sampleBuffer: sampleBuffer, landmarks: landmarks, includeDebugImage: false)?.summary
+    public func estimate(sampleBuffer: CMSampleBuffer) -> RelativeDepthMap? {
+        estimateWithDebugImage(sampleBuffer: sampleBuffer, includeDebugImage: false)?.map
     }
 
-    func estimateWithDebugImage(
-        sampleBuffer: CMSampleBuffer,
-        landmarks: PoseLandmarks,
-        includeDebugImage: Bool
-    ) -> CoreMLRelativeDepthEstimate? {
-        guard
-            let anchors = DepthAnchors(landmarks: landmarks),
-            let model = visionModel()
-        else {
-            return nil
-        }
-
+    func estimateWithDebugImage(sampleBuffer: CMSampleBuffer, includeDebugImage: Bool) -> CoreMLRelativeDepthEstimate? {
+        guard let model = visionModel() else { return nil }
         let handler = VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: .up, options: [:])
-        return estimate(handler: handler, model: model, anchors: anchors, includeDebugImage: includeDebugImage)
+        return estimate(handler: handler, model: model, includeDebugImage: includeDebugImage)
     }
 
-    public func estimate(cgImage: CGImage, landmarks: PoseLandmarks) -> RelativeDepthSummary? {
-        estimateWithDebugImage(cgImage: cgImage, landmarks: landmarks, includeDebugImage: false)?.summary
+    public func estimate(cgImage: CGImage) -> RelativeDepthMap? {
+        estimateWithDebugImage(cgImage: cgImage, includeDebugImage: false)?.map
     }
 
-    func estimateWithDebugImage(
-        cgImage: CGImage,
-        landmarks: PoseLandmarks,
-        includeDebugImage: Bool
-    ) -> CoreMLRelativeDepthEstimate? {
-        guard
-            let anchors = DepthAnchors(landmarks: landmarks),
-            let model = visionModel()
-        else {
-            return nil
-        }
-
+    func estimateWithDebugImage(cgImage: CGImage, includeDebugImage: Bool) -> CoreMLRelativeDepthEstimate? {
+        guard let model = visionModel() else { return nil }
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        return estimate(handler: handler, model: model, anchors: anchors, includeDebugImage: includeDebugImage)
+        return estimate(handler: handler, model: model, includeDebugImage: includeDebugImage)
+    }
+
+    func debugImage(for map: RelativeDepthMap) -> CGImage? {
+        visualization(map)
     }
 
     private func estimate(
         handler: VNImageRequestHandler,
         model: VNCoreMLModel,
-        anchors: DepthAnchors,
         includeDebugImage: Bool
     ) -> CoreMLRelativeDepthEstimate? {
         var resultBuffer: CVPixelBuffer?
@@ -82,83 +70,43 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         let request = VNCoreMLRequest(model: model) { request, _ in
             if let observation = request.results?.compactMap({ $0 as? VNPixelBufferObservation }).first {
                 resultBuffer = observation.pixelBuffer
-                return
-            }
-            if let observation = request.results?.compactMap({ $0 as? VNCoreMLFeatureValueObservation }).first {
+            } else if let observation = request.results?.compactMap({ $0 as? VNCoreMLFeatureValueObservation }).first {
                 resultBuffer = observation.featureValue.imageBufferValue
                 resultArray = observation.featureValue.multiArrayValue
             }
         }
         request.imageCropAndScaleOption = .scaleFill
+        guard (try? handler.perform([request])) != nil else { return nil }
 
-        do {
-            try handler.perform([request])
-        } catch {
-            return nil
-        }
-
-        let headValues: [Double]
-        let shoulderValues: [Double]
+        let map: RelativeDepthMap?
         if let resultBuffer {
-            guard let samples = sample(pixelBuffer: resultBuffer, anchors: anchors) else {
-                return nil
-            }
-            headValues = samples.head
-            shoulderValues = samples.shoulders
+            map = depthMap(pixelBuffer: resultBuffer)
         } else if let resultArray {
-            headValues = anchors.head.compactMap { sample(multiArray: resultArray, point: $0) }
-            shoulderValues = anchors.shoulders.compactMap { sample(multiArray: resultArray, point: $0) }
+            map = depthMap(multiArray: resultArray)
         } else {
-            return nil
+            map = nil
         }
-
-        guard
-            let head = median(headValues),
-            let shoulder = median(shoulderValues)
-        else {
-            return nil
-        }
-
-        let confidence = min(anchors.confidence, 0.6)
-        let debugImage: CGImage?
-        if includeDebugImage {
-            if let resultBuffer {
-                debugImage = visualization(pixelBuffer: resultBuffer)
-            } else if let resultArray {
-                debugImage = visualization(multiArray: resultArray)
-            } else {
-                debugImage = nil
-            }
-        } else {
-            debugImage = nil
-        }
+        guard let map else { return nil }
         return CoreMLRelativeDepthEstimate(
-            summary: RelativeDepthSummary(headCloserDelta: head - shoulder, confidence: confidence),
-            debugImage: debugImage
+            map: map,
+            debugImage: includeDebugImage ? visualization(map) : nil
         )
     }
 
     private func visionModel() -> VNCoreMLModel? {
         modelLock.lock()
         defer { modelLock.unlock() }
-
-        if let cachedModel {
-            return cachedModel
-        }
-        guard !loadFailed else {
-            return nil
-        }
-
-        guard let url = modelURL() else {
+        if let cachedModel { return cachedModel }
+        guard !loadFailed, let url = modelURL() else {
             loadFailed = true
             return nil
         }
 
         do {
-            let modelURL = url.pathExtension == "mlmodelc" ? url : try MLModel.compileModel(at: url)
+            let compiledURL = url.pathExtension == "mlmodelc" ? url : try MLModel.compileModel(at: url)
             let configuration = MLModelConfiguration()
             configuration.computeUnits = .all
-            let model = try MLModel(contentsOf: modelURL, configuration: configuration)
+            let model = try MLModel(contentsOf: compiledURL, configuration: configuration)
             let visionModel = try VNCoreMLModel(for: model)
             cachedModel = visionModel
             return visionModel
@@ -172,94 +120,29 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         Bundle.main.url(forResource: modelName, withExtension: "mlmodelc")
             ?? Bundle.main.url(forResource: modelName, withExtension: "mlpackage")
             ?? Bundle.main.url(forResource: modelName, withExtension: "mlmodel")
+            ?? developmentModelURL()
     }
 
-    private func sample(pixelBuffer: CVPixelBuffer, anchors: DepthAnchors) -> (head: [Double], shoulders: [Double])? {
-        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
+    private func developmentModelURL() -> URL? {
+        let resources = URL(
+            fileURLWithPath: FileManager.default.currentDirectoryPath,
+            isDirectory: true
+        ).appendingPathComponent("Resources", isDirectory: true)
+        for fileExtension in ["mlmodelc", "mlpackage", "mlmodel"] {
+            let candidate = resources.appendingPathComponent("\(modelName).\(fileExtension)")
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return nil
+    }
+
+    private func depthMap(pixelBuffer: CVPixelBuffer) -> RelativeDepthMap? {
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        guard width > 0, height > 0, CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
             return nil
         }
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        return (
-            head: anchors.head.compactMap { sampleLocked(pixelBuffer: pixelBuffer, point: $0) },
-            shoulders: anchors.shoulders.compactMap { sampleLocked(pixelBuffer: pixelBuffer, point: $0) }
-        )
-    }
-
-    private func sampleLocked(pixelBuffer: CVPixelBuffer, point: Point2D) -> Double? {
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        guard width > 0, height > 0 else {
-            return nil
-        }
-        let x = clamp(Int((point.x * Double(width - 1)).rounded()), min: 0, max: width - 1)
-        let y = clamp(Int((point.y * Double(height - 1)).rounded()), min: 0, max: height - 1)
-
-        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return nil
-        }
-
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let row = base.advanced(by: y * bytesPerRow)
-        switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
-        case kCVPixelFormatType_OneComponent32Float:
-            return Double(row.assumingMemoryBound(to: Float.self)[x])
-        case kCVPixelFormatType_OneComponent16Half:
-            return float16ToDouble(row.assumingMemoryBound(to: UInt16.self)[x])
-        case kCVPixelFormatType_OneComponent8:
-            return Double(row.assumingMemoryBound(to: UInt8.self)[x]) / 255
-        default:
-            return nil
-        }
-    }
-
-    private func sample(multiArray: MLMultiArray, point: Point2D) -> Double? {
-        let shape = multiArray.shape.map(\.intValue)
-        guard shape.count >= 2 else {
-            return nil
-        }
-        let height = shape[shape.count - 2]
-        let width = shape[shape.count - 1]
-        guard width > 0, height > 0 else {
-            return nil
-        }
-
-        let x = clamp(Int((point.x * Double(width - 1)).rounded()), min: 0, max: width - 1)
-        let y = clamp(Int((point.y * Double(height - 1)).rounded()), min: 0, max: height - 1)
-        let index: [NSNumber]
-        if shape.count == 2 {
-            index = [NSNumber(value: y), NSNumber(value: x)]
-        } else {
-            index = Array(repeating: NSNumber(value: 0), count: shape.count - 2) + [NSNumber(value: y), NSNumber(value: x)]
-        }
-        return multiArray[index].doubleValue
-    }
-
-    private func median(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else {
-            return nil
-        }
-        let sorted = values.sorted()
-        let middle = sorted.count / 2
-        if sorted.count % 2 == 0 {
-            return (sorted[middle - 1] + sorted[middle]) / 2
-        }
-        return sorted[middle]
-    }
-
-    private func visualization(pixelBuffer: CVPixelBuffer) -> CGImage? {
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        guard width > 0, height > 0 else {
-            return nil
-        }
-
-        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
-            return nil
-        }
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return nil
-        }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
 
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
         var values: [Double] = []
@@ -269,83 +152,50 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
             switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
             case kCVPixelFormatType_OneComponent32Float:
                 let pixels = row.assumingMemoryBound(to: Float.self)
-                for x in 0..<width {
-                    values.append(Double(pixels[x]))
-                }
+                for x in 0..<width { values.append(Double(pixels[x])) }
             case kCVPixelFormatType_OneComponent16Half:
                 let pixels = row.assumingMemoryBound(to: UInt16.self)
-                for x in 0..<width {
-                    values.append(float16ToDouble(pixels[x]))
-                }
+                for x in 0..<width { values.append(float16ToDouble(pixels[x])) }
             case kCVPixelFormatType_OneComponent8:
                 let pixels = row.assumingMemoryBound(to: UInt8.self)
-                for x in 0..<width {
-                    values.append(Double(pixels[x]) / 255)
-                }
+                for x in 0..<width { values.append(Double(pixels[x]) / 255) }
             default:
                 return nil
             }
         }
-        return grayscaleImage(values: values, width: width, height: height)
+        return RelativeDepthMap(width: width, height: height, values: values, direction: direction)
     }
 
-    private func visualization(multiArray: MLMultiArray) -> CGImage? {
+    private func depthMap(multiArray: MLMultiArray) -> RelativeDepthMap? {
         let shape = multiArray.shape.map(\.intValue)
-        guard shape.count >= 2 else {
-            return nil
-        }
+        guard shape.count >= 2 else { return nil }
         let height = shape[shape.count - 2]
         let width = shape[shape.count - 1]
-        guard width > 0, height > 0 else {
-            return nil
-        }
+        guard width > 0, height > 0 else { return nil }
 
         var values: [Double] = []
         values.reserveCapacity(width * height)
         for y in 0..<height {
             for x in 0..<width {
-                let index: [NSNumber]
-                if shape.count == 2 {
-                    index = [NSNumber(value: y), NSNumber(value: x)]
-                } else {
-                    index = Array(repeating: NSNumber(value: 0), count: shape.count - 2) + [NSNumber(value: y), NSNumber(value: x)]
-                }
-                values.append(multiArray[index].doubleValue)
+                let leading = Array(repeating: NSNumber(value: 0), count: shape.count - 2)
+                values.append(multiArray[leading + [NSNumber(value: y), NSNumber(value: x)]].doubleValue)
             }
         }
-        return grayscaleImage(values: values, width: width, height: height)
+        return RelativeDepthMap(width: width, height: height, values: values, direction: direction)
     }
 
-    private func grayscaleImage(values: [Double], width: Int, height: Int) -> CGImage? {
-        let finite = values.filter(\.isFinite)
-        guard
-            finite.count == values.count,
-            let minValue = finite.min(),
-            let maxValue = finite.max()
-        else {
-            return nil
-        }
-
-        let range = max(maxValue - minValue, .leastNonzeroMagnitude)
-        var bytes = [UInt8]()
-        bytes.reserveCapacity(values.count)
-        for value in values {
-            let normalized = max(0, min(1, (value - minValue) / range))
-            bytes.append(UInt8((normalized * 255).rounded()))
-        }
-
-        guard
-            let provider = CGDataProvider(data: Data(bytes) as CFData)
-        else {
-            return nil
-        }
-
+    private func visualization(_ map: RelativeDepthMap) -> CGImage? {
+        let finite = map.values.filter(\.isFinite)
+        guard finite.count == map.values.count, let lower = finite.min(), let upper = finite.max() else { return nil }
+        let range = max(upper - lower, .leastNonzeroMagnitude)
+        let bytes = map.values.map { UInt8((max(0, min(1, ($0 - lower) / range)) * 255).rounded()) }
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
         return CGImage(
-            width: width,
-            height: height,
+            width: map.width,
+            height: map.height,
             bitsPerComponent: 8,
             bitsPerPixel: 8,
-            bytesPerRow: width,
+            bytesPerRow: map.width,
             space: CGColorSpaceCreateDeviceGray(),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
             provider: provider,
@@ -355,46 +205,14 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         )
     }
 
-    private func clamp(_ value: Int, min minValue: Int, max maxValue: Int) -> Int {
-        min(max(value, minValue), maxValue)
-    }
-
     private func float16ToDouble(_ bits: UInt16) -> Double {
         let sign = (bits & 0x8000) == 0 ? 1.0 : -1.0
         let exponent = Int((bits >> 10) & 0x1F)
         let fraction = Int(bits & 0x03FF)
-
         if exponent == 0 {
-            guard fraction != 0 else {
-                return sign * 0
-            }
-            return sign * pow(2.0, -14.0) * (Double(fraction) / 1024.0)
+            return fraction == 0 ? sign * 0 : sign * pow(2, -14) * (Double(fraction) / 1024)
         }
-        if exponent == 31 {
-            return fraction == 0 ? sign * Double.infinity : Double.nan
-        }
-        return sign * pow(2.0, Double(exponent - 15)) * (1.0 + Double(fraction) / 1024.0)
-    }
-}
-
-private struct DepthAnchors {
-    let head: [Point2D]
-    let shoulders: [Point2D]
-    let confidence: Double
-
-    init?(landmarks: PoseLandmarks) {
-        let head = [landmarks.nose, landmarks.leftEye, landmarks.rightEye, landmarks.leftEar, landmarks.rightEar]
-            .compactMap { $0 }
-            .filter(\.isTrackable)
-        let shoulders = [landmarks.leftShoulder, landmarks.rightShoulder, landmarks.neck]
-            .compactMap { $0 }
-            .filter(\.isTrackable)
-        guard !head.isEmpty, shoulders.count >= 2 else {
-            return nil
-        }
-
-        self.head = head
-        self.shoulders = shoulders
-        self.confidence = (head + shoulders).map(\.confidence).min() ?? Tuning.minimumTrackingConfidence
+        if exponent == 31 { return fraction == 0 ? sign * .infinity : .nan }
+        return sign * pow(2, Double(exponent - 15)) * (1 + Double(fraction) / 1024)
     }
 }

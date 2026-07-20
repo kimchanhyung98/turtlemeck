@@ -1,197 +1,203 @@
 import Foundation
 
-public struct PostureAnalyzer: Sendable {
-    private let classifier: ViewpointClassifier
-    private let systemInfo: SystemInfo
+/// 한 RGB 프레임의 Vision 2D landmark와 DA-V2 map을 하나의 정규화 feature로 변환한다.
+public struct PostureFrameAnalyzer: Sendable {
+    public init() {}
 
-    public init(classifier: ViewpointClassifier = ViewpointClassifier(), systemInfo: SystemInfo = .current) {
-        self.classifier = classifier
-        self.systemInfo = systemInfo
-    }
-
-    public func analyze(
-        _ pose: PoseLandmarks,
-        baseline: Baseline?,
-        sensitivity: Sensitivity,
-        viewpointOverride: ViewpointResult? = nil
-    ) -> AnalyzedFrame {
-        let viewpoint = viewpointOverride ?? classifier.classify(pose)
-        // 양 어깨가 넓게 보이는 profile은 머리만 돌린 상황일 수 있어 보류(시점 자동 분류 기반).
-        // 이 경우 2D CVA는 막되, Apple Silicon 3D 신호가 있으면 fallback으로 사용한다.
-        let shouldHoldProfile2D = viewpoint.band.isProfile && isLikelyHeadOnlyRotation(pose)
-
-        if !shouldHoldProfile2D, let frame = analyze2DProfileIfReliable(pose, viewpoint: viewpoint, baseline: baseline, sensitivity: sensitivity) {
-            return frame
+    public func analyze(landmarks: PoseLandmarks, depthMap: RelativeDepthMap?) -> FrameAnalysis {
+        guard let depthMap, depthMap.isValid else {
+            return FrameAnalysis(landmarks: landmarks, exclusionReason: .modelFailure)
+        }
+        let depth = DepthSummary(map: depthMap)
+        guard !landmarks.reliableHeadAnchors.isEmpty else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingHeadAnchor)
+        }
+        guard let neck = landmarks.neck, neck.isReliable else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingNeck)
+        }
+        guard
+            let leftShoulder = landmarks.leftShoulder, leftShoulder.isReliable,
+            let rightShoulder = landmarks.rightShoulder, rightShoulder.isReliable
+        else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingShoulder)
         }
 
-        if systemInfo.isAppleSilicon, let signal = analyze3D(pose) {
-            return AnalyzedFrame(
-                assessment: classify(angle: signal.angleDegrees, baselineAngle: baseline?.bodyFrameAngle, sensitivity: sensitivity),
-                signal: signal,
-                viewpoint: viewpoint
+        let shoulderWidth = distance(leftShoulder, rightShoulder)
+        guard shoulderWidth >= Tuning.minimumShoulderWidth else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
+        }
+        guard abs(leftShoulder.y - rightShoulder.y) <= Tuning.maximumShoulderSlope else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
+        }
+
+        let requiredPoints = landmarks.reliableHeadAnchors + [neck, leftShoulder, rightShoulder]
+        guard requiredPoints.allSatisfy(isInsideFrame) else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .croppedUpperBody)
+        }
+
+        let rois = makeROIs(
+            headAnchors: landmarks.reliableHeadAnchors,
+            neck: neck,
+            leftShoulder: leftShoulder,
+            rightShoulder: rightShoulder,
+            shoulderWidth: shoulderWidth
+        )
+        let boundaryContactRatio = max(
+            rois.head.boundaryContactRatio,
+            rois.torso.boundaryContactRatio,
+            rois.reference.boundaryContactRatio
+        )
+        let landmarkConfidence = requiredPoints.map(\.confidence).min() ?? 0
+        guard boundaryContactRatio <= Tuning.maximumROIBoundaryContactRatio else {
+            return FrameAnalysis(
+                landmarks: landmarks,
+                rois: rois,
+                depth: depth,
+                quality: FrameQuality(
+                    landmarkConfidence: landmarkConfidence,
+                    roiBoundaryContactRatio: boundaryContactRatio
+                ),
+                exclusionReason: .croppedUpperBody
+            )
+        }
+        guard rois.head.intersectionArea(with: rois.torso) <= min(rois.head.area, rois.torso.area) * Tuning.maximumROIOverlapRatio else {
+            return FrameAnalysis(landmarks: landmarks, rois: rois, depth: depth, exclusionReason: .invalidROIGeometry)
+        }
+
+        let headValues = depthMap.values(in: rois.head)
+        let torsoValues = depthMap.values(in: rois.torso)
+        let referenceValues = depthMap.values(in: rois.reference)
+        let headRatio = validRatio(headValues.count, rect: rois.head, map: depthMap)
+        let torsoRatio = validRatio(torsoValues.count, rect: rois.torso, map: depthMap)
+        let referenceRatio = validRatio(referenceValues.count, rect: rois.reference, map: depthMap)
+
+        guard
+            headValues.count >= Tuning.minimumROIPixels,
+            torsoValues.count >= Tuning.minimumROIPixels,
+            referenceValues.count >= Tuning.minimumROIPixels,
+            headRatio >= Tuning.minimumValidDepthRatio,
+            torsoRatio >= Tuning.minimumValidDepthRatio,
+            referenceRatio >= Tuning.minimumValidDepthRatio
+        else {
+            return FrameAnalysis(
+                landmarks: landmarks,
+                rois: rois,
+                depth: depth,
+                quality: FrameQuality(
+                    landmarkConfidence: landmarkConfidence,
+                    headValidPixelRatio: headRatio,
+                    torsoValidPixelRatio: torsoRatio,
+                    referenceValidPixelRatio: referenceRatio,
+                    roiBoundaryContactRatio: boundaryContactRatio
+                ),
+                exclusionReason: .insufficientDepthPixels
             )
         }
 
-        if shouldHoldProfile2D {
-            return AnalyzedFrame(assessment: .noEval, viewpoint: viewpoint, reason: "head rotation without torso rotation")
-        }
-
-        if let frame = analyzeFrontOrThreeQuarter(pose, viewpoint: viewpoint, baseline: baseline, sensitivity: sensitivity) {
-            return frame
-        }
-
-        return AnalyzedFrame(assessment: .noEval, viewpoint: viewpoint, reason: "insufficient reliable posture signal")
-    }
-
-    public static func headReference(in pose: PoseLandmarks, side: Side) -> Point2D? {
-        switch side {
-        case .left:
-            return firstReliable([pose.leftEar, pose.leftEye, pose.nose])
-        case .right:
-            return firstReliable([pose.rightEar, pose.rightEye, pose.nose])
-        }
-    }
-
-    private static func firstReliable(_ points: [Point2D?]) -> Point2D? {
-        points.compactMap { $0 }.first { $0.isTrackable }
-    }
-
-    private func analyze2DProfileIfReliable(
-        _ pose: PoseLandmarks,
-        viewpoint: ViewpointResult,
-        baseline: Baseline?,
-        sensitivity: Sensitivity
-    ) -> AnalyzedFrame? {
-        guard let side = viewpoint.nearSide, viewpoint.band.isProfile else {
-            return nil
-        }
-
         guard
-            let head = Self.headReference(in: pose, side: side),
-            let shoulder = shoulderReference(in: pose, side: side)
+            let head = median(headValues),
+            let torso = median(torsoValues),
+            let referenceIQR = interquartileRange(referenceValues),
+            referenceIQR >= Tuning.minimumReferenceIQR
         else {
-            return nil
+            return FrameAnalysis(
+                landmarks: landmarks,
+                rois: rois,
+                depth: depth,
+                quality: FrameQuality(
+                    landmarkConfidence: landmarkConfidence,
+                    headValidPixelRatio: headRatio,
+                    torsoValidPixelRatio: torsoRatio,
+                    referenceValidPixelRatio: referenceRatio,
+                    roiBoundaryContactRatio: boundaryContactRatio
+                ),
+                exclusionReason: .insufficientDepthRange
+            )
         }
 
-        let angle = Geometry.cvaAngleDegrees(head: head, shoulder: shoulder)
-        let signal = PostureSignal(kind: .profile2D, angleDegrees: angle, confidence: min(head.confidence, shoulder.confidence))
-        return AnalyzedFrame(
-            assessment: classify(angle: angle, baselineAngle: baseline?.profileAngle, sensitivity: sensitivity),
-            signal: signal,
-            viewpoint: viewpoint
+        let feature = depthMap.direction.multiplier * (head - torso) / referenceIQR
+        return FrameAnalysis(
+            landmarks: landmarks,
+            rois: rois,
+            depth: depth,
+            feature: feature,
+            quality: FrameQuality(
+                landmarkConfidence: landmarkConfidence,
+                headValidPixelRatio: headRatio,
+                torsoValidPixelRatio: torsoRatio,
+                referenceValidPixelRatio: referenceRatio,
+                referenceIQR: referenceIQR,
+                roiBoundaryContactRatio: boundaryContactRatio
+            )
         )
     }
 
-    private func analyze3D(_ pose: PoseLandmarks) -> PostureSignal? {
-        guard
-            let pose3D = pose.pose3D,
-            let angle = Geometry.bodySagittalAngleDegrees(from: pose3D)
-        else {
-            return nil
-        }
-        return PostureSignal(kind: .body3D, angleDegrees: angle, confidence: 0.85)
+    private func makeROIs(
+        headAnchors: [Point2D],
+        neck: Point2D,
+        leftShoulder: Point2D,
+        rightShoulder: Point2D,
+        shoulderWidth: Double
+    ) -> PostureROIs {
+        let headX = headAnchors.map(\.x).reduce(0, +) / Double(headAnchors.count)
+        let headY = headAnchors.map(\.y).reduce(0, +) / Double(headAnchors.count)
+        let shoulderX = (leftShoulder.x + rightShoulder.x) / 2
+
+        let head = centeredRect(
+            x: headX,
+            y: headY,
+            width: shoulderWidth * 0.54,
+            height: shoulderWidth * 0.66
+        ).inset(by: Tuning.roiErosionFraction)
+        let torso = centeredRect(
+            x: shoulderX,
+            y: neck.y + shoulderWidth * 0.34,
+            width: shoulderWidth * 0.83,
+            height: shoulderWidth * 0.60
+        ).inset(by: Tuning.roiErosionFraction)
+        let padding = shoulderWidth * 0.08
+        let reference = NormalizedRect(
+            x: min(head.x, torso.x) - padding,
+            y: min(head.y, torso.y) - padding,
+            width: max(head.maxX, torso.maxX) - min(head.x, torso.x) + padding * 2,
+            height: max(head.maxY, torso.maxY) - min(head.y, torso.y) + padding * 2
+        ).inset(by: Tuning.roiErosionFraction / 3)
+        return PostureROIs(head: head, torso: torso, reference: reference)
     }
 
-    private func analyzeFrontOrThreeQuarter(
-        _ pose: PoseLandmarks,
-        viewpoint: ViewpointResult,
-        baseline: Baseline?,
-        sensitivity: Sensitivity
-    ) -> AnalyzedFrame? {
-        switch viewpoint.band {
-        case .front:
-            guard let current = frontHeadDropRatio(pose) else {
-                return AnalyzedFrame(assessment: .noEval, viewpoint: viewpoint, reason: "front requires reliable head and shoulder landmarks")
-            }
-            let signal = PostureSignal(kind: .front2D, angleDegrees: current * 90, confidence: viewpoint.confidence)
-            let assessment = PostureJudge.assess(signal, baseline: baseline, sensitivity: sensitivity)
-            return AnalyzedFrame(
-                assessment: assessment,
-                signal: signal,
-                viewpoint: viewpoint,
-                reason: baseline?.frontHeadDropRatio == nil && assessment == .noEval ? "front requires baseline" : nil
-            )
-        case .threeQuarterLeft, .threeQuarterRight:
-            guard
-                let side = viewpoint.nearSide,
-                let head = Self.headReference(in: pose, side: side),
-                let shoulder = shoulderReference(in: pose, side: side)
-            else {
-                return nil
-            }
-            let angle = Geometry.cvaAngleDegrees(head: head, shoulder: shoulder)
-            let signal = PostureSignal(kind: .threeQuarter2D, angleDegrees: angle, confidence: min(0.72, min(head.confidence, shoulder.confidence)))
-            return AnalyzedFrame(
-                assessment: classify(angle: angle, baselineAngle: baseline?.threeQuarterAngle, sensitivity: sensitivity),
-                signal: signal,
-                viewpoint: viewpoint
-            )
-        case .profileLeft, .profileRight, .unknown:
-            return nil
-        }
+    private func centeredRect(x: Double, y: Double, width: Double, height: Double) -> NormalizedRect {
+        NormalizedRect(x: x - width / 2, y: y - height / 2, width: width, height: height)
     }
 
-    private func shoulderReference(in pose: PoseLandmarks, side: Side) -> Point2D? {
-        switch side {
-        case .left:
-            return pose.leftShoulder?.isTrackable == true
-                ? pose.leftShoulder
-                : (pose.neck?.isTrackable == true ? pose.neck : nil)
-        case .right:
-            return pose.rightShoulder?.isTrackable == true
-                ? pose.rightShoulder
-                : (pose.neck?.isTrackable == true ? pose.neck : nil)
-        }
+    private func isInsideFrame(_ point: Point2D) -> Bool {
+        let margin = Tuning.frameBoundaryMargin
+        return point.x >= margin && point.x <= 1 - margin && point.y >= margin && point.y <= 1 - margin
     }
 
-    private func isLikelyHeadOnlyRotation(_ pose: PoseLandmarks) -> Bool {
-        guard
-            let left = pose.leftShoulder, left.isTrackable,
-            let right = pose.rightShoulder, right.isTrackable
-        else {
-            return false
-        }
-        return abs(right.x - left.x) >= Tuning.headOnlyShoulderWidth
+    private func distance(_ lhs: Point2D, _ rhs: Point2D) -> Double {
+        hypot(lhs.x - rhs.x, lhs.y - rhs.y)
     }
 
-    private func frontHeadDropRatio(_ pose: PoseLandmarks) -> Double? {
-        // 정면 신호는 절대 CVA가 아니라 어깨폭으로 정규화한 머리-어깨 수직 간격이다.
-        guard
-            let leftShoulder = pose.leftShoulder, leftShoulder.isTrackable,
-            let rightShoulder = pose.rightShoulder, rightShoulder.isTrackable
-        else {
-            return nil
-        }
-
-        let shoulderWidth = abs(rightShoulder.x - leftShoulder.x)
-        guard shoulderWidth > 0.05 else {
-            return nil
-        }
-
-        let headCandidates = [pose.leftEar, pose.rightEar, pose.leftEye, pose.rightEye, pose.nose].compactMap { point -> Point2D? in
-            guard let point, point.isTrackable else {
-                return nil
-            }
-            return point
-        }
-        guard !headCandidates.isEmpty else {
-            return nil
-        }
-        let headY = headCandidates.map(\.y).reduce(0, +) / Double(headCandidates.count)
-        let shoulderY = (leftShoulder.y + rightShoulder.y) / 2
-        return (shoulderY - headY) / shoulderWidth
+    private func validRatio(_ count: Int, rect: NormalizedRect, map: RelativeDepthMap) -> Double {
+        let expected = max(1, Int((rect.area * Double(map.width * map.height)).rounded()))
+        return min(1, Double(count) / Double(expected))
     }
 
-    private func classify(angle: Double, baselineAngle: Double?, sensitivity: Sensitivity) -> PostureAssessment {
-        if let baselineAngle {
-            return angle < baselineAngle - Tuning.profileRelativeDrop ? .bad : .good
-        }
-        return angle < Tuning.absoluteBadAngle(for: sensitivity) ? .bad : .good
+    private func median(_ values: [Double]) -> Double? {
+        percentile(values, 0.5)
     }
-}
 
-private extension ViewpointBand {
-    var isProfile: Bool {
-        self == .profileLeft || self == .profileRight
+    private func interquartileRange(_ values: [Double]) -> Double? {
+        guard let lower = percentile(values, 0.25), let upper = percentile(values, 0.75) else { return nil }
+        return upper - lower
+    }
+
+    private func percentile(_ values: [Double], _ fraction: Double) -> Double? {
+        let sorted = values.sorted()
+        guard !sorted.isEmpty else { return nil }
+        let rank = min(1, max(0, fraction)) * Double(sorted.count - 1)
+        let lower = Int(rank.rounded(.down))
+        let upper = Int(rank.rounded(.up))
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * (rank - Double(lower))
     }
 }
