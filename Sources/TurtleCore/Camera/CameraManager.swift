@@ -462,6 +462,16 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         output.setSampleBufferDelegate(self, queue: sampleBufferQueue)
         guard session.canAddOutput(output) else { throw CameraError.cannotAddOutput }
         session.addOutput(output)
+        // 기본 전달 포맷은 기기 의존적이라 CameraFrameQuality가 처리하는 포맷으로 고정한다.
+        let preferredPixelFormats: [OSType] = [
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelFormatType_32BGRA
+        ]
+        let availablePixelFormats = output.availableVideoPixelFormatTypes
+        if let pixelFormat = preferredPixelFormats.first(where: availablePixelFormats.contains) {
+            output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat]
+        }
         self.session = session
         captureConfiguration = CaptureConfiguration(
             cameraUniqueID: device.uniqueID,

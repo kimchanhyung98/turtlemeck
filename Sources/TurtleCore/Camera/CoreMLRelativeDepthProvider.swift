@@ -5,11 +5,6 @@ import CoreVideo
 import Foundation
 import Vision
 
-struct CoreMLRelativeDepthEstimate {
-    var map: RelativeDepthMap
-    var debugImage: CGImage?
-}
-
 public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
     private let modelName: String
     private let direction: DepthDirection
@@ -37,34 +32,22 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
     }
 
     public func estimate(sampleBuffer: CMSampleBuffer) -> RelativeDepthMap? {
-        estimateWithDebugImage(sampleBuffer: sampleBuffer, includeDebugImage: false)?.map
-    }
-
-    func estimateWithDebugImage(sampleBuffer: CMSampleBuffer, includeDebugImage: Bool) -> CoreMLRelativeDepthEstimate? {
         guard let model = visionModel() else { return nil }
         let handler = VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: .up, options: [:])
-        return estimate(handler: handler, model: model, includeDebugImage: includeDebugImage)
+        return estimate(handler: handler, model: model)
     }
 
     public func estimate(cgImage: CGImage) -> RelativeDepthMap? {
-        estimateWithDebugImage(cgImage: cgImage, includeDebugImage: false)?.map
-    }
-
-    func estimateWithDebugImage(cgImage: CGImage, includeDebugImage: Bool) -> CoreMLRelativeDepthEstimate? {
         guard let model = visionModel() else { return nil }
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        return estimate(handler: handler, model: model, includeDebugImage: includeDebugImage)
+        return estimate(handler: handler, model: model)
     }
 
     func debugImage(for map: RelativeDepthMap) -> CGImage? {
         visualization(map)
     }
 
-    private func estimate(
-        handler: VNImageRequestHandler,
-        model: VNCoreMLModel,
-        includeDebugImage: Bool
-    ) -> CoreMLRelativeDepthEstimate? {
+    private func estimate(handler: VNImageRequestHandler, model: VNCoreMLModel) -> RelativeDepthMap? {
         var resultBuffer: CVPixelBuffer?
         var resultArray: MLMultiArray?
         let request = VNCoreMLRequest(model: model) { request, _ in
@@ -78,19 +61,13 @@ public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
         request.imageCropAndScaleOption = .scaleFill
         guard (try? handler.perform([request])) != nil else { return nil }
 
-        let map: RelativeDepthMap?
         if let resultBuffer {
-            map = depthMap(pixelBuffer: resultBuffer)
-        } else if let resultArray {
-            map = depthMap(multiArray: resultArray)
-        } else {
-            map = nil
+            return depthMap(pixelBuffer: resultBuffer)
         }
-        guard let map else { return nil }
-        return CoreMLRelativeDepthEstimate(
-            map: map,
-            debugImage: includeDebugImage ? visualization(map) : nil
-        )
+        if let resultArray {
+            return depthMap(multiArray: resultArray)
+        }
+        return nil
     }
 
     private func visionModel() -> VNCoreMLModel? {
