@@ -30,7 +30,12 @@ public final class AppModel: ObservableObject {
     private var lastStatsTimestamp = Date()
 
     public init() {
-        settings = settingsStore.load()
+        // init 시점 주입이므로 didSet이 호출되지 않아 저장 설정에는 영속되지 않는다(세션 한정).
+        var loadedSettings = settingsStore.load()
+        if AppLaunchFlags.debugEnabled {
+            loadedSettings.debugEnabled = true
+        }
+        settings = loadedSettings
         hasCompletedOnboarding = settingsStore.hasCompletedOnboarding
         todayStats = (try? statsStore.load().first { $0.day == Self.todayKey() }) ?? DailyPostureStats(day: Self.todayKey())
 

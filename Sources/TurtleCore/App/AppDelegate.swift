@@ -1,14 +1,22 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private var statusController: StatusItemController?
+    private var mainWindowController: NSWindowController?
     private var onboardingController: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApplication.shared.setActivationPolicy(.accessory)
-        statusController = StatusItemController(model: model)
+        switch AppUIMode.current {
+        case .menuBar:
+            NSApplication.shared.setActivationPolicy(.accessory)
+            statusController = StatusItemController(model: model)
+        case .window:
+            NSApplication.shared.setActivationPolicy(.regular)
+            showMainWindow()
+        }
 
         if model.hasCompletedOnboarding {
             model.start()
@@ -19,6 +27,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model.stop()
+    }
+
+    private func showMainWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "turtlemeck"
+        window.contentViewController = NSHostingController(
+            rootView: MenuView(model: model).frame(width: 360, height: 680)
+        )
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        mainWindowController = controller
+        controller.showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     private func showOnboarding() {

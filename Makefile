@@ -1,4 +1,4 @@
-.PHONY: help check package run fresh-run
+.PHONY: help check package run run-fresh run-debug stop
 
 .DEFAULT_GOAL := help
 
@@ -18,13 +18,25 @@ check: ## 테스트 및 빌드 검사 실행
 package: ## Universal2 .app/ZIP/DMG 빌드 및 ad-hoc 서명
 	@./package.sh
 
-run: ## 기존 앱 번들 실행(없으면 패키징)
+run: ## 기본 실행(메뉴 막대 모드, 앱 번들이 없으면 패키징)
 	@if [ ! -x "$(APP_EXECUTABLE)" ]; then \
 		$(MAKE) package; \
 	fi
 	@open "$(APP)"
 
-fresh-run: ## 기존 앱 종료 후 재패키징하고 새 인스턴스 실행
+run-fresh: ## 클린 실행(기존 앱 종료 후 재패키징하고 새 인스턴스 실행)
+	@$(MAKE) stop
+	@$(MAKE) package
+	@open -n "$(APP)"
+
+run-debug: ## 디버그 모드 실행(기존 앱 종료 후 창모드 + 디버그 정보 출력)
+	@if [ ! -x "$(APP_EXECUTABLE)" ]; then \
+		$(MAKE) package; \
+	fi
+	@$(MAKE) stop
+	@open -n "$(APP)" --args --debug
+
+stop: ## 실행 중인 앱 종료
 	@osascript -e 'tell application id "com.go.turtlemeck" to quit' >/dev/null 2>&1 || true
 	@attempt=0; \
 	while [ $$attempt -lt 20 ]; do \
@@ -33,5 +45,3 @@ fresh-run: ## 기존 앱 종료 후 재패키징하고 새 인스턴스 실행
 		attempt=$$((attempt + 1)); \
 	done
 	@pkill -x turtlemeck >/dev/null 2>&1 || true
-	@$(MAKE) package
-	@open -n "$(APP)"
