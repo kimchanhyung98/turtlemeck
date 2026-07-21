@@ -223,8 +223,12 @@ public final class AppModel: ObservableObject {
         if let alert = transition.alert {
             todayStats.record(alert)
 
-            if settings.bannerNotificationsEnabled, notificationPolicy.shouldSend(alert: alert) {
-                notificationManager.sendPostureReminder(soundEnabled: settings.notificationSoundEnabled) { [weak self] success in
+            if settings.bannerNotificationsEnabled || settings.notificationSoundEnabled,
+               notificationPolicy.shouldSend(alert: alert) {
+                notificationManager.sendPostureReminder(
+                    bannerEnabled: settings.bannerNotificationsEnabled,
+                    soundEnabled: settings.notificationSoundEnabled
+                ) { [weak self] success in
                     guard success else {
                         return
                     }

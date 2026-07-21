@@ -164,7 +164,6 @@ struct MenuView: View {
                     Label("알림 소리", systemImage: "speaker.wave.2")
                         .font(.callout)
                 }
-                .disabled(!model.settings.bannerNotificationsEnabled)
 
                 Toggle(isOn: Binding(
                     get: { model.settings.launchAtLogin },
@@ -183,7 +182,7 @@ struct MenuView: View {
                     } label: {
                         Text("20분 스누즈")
                     }
-                    .disabled(!model.settings.bannerNotificationsEnabled)
+                    .disabled(!model.settings.bannerNotificationsEnabled && !model.settings.notificationSoundEnabled)
                     .help("20분 스누즈")
                 }
             }
