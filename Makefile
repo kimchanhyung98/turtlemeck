@@ -24,16 +24,16 @@ run: ## 기본 실행(메뉴 막대 모드, 앱 번들이 없으면 패키징)
 	fi
 	@open "$(APP)"
 
-run-fresh: ## 클린 실행(기존 앱 종료 후 재패키징하고 새 인스턴스 실행)
+run-fresh: ## 클린 실행(기존 앱 종료, 앱 데이터 초기화 후 재패키징하고 새 인스턴스 실행)
 	@$(MAKE) stop
+	@defaults delete com.go.turtlemeck >/dev/null 2>&1 || true
 	@$(MAKE) package
 	@open -n "$(APP)"
 
-run-debug: ## 디버그 모드 실행(기존 앱 종료 후 창모드 + 디버그 정보 출력)
-	@if [ ! -x "$(APP_EXECUTABLE)" ]; then \
-		$(MAKE) package; \
-	fi
+run-debug: ## 디버그 클린 실행(기존 앱 종료, 앱 데이터 초기화 후 재패키징하고 창모드 + 디버그 정보 출력)
 	@$(MAKE) stop
+	@defaults delete com.go.turtlemeck >/dev/null 2>&1 || true
+	@$(MAKE) package
 	@open -n "$(APP)" --args --debug
 
 stop: ## 실행 중인 앱 종료

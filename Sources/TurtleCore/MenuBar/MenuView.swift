@@ -9,22 +9,21 @@ struct MenuView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                statusPanel
-                quickActionsPanel
-                todayPanel
-                settingsPanel
-                advancedPanel
-                if model.settings.debugEnabled {
-                    debugPanel
-                }
-                privacyPanel
-                footerActions
+        VStack(alignment: .leading, spacing: 12) {
+            statusPanel
+            quickActionsPanel
+            todayPanel
+            settingsPanel
+            advancedPanel
+            if model.settings.debugEnabled {
+                debugPanel
             }
-            .padding(14)
+            if isPrivacyExpanded {
+                privacyPanel
+            }
+            footerActions
         }
-        .frame(width: 360)
+        .padding(14)
     }
 
     private var statusPanel: some View {
@@ -149,28 +148,37 @@ struct MenuView: View {
                     }
                 }
 
-                Toggle(isOn: Binding(
-                    get: { model.settings.bannerNotificationsEnabled },
-                    set: { model.setBannerNotifications($0) }
-                )) {
+                HStack {
                     Label("배너 알림", systemImage: "bell")
                         .font(.callout)
+                    Spacer()
+                    Toggle("배너 알림", isOn: Binding(
+                        get: { model.settings.bannerNotificationsEnabled },
+                        set: { model.setBannerNotifications($0) }
+                    ))
+                    .labelsHidden()
                 }
 
-                Toggle(isOn: Binding(
-                    get: { model.settings.notificationSoundEnabled },
-                    set: { model.setNotificationSound($0) }
-                )) {
+                HStack {
                     Label("알림 소리", systemImage: "speaker.wave.2")
                         .font(.callout)
+                    Spacer()
+                    Toggle("알림 소리", isOn: Binding(
+                        get: { model.settings.notificationSoundEnabled },
+                        set: { model.setNotificationSound($0) }
+                    ))
+                    .labelsHidden()
                 }
 
-                Toggle(isOn: Binding(
-                    get: { model.settings.launchAtLogin },
-                    set: { model.setLaunchAtLogin($0) }
-                )) {
+                HStack {
                     Label("로그인 시 자동 실행", systemImage: "power.circle")
                         .font(.callout)
+                    Spacer()
+                    Toggle("로그인 시 자동 실행", isOn: Binding(
+                        get: { model.settings.launchAtLogin },
+                        set: { model.setLaunchAtLogin($0) }
+                    ))
+                    .labelsHidden()
                 }
 
                 HStack {
@@ -186,6 +194,7 @@ struct MenuView: View {
                     .help("20분 스누즈")
                 }
             }
+            .labelStyle(SettingsRowLabelStyle())
         }
     }
 
@@ -246,12 +255,10 @@ struct MenuView: View {
 
     private var privacyPanel: some View {
         MenuPanel {
-            MenuDisclosureRow(title: "개인정보 · 비의료 안내", isExpanded: $isPrivacyExpanded) {
-                Text(Disclaimer.text)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(Disclaimer.text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -260,15 +267,21 @@ struct MenuView: View {
             Button {
                 model.openCameraPrivacySettings()
             } label: {
-                Label("카메라 권한 설정", systemImage: "video")
+                Text("카메라 권한 설정")
             }
 
-            Spacer()
+            Button {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isPrivacyExpanded.toggle()
+                }
+            } label: {
+                Text("개인정보 · 비의료 안내")
+            }
 
             Button(role: .destructive) {
                 model.quit()
             } label: {
-                Label("종료", systemImage: "power")
+                Text("종료")
             }
         }
         .controlSize(.small)
@@ -372,6 +385,17 @@ struct MenuView: View {
     }
 }
 
+/// 아이콘 폭 차이와 무관하게 텍스트 시작 위치를 고정하는 설정 행 전용 스타일.
+private struct SettingsRowLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .frame(width: 18)
+            configuration.title
+        }
+    }
+}
+
 private struct MenuPanel<Content: View>: View {
     private let content: Content
 
@@ -391,45 +415,6 @@ private struct MenuPanel<Content: View>: View {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.primary.opacity(0.08))
             )
-    }
-}
-
-private struct MenuDisclosureRow<Content: View>: View {
-    var title: String
-    @Binding var isExpanded: Bool
-    private let content: () -> Content
-
-    init(title: String, isExpanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) {
-        self.title = title
-        self._isExpanded = isExpanded
-        self.content = content
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .frame(width: 13, height: 18)
-                    Text(title)
-                        .font(.callout.weight(.semibold))
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                content()
-                    .padding(.top, 10)
-            }
-        }
     }
 }
 

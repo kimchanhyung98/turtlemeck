@@ -41,8 +41,9 @@ final class StatusItemController: NSObject {
     private func configurePopover() {
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 580)
-        popover.contentViewController = NSHostingController(rootView: MenuView(model: model))
+        let hosting = NSHostingController(rootView: MenuView(model: model).frame(width: 304))
+        hosting.sizingOptions = .preferredContentSize
+        popover.contentViewController = hosting
     }
 
     private func handleStateChange(_ state: PostureState) {
