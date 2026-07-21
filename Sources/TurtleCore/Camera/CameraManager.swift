@@ -151,7 +151,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private func scheduleNextBurst(after seconds: Int) {
         scheduledWorkItem?.cancel()
         guard isRunning else { return }
-        emitNextCheck(seconds)
+        // 즉시 실행은 "다음 점검 0초 후" 안내가 무의미하므로 알리지 않는다.
+        if seconds > 0 { emitNextCheck(seconds) }
         let item = DispatchWorkItem { [weak self] in self?.performBurst() }
         scheduledWorkItem = item
         queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)

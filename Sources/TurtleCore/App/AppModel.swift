@@ -31,6 +31,8 @@ public final class AppModel: ObservableObject {
     private var notificationPolicy = NotificationPolicy()
     private let notificationManager = NotificationManager()
     private var lastStatsTimestamp = Date()
+    private var countdownTimer: Timer?
+    private var nextCheckDate: Date?
 
     public init() {
         // --debug 주입은 세션 한정: didSet 저장 시 persistedDebugEnabled로 되돌려 영속을 막는다.
@@ -47,7 +49,7 @@ public final class AppModel: ObservableObject {
         }
         cameraManager.onNextCheckUpdate = { [weak self] seconds in
             Task { @MainActor in
-                self?.nextCheckDescription = "다음 점검 \(seconds)초 후"
+                self?.startNextCheckCountdown(seconds: seconds)
             }
         }
         cameraManager.onBlocked = { [weak self] reason in
@@ -67,13 +69,15 @@ public final class AppModel: ObservableObject {
                     return
                 }
                 if active {
-                    self.nextCheckDescription = "카메라 점검 중"
+                    self.setNextCheck("카메라 점검 중")
                 } else if self.isPaused {
-                    self.nextCheckDescription = "일시정지"
+                    self.setNextCheck("일시정지")
                 } else if self.postureState == .calibrating {
-                    self.nextCheckDescription = "보정 처리 중"
+                    self.setNextCheck("보정 처리 중")
+                } else if self.postureState == .needsCalibration {
+                    // 재보정 안내 문구를 유지한다.
                 } else {
-                    self.nextCheckDescription = "측정 처리 중"
+                    self.setNextCheck("측정 처리 중")
                 }
             }
         }
@@ -167,7 +171,7 @@ public final class AppModel: ObservableObject {
 
         postureState = .calibrating
         statusText = "기준 자세 수집 중"
-        nextCheckDescription = "바른 자세를 유지해 주세요"
+        setNextCheck("바른 자세를 유지해 주세요")
         // 보정 실패로 점검이 중단된 상태에서도 재보정으로 정기 점검을 재개한다.
         cameraManager.start(settings: settings, baseline: settings.baseline)
         cameraManager.runCalibration(settings: settings, baseline: settings.baseline) { [weak self] result in
@@ -204,7 +208,7 @@ public final class AppModel: ObservableObject {
             stateMachine.reset(to: .noEval)
             postureState = .needsCalibration
             statusText = title(for: .needsCalibration)
-            nextCheckDescription = "바른 자세로 ‘재보정’을 눌러 주세요"
+            setNextCheck("바른 자세로 ‘재보정’을 눌러 주세요")
             cameraManager.stop()
         } else {
             postureState = transition.state
@@ -212,7 +216,7 @@ public final class AppModel: ObservableObject {
         }
         if transition.state == .paused {
             isPaused = true
-            nextCheckDescription = "일시정지"
+            setNextCheck("일시정지")
             cameraManager.stop()
         }
 
@@ -232,6 +236,39 @@ public final class AppModel: ObservableObject {
         }
         saveStats()
         return postureState
+    }
+
+    private func setNextCheck(_ message: String) {
+        stopNextCheckCountdown()
+        nextCheckDescription = message
+    }
+
+    private func startNextCheckCountdown(seconds: Int) {
+        stopNextCheckCountdown()
+        nextCheckDate = Date().addingTimeInterval(Double(seconds))
+        updateNextCheckCountdown()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateNextCheckCountdown()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        countdownTimer = timer
+    }
+
+    private func updateNextCheckCountdown() {
+        guard let nextCheckDate else { return }
+        let remaining = max(0, Int(nextCheckDate.timeIntervalSinceNow.rounded(.up)))
+        nextCheckDescription = "다음 점검 \(remaining)초 후"
+        if remaining == 0 {
+            stopNextCheckCountdown()
+        }
+    }
+
+    private func stopNextCheckCountdown() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        nextCheckDate = nil
     }
 
     private func recordElapsedStats(now: Date = Date()) {
@@ -277,18 +314,18 @@ public final class AppModel: ObservableObject {
             postureState = .noEval
             stateMachine.reset(to: .noEval)
             statusText = "기준 자세 저장됨"
-            nextCheckDescription = "첫 자세 비교 준비 중"
+            setNextCheck("첫 자세 비교 준비 중")
         case .rejected(.unstableBaseline):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
-            nextCheckDescription = "바른 자세로 기준자세 설정을 다시 눌러 주세요"
+            setNextCheck("바른 자세로 기준자세 설정을 다시 눌러 주세요")
             cameraManager.stop()
         case .rejected(.noReliableBursts):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세 신호 부족"
-            nextCheckDescription = "카메라 구도를 확인한 뒤 다시 시도해 주세요"
+            setNextCheck("카메라 구도를 확인한 뒤 다시 시도해 주세요")
             cameraManager.stop()
         }
         return postureState
