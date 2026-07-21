@@ -3,14 +3,9 @@ import Foundation
 public final class SettingsStore {
     private let defaults: UserDefaults
     private let settingsKey = "com.go.turtlemeck.settings"
-    private let onboardingKey = "com.go.turtlemeck.onboardingComplete"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-    }
-
-    public var hasCompletedOnboarding: Bool {
-        defaults.bool(forKey: onboardingKey)
     }
 
     public func load() -> Settings {
@@ -28,9 +23,5 @@ public final class SettingsStore {
             return
         }
         defaults.set(data, forKey: settingsKey)
-    }
-
-    public func markOnboardingComplete() {
-        defaults.set(true, forKey: onboardingKey)
     }
 }

@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import Combine
 import Foundation
 
@@ -24,8 +23,6 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    public let hasCompletedOnboarding: Bool
-
     private let settingsStore = SettingsStore()
     private let persistedDebugEnabled: Bool
     private let statsStore = StatsStore()
@@ -43,7 +40,6 @@ public final class AppModel: ObservableObject {
             loadedSettings.debugEnabled = true
         }
         settings = loadedSettings
-        hasCompletedOnboarding = settingsStore.hasCompletedOnboarding
         todayStats = (try? statsStore.load().first { $0.day == Self.todayKey() }) ?? DailyPostureStats(day: Self.todayKey())
 
         cameraManager.onVerdict = { [weak self] verdict in
@@ -123,58 +119,6 @@ public final class AppModel: ObservableObject {
             return
         }
         cameraManager.runImmediateCheck(settings: settings, baseline: settings.baseline)
-    }
-
-    public func requestCameraPermission() {
-        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
-                if granted {
-                    if self.postureState == .blocked {
-                        self.postureState = .noEval
-                    }
-                    self.statusText = "카메라 권한 허용됨"
-                } else {
-                    self.postureState = .blocked
-                    self.statusText = "카메라 권한 필요"
-                }
-            }
-        }
-    }
-
-    /// 최초 실행/온보딩에서 카메라를 쓸 수 있는 상태인지 확인한다(권한 + 사용 가능한 카메라 장치).
-    public func checkCameraAvailability() {
-        let status = AVCaptureDevice.authorizationStatus(for: .video)
-        let hasDevice = !AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external],
-            mediaType: .video,
-            position: .unspecified
-        ).devices.isEmpty
-        guard hasDevice else {
-            postureState = .blocked
-            statusText = "사용 가능한 카메라 없음"
-            return
-        }
-        switch status {
-        case .authorized:
-            if postureState == .blocked {
-                postureState = .noEval
-            }
-            statusText = "카메라 사용 가능"
-        case .notDetermined:
-            statusText = "카메라 권한 요청 필요"
-        case .denied, .restricted:
-            postureState = .blocked
-            statusText = "카메라 권한 필요"
-        @unknown default:
-            statusText = "카메라 상태 확인 필요"
-        }
-    }
-
-    public func markOnboardingComplete() {
-        settingsStore.markOnboardingComplete()
     }
 
     public func setCheckInterval(_ interval: Double) {

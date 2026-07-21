@@ -6,7 +6,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private var statusController: StatusItemController?
     private var mainWindowController: NSWindowController?
-    private var onboardingController: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         switch AppUIMode.current {
@@ -18,11 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showMainWindow()
         }
 
-        if model.hasCompletedOnboarding {
-            model.start()
-        } else {
-            showOnboarding()
-        }
+        model.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -48,11 +43,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
-    }
-
-    private func showOnboarding() {
-        let controller = OnboardingWindowController(model: model)
-        onboardingController = controller
-        controller.showWindow(nil)
     }
 }
