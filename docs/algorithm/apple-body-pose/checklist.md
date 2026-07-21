@@ -11,7 +11,7 @@
 
 이 문서는 현재 코드를 설명하는 문서가 아니며, 현재 코드에 맞춰 설계를 바꾸는 기준도 아니다. [`posture-analysis-workflow.md`](../posture-analysis-workflow.md)의 상세 흐름과 채택·제외 범위를 구현 단계에서 검증하기 위한 비규범 체크리스트다. [`../../workflow.md`](../../workflow.md)는 상위 개론으로만 사용한다.
 
-API 사실은 [analysis.md](analysis.md), 목표 알고리즘은 [`posture-analysis-workflow.md`](../posture-analysis-workflow.md)를 기준으로 한다. 구현 상태·완료 여부·특정 코드 라인은 이 문서의 근거로 사용하지 않는다.
+API 사실은 Vision 2D [analysis.md](analysis.md)와 [related-vision-3d.md](related-vision-3d.md), 목표 알고리즘은 [`posture-analysis-workflow.md`](../posture-analysis-workflow.md)를 기준으로 한다. 구현 상태·완료 여부·특정 코드 라인은 이 문서의 근거로 사용하지 않는다.
 
 ## 요약 다이어그램
 
@@ -19,7 +19,7 @@ API 사실은 [analysis.md](analysis.md), 목표 알고리즘은 [`posture-analy
 flowchart TD
     SPEC["목표 알고리즘"]
     SPEC --> INPUT["입력·orientation·대상 사람"]
-    SPEC --> SIGNAL["Vision 2D landmark·ROI·품질<br/>DA-V2 relative depth feature"]
+    SPEC --> SIGNAL["2D pose landmark·ROI·품질<br/>DA-V2 relative depth feature"]
     SPEC --> QUALITY["실제 품질·ROI·시간 일관성"]
     SPEC --> DECISION["baseline·품질·시간 조건<br/>good/bad/noEval"]
     INPUT --> TEST["적합성 테스트"]
@@ -39,17 +39,22 @@ flowchart TD
 - 사람 전체가 아닌 머리·어깨·상부 몸통이 필요한 비율로 보이는지 확인한다.
 - 입력이 불충분하면 관절이나 ROI를 합성해 `good`을 만들지 않고 `noEval`로 보낸다.
 
-## 2. Apple Vision 2D 신체 추정 계약
+## 2. PoseNet·Apple Vision 2D 신체 추정 계약
 
+- Apple Core ML 샘플 PoseNet과 운영체제 Vision 2D API를 같은 기술로 설명하지 않는다.
+- PoseNet을 우선 실행하고 상체 품질 실패 시 같은 프레임에 Vision 2D를 fallback으로 실행한다.
+- 한 프레임에서 두 detector의 부분 관절을 합성하지 않는다.
+- PoseNet에는 `neck`이 없으므로 Vision의 `neck`을 공통 필수점으로 만들지 않는다.
 - 2D 점은 Vision의 좌하단 정규화 좌표와 제품 내부 좌표계를 명시적으로 변환한다.
+- PoseNet의 `scaleFill` 좌표가 원본·depth 좌표와 일치하는지 별도로 검증한다.
 - 관절별 confidence를 보존하고, 추적 가능 여부와 판정 적합 여부를 구분한다.
 - 2D 관절 자체가 `good`·`bad`를 반환한다고 설명하지 않는다.
-- Vision 2D는 DA-V2용 ROI와 품질 정보로 사용한다.
+- PoseNet·Vision 2D는 DA-V2용 ROI와 품질 정보로만 사용한다.
 - 임상 C7·tragus가 없으므로 자체 머리-어깨 각을 CVA라고 표시하지 않는다.
 
 ## 3. ROI 계약
 
-- 머리·몸통과 정규화 기준 ROI는 Vision 2D body landmark로 정의한다.
+- 머리·몸통과 정규화 기준 ROI는 PoseNet·Vision 2D의 공통 body landmark로 정의한다.
 - face·person mask를 확정 흐름의 필수 입력으로 추가하지 않는다.
 - ROI 경계 침식, 최소 픽셀 수, 화면 경계 접촉률, 유효 depth 비율을 품질 값으로 기록한다.
 - 한쪽 어깨나 머리 anchor가 없을 때 고정 거리로 가짜 관절을 만들지 않는다.
@@ -106,6 +111,9 @@ flowchart TD
 
 - 상위 개론: [`../../workflow.md`](../../workflow.md)
 - 상세 목표 알고리즘과 채택·제외 범위: [`../posture-analysis-workflow.md`](../posture-analysis-workflow.md)
-- Apple Vision API: [analysis.md](analysis.md)
+- Apple Core ML 샘플 PoseNet: [`../apple-posenet/analysis.md`](../apple-posenet/analysis.md)
+- Apple Vision 2D API: [analysis.md](analysis.md)
+- Apple Vision 3D API: [related-vision-3d.md](related-vision-3d.md)
+- Apple Vision 보조 사람 분석 API: [related-person-observations.md](related-person-observations.md)
 - depth feature: [`../../depth-estimation/etc/related-feature-design.md`](../../depth-estimation/etc/related-feature-design.md)
 - baseline: [`../pose-estimation/related-baseline-calibration.md`](../pose-estimation/related-baseline-calibration.md)

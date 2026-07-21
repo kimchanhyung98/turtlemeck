@@ -11,6 +11,7 @@
 | 1 | [posture-analysis-workflow.md](posture-analysis-workflow.md) | 전체 처리 순서, 상세 판단 로직과 채택·제외 범위를 정의하는 규범 문서 |
 | 2 | [../workflow.md](../workflow.md) | 제품 플로우와 역할 분담을 빠르게 이해하기 위한 개론 |
 | 3 | [apple-body-pose/checklist.md](apple-body-pose/checklist.md) | 목표 설계가 구현 단계에서 지켜졌는지 확인하는 비규범 체크리스트 |
+| 4 | [apple-posenet/](apple-posenet/README.md) | Apple Core ML 샘플 PoseNet의 모델·decoder·통합 경계 리서치 |
 | 4 | [apple-body-pose/](apple-body-pose/README.md) | Apple Vision API의 제공 정보와 한계에 관한 리서치 |
 | 4 | [pose-estimation/](pose-estimation/README.md) | 자세 추정 모델·기하·baseline·단안 한계에 관한 리서치 |
 | 4 | [../depth-estimation/](../depth-estimation/README.md) | 단안 깊이 모델과 자세 신호 적용 가능성에 관한 리서치 |
@@ -97,9 +98,15 @@
 algorithm/
 ├── README.md                         # 문서 체계와 상태 용어
 ├── posture-analysis-workflow.md      # 규범: 상세 처리·판정 로직과 제외 범위
+├── apple-posenet/
+│   ├── README.md                     # Apple Core ML 샘플 PoseNet 진입점
+│   ├── analysis.md                   # 모델 I/O·decoder·좌표계 분석
+│   └── references.md                 # Apple 샘플·TensorFlow·로컬 근거
 ├── apple-body-pose/
 │   ├── README.md                     # Apple Vision 리서치 진입점
-│   ├── analysis.md                   # API·처리 로직 분석
+│   ├── analysis.md                   # Vision 2D body pose 분석
+│   ├── related-vision-3d.md          # Vision 3D 분석과 제외 근거
+│   ├── related-person-observations.md # face·person mask 경계
 │   ├── references.md                 # 공식·관련 자료
 │   └── checklist.md                  # 설계 적합성 검증
 └── pose-estimation/

@@ -5,7 +5,7 @@
 | 항목 | 내용 |
 |---|---|
 | 문서 유형 | Apple 플랫폼 경로 조사 |
-| 적용 상태 | Vision 2D body pose는 채택, Core ML은 실행 형식, hardware depth·Vision 3D는 제외 |
+| 적용 상태 | Vision 2D body pose는 PoseNet fallback, Core ML은 실행 형식, hardware depth·Vision 3D는 제외 |
 | 입력 | Mac 내장 카메라의 단일 RGB 프레임 |
 | 출력 | Vision 2D 신체 정보와 Core ML 단안 relative depth |
 | 다루는 범위 | macOS 카메라·Vision·Core ML에서 가능한 깊이 관련 경로 |
@@ -24,7 +24,7 @@ flowchart TD
     HW -->|"builtInTrueDepthCamera"| X2["macOS 미지원"]
     HW -->|"ARKit / RoomPlan"| X3["목표 macOS RGB 경로 아님<br/>센서·플랫폼 조건 불일치"]
 
-    CAM --> SW{"Vision 2D body pose<br/>(깊이 아님)"}
+    CAM --> SW{"PoseNet·Vision 2D body pose<br/>(깊이 아님)"}
     SW -->|"HumanBodyPose"| POSE["2D 관절 anchor<br/>머리·몸통 ROI 정의"]
     CAM --> P3["Vision 3D<br/>17-joint skeleton 추정"]
     P3 --> X4["dense/measured depth 아님<br/>목표 판정에서 제외"]
@@ -41,13 +41,13 @@ flowchart TD
 
 ## 제품 적용 판단
 
-Mac 내장 카메라에서 measured depth를 전제로 하지 않는다. Vision 2D는 신체 landmark·ROI 보조에 사용하고, DA-V2 Small은 Core ML로 relative depth를 생성한다. Vision 3D skeleton은 depth 대체나 최종 자세 판정에 사용하지 않는다.
+Mac 내장 카메라에서 measured depth를 전제로 하지 않는다. PoseNet과 fallback Vision 2D는 신체 landmark·ROI 보조에 사용하고, DA-V2 Small은 Core ML로 relative depth를 생성한다. Vision 3D skeleton은 depth 대체나 최종 자세 판정에 사용하지 않는다.
 
 ## 한계와 검증 상태
 
 - Mac 내장 카메라에는 목표 경로에서 사용할 measured-depth 입력이 없다.
 - Core ML 실행 가능성과 자세 신호의 정확도는 별개이며, 종단 간 지연·발열·반복성은 제품 환경에서 측정해야 한다.
-- Vision 2D와 relative depth의 좌표 정렬 및 ROI 누출은 별도 검증 항목이다.
+- 2D body-pose와 relative depth의 좌표 정렬 및 ROI 누출은 별도 검증 항목이다.
 
 ## 문서 구성
 

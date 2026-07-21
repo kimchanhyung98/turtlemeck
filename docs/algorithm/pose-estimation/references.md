@@ -6,13 +6,14 @@
 |---|---|
 | 문서 유형 | 공식 자료·1차 연구 목록 |
 | 적용 상태 | 근거 문서 |
-| 다루는 범위 | Apple Vision, 대안 pose 모델, CVA, 단안 3D pose, FHP 인접 연구 |
+| 다루는 범위 | Apple Core ML 샘플 PoseNet, Apple Vision, 대안 pose 모델, CVA, 단안 3D pose, FHP 인접 연구 |
 | 제품 내 역할 | [analysis.md](analysis.md)의 주장과 한계를 추적할 출처 제공 |
 
 ## 핵심 근거
 
 | 주장 | 근거 수준 | 대표 출처 |
 |---|---|---|
+| Apple PoseNet sample은 별도 번들 모델이며 17개 관절을 제공 | Apple 공식·원본 저장소 | Apple Core ML sample, TensorFlow PoseNet |
 | Vision 2D는 상체 landmark와 관절별 confidence를 제공 | 공식 문서 | Apple Vision 문서·WWDC20 |
 | 대안 pose 모델은 landmark 수·런타임·라이선스 조건이 다름 | 공식 모델 자료 | MediaPipe, MoveNet, OpenPose, HRNet 자료 |
 | 사진 CVA와 앱 내부 자세 점수는 동일한 측정값이 아님 | 1차 연구·문헌 검토 | CVA 문헌, 방사선 비교 연구 |
@@ -20,6 +21,8 @@
 
 ## 공식 문서와 1차 자료
 
+- Apple Developer, “Detecting human body poses in an image” Core ML PoseNet sample: <https://developer.apple.com/documentation/coreml/detecting-human-body-poses-in-an-image>
+- TensorFlow `tfjs-models` PoseNet source: <https://github.com/tensorflow/tfjs-models/tree/master/posenet>
 - Apple Developer Documentation, `VNDetectHumanBodyPoseRequest`: <https://developer.apple.com/documentation/vision/vndetecthumanbodyposerequest>
 - Apple Developer, WWDC20 “Detect Body and Hand Pose with Vision”: <https://developer.apple.com/videos/play/wwdc2020/10653/>
 - Apple Developer, WWDC23 “Explore 3D body pose and person segmentation in Vision”: <https://developer.apple.com/videos/play/wwdc2023/111241/>
@@ -38,6 +41,8 @@
 
 ## 추가·관련 자료
 
+- Apple Core ML 샘플 PoseNet 분석: [`../apple-posenet/`](../apple-posenet/)
+- Apple Vision 2D·3D 분석: [`../apple-body-pose/`](../apple-body-pose/)
 - MediaPipe Pose Landmarker guide (33 3D landmarks, GHUM): <https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker>
 - 사진 CVA와 방사선 정렬 비교(R²≈0.30, 한계 근거): <https://pmc.ncbi.nlm.nih.gov/articles/PMC11012400/>
 - CVA 정의 및 FHP 임계 논의 (tragus–C7, <50–53°): <https://pmc.ncbi.nlm.nih.gov/articles/PMC7559098/>
@@ -48,5 +53,6 @@
 ## 직접 적용하지 않는 범위
 
 - 외부 모델의 mAP·FPS를 데이터셋과 하드웨어가 다른 상태에서 직접 비교하지 않는다.
+- Apple sample PoseNet을 Vision 2D API 또는 Apple이 개발한 시스템 모델로 설명하지 않는다.
 - 사진 CVA 임계나 인접 연구의 정확도를 정면 Mac 웹캠 자세 판정 성능으로 전용하지 않는다.
 - 3D landmark 또는 world coordinates를 실제 센서 depth나 임상 측정값으로 해석하지 않는다.

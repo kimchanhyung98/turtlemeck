@@ -1,59 +1,60 @@
-# Apple Vision 기반 자세 추정 — 조사 인덱스
+# Apple Vision 사람 자세 API — 조사 인덱스
 
 ## 문서 요약
 
 | 항목 | 내용 |
 |---|---|
-| 문서 유형 | Apple Vision 리서치 인덱스 |
-| 적용 상태 | Vision 2D body pose는 채택, face·mask는 미채택 보조 후보, Vision 3D는 제외 |
-| 입력 | 카메라 RGB 프레임 |
-| 출력 | 2D 관절·confidence와 선택적인 얼굴 자세·사람 mask |
-| 다루는 범위 | Apple Vision의 사람 관절·얼굴·사람 mask API와 목표 설계 적합성 |
-| 제품 내 역할 | Apple 플랫폼 조사 문서의 진입점과 기술별 상태 안내 |
+| 문서 유형 | Apple Vision API 리서치 인덱스 |
+| 적용 상태 | Vision 2D는 PoseNet fallback, Vision 3D는 제외, face·mask는 미채택 |
+| 입력 | 카메라 RGB 프레임과 선택적인 API별 metadata |
+| 출력 | Vision 요청별 2D/3D 관절, 얼굴 observation, 사람 mask |
+| 다루는 범위 | 운영체제 Vision framework가 제공하는 사람 분석 API |
+| 제품 내 역할 | Vision 2D·3D의 계약과 채택·제외 범위를 분리해 안내 |
 
-## 요약 다이어그램
+## 기술별 경계
 
 ```mermaid
 flowchart TD
-    H["Apple Vision 사람 분석"]
-    H --> B2["2D body pose - 관절 + confidence"]
-    H --> B3["3D body pose - 17개 관절 + observation confidence"]
-    H --> FA["face - 미채택 보조 후보"]
-    H --> MASK["person instance mask - 미채택 보조 후보"]
-    B2 --> M2["DA-V2용 ROI·품질 조건"]
-    B3 --> K2["3D는 per-joint confidence 없음"]
-    K2 --> G["목표 판정 경로에서 제외"]
+    FRAME["RGB 프레임"] --> V2["Vision 2D<br/>최대 19 points"]
+    FRAME --> V3["Vision 3D<br/>17-joint skeleton"]
+    FRAME --> FACE["face observation"]
+    FRAME --> MASK["person instance mask"]
+    V2 --> FALLBACK["PoseNet 실패 시 fallback"]
+    V3 --> EXCLUDED["판정 경로 제외"]
+    FACE --> NOTUSED["미채택 보조 후보"]
+    MASK --> NOTUSED
 ```
 
-## 이 디렉토리의 목적
-
-이 디렉토리는 Apple Vision의 관절·얼굴·사람 mask API 원리, 좌표계, 한계를 정리한다. 구현 상태는 다루지 않는다. 확정 흐름에서는 Vision 2D body pose가 신체 관절과 depth ROI·품질 정보를 제공한다. Depth Anything V2는 상대 깊이만 추정하고, 프로젝트 자세 분석기가 두 출력을 결합해 판정한다. face·person mask는 핵심 흐름에 넣지 않으며, Vision 3D도 목표 판정 경로에서 제외한다.
-
-일반 컴퓨터 비전 자세 추정(모델 비교·CVA 지표·모노큘러 한계 등)은 별도 디렉토리 [`../pose-estimation/`](../pose-estimation/)에 정리한다. 본 디렉토리는 Apple 플랫폼 고유의 사실에 집중한다.
+이 디렉토리는 Apple **Vision framework API**만 다룬다. Apple Core ML 샘플이 배포하는 서드파티 PoseNet 모델은 [`../apple-posenet/`](../apple-posenet/)에서 별도로 관리한다.
 
 ## 제품 적용 판단
 
-- `VNDetectHumanBodyPoseRequest`는 2D 관절과 per-joint confidence를 제공한다. macOS 11.0+
-- face observation의 bounding box와 요청 revision에서 계산된 yaw·roll·pitch는 회전 가드 후보가 될 수 있다. 각도는 계산되지 않으면 `nil`일 수 있으며 현재 확정 흐름에는 사용하지 않는다.
-- `VNGeneratePersonInstanceMaskRequest`는 개별 사람 전체 mask를 제공하지만 신체 부위 mask나 depth는 아니다. macOS 14.0+이며 현재 확정 흐름에는 사용하지 않는다.
-- `VNDetectHumanBodyPose3DRequest`는 17-joint skeleton을 제공한다. macOS 14.0+이며 macOS용 Apple Silicon 강제 요건은 공식 문서에 명시되지 않았다.
-- 3D point에는 per-joint confidence가 없지만 observation-level confidence는 상속된다. `bodyHeight`, `heightEstimation`, `cameraOriginMatrix`를 per-joint 품질 점수로 오해하지 않는다.
-- Vision 2D는 정규화 좌표 + 좌하단 원점이다. depth map과 결합할 때 두 출력을 동일 원본 프레임 좌표로 정렬한다.
-- 정면 영상의 전방 상대 변화는 Depth Anything V2의 relative-depth feature를 사용한다. Vision 2D 관절은 ROI와 품질 판단에 사용하며, 최종 판정은 프로젝트 자세 분석기의 baseline·시간 처리 단계에서 수행한다.
+| 기술 | 제공 정보 | 현재 상태 |
+|---|---|---|
+| Vision 2D body pose | 최대 19개 2D point와 per-joint confidence | PoseNet 상체 품질 실패 시 fallback |
+| Vision 3D body pose | 가장 두드러진 사람의 17-joint 3D skeleton | sparse skeleton·품질 계약 불일치로 제외 |
+| face observation | face box와 선택적인 yaw·roll·pitch | 추가 이득 검증 전 미채택 |
+| person instance mask | 사람별 전체 2D mask | 신체 부위·depth가 아니므로 미채택 |
+
+- Vision 2D는 좌하단 원점의 정규화 좌표를 반환하므로 제품 좌상단 좌표로 명시적으로 변환한다.
+- Vision 2D landmark는 ROI와 입력 품질에만 사용한다. 자세 판정이나 z축 깊이를 제공하지 않는다.
+- Vision 3D의 meter 단위 skeleton을 호환 depth 없는 Mac 내장 카메라의 실제 머리 전방 거리로 해석하지 않는다.
+- 최종 상태는 Depth Anything V2 relative-depth feature, 개인 baseline, 시간 조건을 결합한 프로젝트 자세 분석기가 결정한다.
 
 ## 한계와 검증 상태
 
-- Vision API의 가용성은 확인했지만 목표 촬영 환경의 landmark 누락률과 ROI 안정성은 제품 데이터로 검증해야 한다.
-- face와 person mask는 현재 경로의 실패가 확인되고 추가 이득을 별도 검증하기 전에는 도입하지 않는다.
-- Vision 3D는 실행 가능 여부와 무관하게 목표 자세 판정과 depth 대체 경로에서 제외한다.
-
-자세한 내용은 아래 문서를 참조한다.
+- API 가용성과 출력 계약은 Apple 공식 자료로 확인했지만 목표 카메라의 landmark 누락률과 fallback 안정성은 제품 fixture로 검증해야 한다.
+- Vision 2D와 PoseNet은 관절 집합, 좌표 전처리, confidence 척도가 다르다. 공통 도메인 모델로 변환한 뒤에도 detector별 검증을 유지한다.
+- face와 person mask는 현재 확정 흐름의 실패 원인과 추가 이득이 입증되기 전에는 넣지 않는다.
+- Vision 3D는 실행 가능 여부와 무관하게 현재 판정 feature·baseline·fallback에서 제외한다.
 
 ## 문서 구성
 
 | 문서 | 유형 | 적용 상태 | 역할 |
 |---|---|---|---|
-| 본 README | 리서치 인덱스 | 근거 문서 | Apple Vision 관련 문서의 진입점과 기술별 상태 요약 |
-| [analysis.md](analysis.md) | 로직 분석·설명 | 2D body pose는 채택, face·mask는 미채택, 3D는 제외 | 출력 구조, 좌표계, 관절 목록, 가용성 정리 |
-| [references.md](references.md) | 공식·관련 자료 | 근거 문서 | API 사실과 채택·제외 판단의 출처 정리 |
-| [checklist.md](checklist.md) | 검증 체크리스트 | 보조 | 목표 설계를 구현 단계에서 확인하는 비규범 항목 |
+| 본 README | 리서치 인덱스 | 근거 문서 | Vision 기술별 상태와 문서 진입점 |
+| [analysis.md](analysis.md) | API 분석 | fallback | Vision 2D의 19개 point, 좌표계, confidence와 실패 조건 |
+| [related-vision-3d.md](related-vision-3d.md) | 관련 API 분석 | 제외 | 17-joint 3D, scale·depth·confidence 한계 |
+| [related-person-observations.md](related-person-observations.md) | 관련 API 분석 | 미채택 | face observation과 person instance mask의 제공 범위 |
+| [references.md](references.md) | 공식·관련 자료 | 근거 문서 | API 사실과 채택·제외 판단의 출처 |
+| [checklist.md](checklist.md) | 검증 체크리스트 | 보조 | 목표 설계 적합성 확인 |

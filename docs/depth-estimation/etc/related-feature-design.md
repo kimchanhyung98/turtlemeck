@@ -6,12 +6,12 @@
 |---|---|
 | 문서 유형 | depth feature·측정 방식 조사 |
 | 적용 상태 | 검증 필요 |
-| 다루는 범위 | Vision 2D ROI, relative depth 집계, affine-invariant 표현 |
+| 다루는 범위 | 2D body-pose ROI, relative depth 집계, affine-invariant 표현 |
 | 제품 내 역할 | DA-V2 출력에서 자세 분석용 신호를 만드는 최소 설계 정의 |
 
 ## 입력과 역할
 
-- Vision 2D: 머리·목·어깨 landmark와 confidence
+- PoseNet·Vision 2D: 머리·어깨 landmark와 confidence
 - DA-V2 Small: relative inverse-depth map
 - 프로젝트 자세 분석기: ROI 집계, baseline 비교, 최종 판정
 
@@ -19,7 +19,7 @@ depth map에는 신체 부위 라벨이 없고, Vision landmark에는 깊이가 
 
 ## 최소 처리 흐름
 
-1. Vision 2D 품질을 확인한다.
+1. 2D body-pose 품질을 확인한다.
 2. landmark로 머리 ROI와 몸통 ROI를 정한다.
 3. landmark 기반 reference ROI를 만들고 경계 픽셀을 제외한다.
 4. 각 ROI의 median depth를 계산한다.
@@ -64,5 +64,7 @@ Sapiens, human matting, 별도 segmentation·depth 모델, 시점별 feature는 
 
 - Depth Anything V2 논문: <https://arxiv.org/abs/2406.09414>
 - Apple Vision 2D body pose: <https://developer.apple.com/documentation/vision/detecting-human-body-poses-in-images>
+- Apple Core ML 샘플 PoseNet 분석: [../../algorithm/apple-posenet/analysis.md](../../algorithm/apple-posenet/analysis.md)
+- Apple Vision 2D 분석: [../../algorithm/apple-body-pose/analysis.md](../../algorithm/apple-body-pose/analysis.md)
 - 채택 모델 분석: [../depth-anything-v2/analysis.md](../depth-anything-v2/analysis.md)
 - 확정 워크플로우: [../../algorithm/posture-analysis-workflow.md](../../algorithm/posture-analysis-workflow.md)

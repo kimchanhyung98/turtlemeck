@@ -42,7 +42,7 @@ Hugging Face의 `apple/DepthPro` artifact는 별도의 Apple Machine Learning Re
 
 ## 5. 결론
 
-Depth Pro는 metric depth 연구의 유효한 사례지만 현재 제품에 추가하지 않는다. 확정 플로우의 DA-V2 Small을 변경할 근거가 아니며, 자세 판정은 계속 Vision 2D ROI + DA-V2 relative depth + 개인 baseline으로 수행한다.
+Depth Pro는 metric depth 연구의 유효한 사례지만 현재 제품에 추가하지 않는다. 확정 플로우의 DA-V2 Small을 변경할 근거가 아니며, 자세 판정은 계속 2D body-pose ROI + DA-V2 relative depth + 개인 baseline으로 수행한다.
 
 ## 관련 문서
 

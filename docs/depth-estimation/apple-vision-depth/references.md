@@ -42,6 +42,7 @@
 
 ## 추가·관련 자료
 
+- Apple Core ML 샘플 PoseNet 입력의 역할: [../../algorithm/apple-posenet/README.md](../../algorithm/apple-posenet/README.md)
 - Apple Vision 자세 입력의 역할: [../../algorithm/apple-body-pose/README.md](../../algorithm/apple-body-pose/README.md)
 - 현재 채택 depth 모델: [../depth-anything-v2/README.md](../depth-anything-v2/README.md)
 - 대형 metric 대안: [../apple-depth-pro/README.md](../apple-depth-pro/README.md)

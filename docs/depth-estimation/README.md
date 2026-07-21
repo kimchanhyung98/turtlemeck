@@ -16,7 +16,7 @@
 
 Depth Anything V2 Small은 깊이 추정 모델이지 자세 추정 또는 자세 판정 모델이 아니다.
 
-- Apple Vision 2D: 사람·상체 landmark, 머리·몸통 ROI, 품질 값
+- PoseNet·Apple Vision 2D: 사람·상체 landmark, 머리·몸통 ROI, 품질 값
 - DA-V2 Small: scale·shift가 정해지지 않은 relative inverse depth
 - 프로젝트 자세 분석기: ROI depth 집계, 개인 baseline 비교, 시간 조건, 최종 `good`·`bad`·`noEval`
 
@@ -26,7 +26,7 @@ Core ML은 DA-V2를 Mac에서 실행하는 형식이다. Apple Vision 3D, 하드
 
 ```mermaid
 flowchart LR
-    A["RGB 이미지"] --> B["Vision 2D<br/>상체 ROI·품질"]
+    A["RGB 이미지"] --> B["PoseNet 우선·Vision fallback<br/>상체 ROI·품질"]
     A --> C["DA-V2 Small<br/>relative depth"]
     B --> D["머리-몸통 상대 feature"]
     C --> D
@@ -39,7 +39,7 @@ flowchart LR
 | 문서 | 상태 | 결론 |
 |---|---|---|
 | [depth-anything-v2/](depth-anything-v2/README.md) | 채택 | Apple 배포 Core ML Small 모델로 relative depth 생성 |
-| [apple-vision-depth/](apple-vision-depth/README.md) | 근거 문서 | Vision 2D body pose 채택, Core ML은 실행 형식, measured depth·Vision 3D 제외 |
+| [apple-vision-depth/](apple-vision-depth/README.md) | 근거 문서 | Vision 2D는 pose fallback, Core ML은 모델 실행 형식, measured depth·Vision 3D 제외 |
 | [apple-depth-pro/](apple-depth-pro/README.md) | 미채택 | metric 출력은 유용하지만 현재 모델·실행 경로를 변경하지 않음 |
 | [metric-depth-models/](metric-depth-models/README.md) | 미채택 | intrinsic·라이선스·배포 의존성이 있고 현재 필요 없음 |
 | [etc/related-feature-design.md](etc/related-feature-design.md) | 검증 필요 | DA-V2 출력에서 상대 자세 feature를 만드는 설계 가설 |
@@ -65,7 +65,7 @@ flowchart LR
 
 ## 현재 남은 검증
 
-- Vision 2D로 정의한 머리·몸통 ROI의 반복성
+- 2D body-pose로 정의한 머리·몸통 ROI의 반복성
 - DA-V2 near/far 방향과 relative-depth feature의 안정성
 - 중립 자세와 악화 자세의 분리도
 - 버스트 대표값·임계·지속 시간에 따른 오경보와 지연

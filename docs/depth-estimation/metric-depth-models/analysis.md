@@ -36,7 +36,7 @@ metric 모델의 일반 장면 평가와 현재 과제는 다르다.
 
 ## 3. 현재 결정
 
-metric 모델은 모두 미채택이다. 현재 제품은 Apple Vision 2D로 ROI와 품질을 얻고, Apple 배포 Core ML DA-V2 Small로 relative depth를 생성한다. 이 경로의 제품 데이터 검증이 끝나기 전에 metric 모델, ONNX 런타임, 카메라 calibration을 추가하지 않는다.
+metric 모델은 모두 미채택이다. 현재 제품은 PoseNet 우선·Vision 2D fallback으로 ROI와 품질을 얻고, Apple 배포 Core ML DA-V2 Small로 relative depth를 생성한다. 이 경로의 제품 데이터 검증이 끝나기 전에 metric 모델, ONNX 런타임, 카메라 calibration을 추가하지 않는다.
 
 재검토가 필요하다면 같은 Mac·같은 이미지·같은 ROI·같은 자세 라벨로 DA-V2 Small 대비 반복성과 분리도 향상을 먼저 비교해야 한다.
 

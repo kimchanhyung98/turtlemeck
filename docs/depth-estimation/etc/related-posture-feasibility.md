@@ -36,7 +36,7 @@
 ## 4. 현재 타당한 제품 범위
 
 - 절대 cm 또는 임상 CVA를 출력하지 않는다.
-- Vision 2D ROI와 DA-V2 relative depth로 개인 내 상대 feature를 만든다.
+- 2D body-pose ROI와 DA-V2 relative depth로 개인 내 상대 feature를 만든다.
 - 안내된 개인 baseline과 비교한다.
 - 짧은 버스트와 품질 조건을 사용한다.
 - 사전 정의한 자세 라벨로 accuracy·오경보·미탐·`noEval` 비율을 측정한다.
