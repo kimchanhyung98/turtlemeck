@@ -14,7 +14,12 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var todayStats = DailyPostureStats(day: AppModel.todayKey())
     @Published public var settings: Settings {
         didSet {
-            settingsStore.save(settings)
+            var persisted = settings
+            if AppLaunchFlags.debugEnabled {
+                // --debug 주입 값은 세션 한정이므로 저장 시 기존 영속 값으로 되돌린다.
+                persisted.debugEnabled = persistedDebugEnabled
+            }
+            settingsStore.save(persisted)
             cameraManager.update(settings: settings)
         }
     }
@@ -22,6 +27,7 @@ public final class AppModel: ObservableObject {
     public let hasCompletedOnboarding: Bool
 
     private let settingsStore = SettingsStore()
+    private let persistedDebugEnabled: Bool
     private let statsStore = StatsStore()
     private let cameraManager = CameraManager()
     private var stateMachine = PostureStateMachine()
@@ -30,8 +36,9 @@ public final class AppModel: ObservableObject {
     private var lastStatsTimestamp = Date()
 
     public init() {
-        // init 시점 주입이므로 didSet이 호출되지 않아 저장 설정에는 영속되지 않는다(세션 한정).
+        // --debug 주입은 세션 한정: didSet 저장 시 persistedDebugEnabled로 되돌려 영속을 막는다.
         var loadedSettings = settingsStore.load()
+        persistedDebugEnabled = loadedSettings.debugEnabled
         if AppLaunchFlags.debugEnabled {
             loadedSettings.debugEnabled = true
         }
