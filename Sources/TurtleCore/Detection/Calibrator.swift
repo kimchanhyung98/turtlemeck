@@ -13,6 +13,13 @@ public enum CalibrationResult: Equatable, Sendable {
 public struct Calibrator: Sendable {
     public init() {}
 
+    /// 보정에 쓸 수 있는 버스트 기준. 수집 루프의 조기 종료 판단도 같은 기준을 사용해야 한다.
+    public static func isReliable(_ summary: BurstSummary) -> Bool {
+        summary.validFrameCount >= Tuning.minimumValidFrames &&
+            (summary.featureMAD ?? .infinity) <= Tuning.maximumBurstMAD &&
+            summary.medianFeature != nil
+    }
+
     public func capture(
         from summaries: [BurstSummary],
         captureConfiguration: CaptureConfiguration?,
@@ -21,11 +28,7 @@ public struct Calibrator: Sendable {
         guard let captureConfiguration else {
             return .rejected(.noReliableBursts)
         }
-        let valid = summaries.filter {
-            $0.validFrameCount >= Tuning.minimumValidFrames &&
-                ($0.featureMAD ?? .infinity) <= Tuning.maximumBurstMAD &&
-                $0.medianFeature != nil
-        }
+        let valid = summaries.filter(Self.isReliable)
         guard valid.count >= Tuning.requiredCalibrationBursts else {
             return .rejected(.noReliableBursts)
         }

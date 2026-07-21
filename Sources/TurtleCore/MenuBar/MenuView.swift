@@ -68,7 +68,7 @@ struct MenuView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.isPaused)
+                .disabled(model.isPaused || checksUnavailable)
 
                 Button {
                     if model.isPaused {
@@ -80,6 +80,7 @@ struct MenuView: View {
                     Label(model.isPaused ? "재개" : "일시정지", systemImage: model.isPaused ? "play.fill" : "pause.fill")
                         .frame(maxWidth: .infinity)
                 }
+                .disabled(checksUnavailable)
 
                 Button {
                     model.recalibrateFromCurrentGoodSignal()
@@ -272,6 +273,11 @@ struct MenuView: View {
             }
         }
         .controlSize(.small)
+    }
+
+    /// baseline이 없거나 보정이 필요한 동안은 점검·일시정지를 쓸 수 없다.
+    private var checksUnavailable: Bool {
+        model.settings.baseline == nil || model.postureState == .needsCalibration
     }
 
     private var symbolName: String {

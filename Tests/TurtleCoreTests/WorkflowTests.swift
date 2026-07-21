@@ -163,7 +163,7 @@ func registerWorkflowTests() {
         try expectEqual(BurstProcessor().process(unstable, baseline: baseline, captureConfiguration: testCaptureConfiguration).reason, "unstable burst", "high MAD")
     }
 
-    TestRegistry.test("calibration requires several stable bursts") {
+    TestRegistry.test("calibration accepts a reliable burst and rejects unreliable input") {
         let requiredBursts = Tuning.requiredCalibrationBursts
         let stable = (0..<requiredBursts).map { _ in
             burstSummary(center: 0.1, mad: 0.02)
@@ -178,10 +178,13 @@ func registerWorkflowTests() {
             .rejected(.noReliableBursts),
             "fewer than the configured burst count is insufficient"
         )
-        let unstable = (0..<requiredBursts).map { index in
-            burstSummary(center: Double(index), mad: 0.02)
-        }
-        try expectEqual(Calibrator().capture(from: unstable, captureConfiguration: testCaptureConfiguration), .rejected(.unstableBaseline), "unstable neutral posture")
+        try expectEqual(
+            Calibrator().capture(from: [burstSummary(center: 0.1, mad: 1.0)], captureConfiguration: testCaptureConfiguration),
+            .rejected(.noReliableBursts),
+            "noisy burst must not produce a baseline"
+        )
+        try expect(Calibrator.isReliable(burstSummary(center: 0.1, mad: 0.02)), "stable burst counts toward calibration")
+        try expect(!Calibrator.isReliable(burstSummary(center: 0.1, mad: 1.0)), "noisy burst must not count toward calibration")
     }
 
     TestRegistry.test("state machine requires bad and recovery persistence") {

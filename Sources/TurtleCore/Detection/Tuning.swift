@@ -19,7 +19,7 @@ public enum Tuning {
     public static let maximumBurstMAD = 0.35
     public static let minimumValidFrames = 2
     public static let minimumValidFrameRatio = 0.4
-    public static let requiredCalibrationBursts = 3
+    public static let requiredCalibrationBursts = 1
     public static let maximumCalibrationMAD = 0.25
     public static let requiredBadBursts = 2
     public static let requiredRecoveryBursts = 2

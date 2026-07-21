@@ -115,7 +115,7 @@ public final class AppModel: ObservableObject {
     }
 
     public func checkNow() {
-        guard !isPaused else {
+        guard !isPaused, postureState != .needsCalibration, settings.baseline != nil else {
             return
         }
         cameraManager.runImmediateCheck(settings: settings, baseline: settings.baseline)
@@ -168,6 +168,8 @@ public final class AppModel: ObservableObject {
         postureState = .calibrating
         statusText = "기준 자세 수집 중"
         nextCheckDescription = "바른 자세를 유지해 주세요"
+        // 보정 실패로 점검이 중단된 상태에서도 재보정으로 정기 점검을 재개한다.
+        cameraManager.start(settings: settings, baseline: settings.baseline)
         cameraManager.runCalibration(settings: settings, baseline: settings.baseline) { [weak self] result in
             self?.handleCalibration(result) ?? .noEval
         }
@@ -203,6 +205,7 @@ public final class AppModel: ObservableObject {
             postureState = .needsCalibration
             statusText = title(for: .needsCalibration)
             nextCheckDescription = "바른 자세로 ‘재보정’을 눌러 주세요"
+            cameraManager.stop()
         } else {
             postureState = transition.state
             statusText = title(for: transition.state)
@@ -280,11 +283,13 @@ public final class AppModel: ObservableObject {
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
             nextCheckDescription = "바른 자세로 기준자세 설정을 다시 눌러 주세요"
+            cameraManager.stop()
         case .rejected(.noReliableBursts):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세 신호 부족"
             nextCheckDescription = "카메라 구도를 확인한 뒤 다시 시도해 주세요"
+            cameraManager.stop()
         }
         return postureState
     }

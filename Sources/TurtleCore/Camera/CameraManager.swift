@@ -250,7 +250,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             calibrationAttempts += 1
             calibrationSummaries.append(summary)
             if calibrationAttempts < CameraBurstTiming.maximumCalibrationAttempts,
-               calibrationSummaries.filter({ $0.validFrameCount >= Tuning.minimumValidFrames }).count < Tuning.requiredCalibrationBursts {
+               calibrationSummaries.filter(Calibrator.isReliable).count < Tuning.requiredCalibrationBursts {
                 let diagnostic = calibrationDiagnostic(
                     result: nil,
                     productState: .calibrating,
@@ -266,7 +266,9 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                     baseline: baseline,
                     frameOutputs: completedFrameOutputs,
                     afterOutput: {
-                        self.queue.asyncAfter(deadline: .now() + 0.5) { self.performBurst() }
+                        self.queue.asyncAfter(deadline: .now() + CameraBurstTiming.calibrationRetryDelaySeconds) {
+                            self.performBurst()
+                        }
                     }
                 )
                 return
@@ -288,6 +290,13 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 frames: completedFrames,
                 stageTimings: stageTimings
             )
+            // 보정 실패는 수동 보정 전까지 다음 점검을 예약하지 않는다.
+            let afterOutput: @Sendable () -> Void
+            if case .accepted = result {
+                afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+            } else {
+                afterOutput = {}
+            }
             deliverDiagnostic(
                 diagnostic,
                 session: debugSession,
@@ -295,7 +304,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 calibrationResult: result,
                 baseline: baselineForSession(result),
                 frameOutputs: completedFrameOutputs,
-                afterOutput: { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+                afterOutput: afterOutput
             )
         } else {
             let verdictStart = Date()
@@ -319,6 +328,13 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 frames: completedFrames,
                 stageProcessingMilliseconds: stageTimings
             )
+            // 보정이 필요해져 점검이 중단되는 경우에는 다음 점검을 예약하지 않는다.
+            let afterOutput: @Sendable () -> Void
+            if productState == .needsCalibration {
+                afterOutput = {}
+            } else {
+                afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+            }
             deliverDiagnostic(
                 diagnostic,
                 session: debugSession,
@@ -326,7 +342,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 calibrationResult: nil,
                 baseline: baseline,
                 frameOutputs: completedFrameOutputs,
-                afterOutput: { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+                afterOutput: afterOutput
             )
         }
     }
@@ -835,7 +851,8 @@ public enum CameraBurstTiming {
     public static let processingGraceSeconds = 2.0
     public static let maximumAnalysisFrames = 5
     public static let minimumAnalysisFrameInterval = 0.4
-    public static let maximumCalibrationAttempts = 5
+    public static let maximumCalibrationAttempts = 3
+    public static let calibrationRetryDelaySeconds = 10.0
     public static var totalDuration: Double { warmupSeconds + collectionSeconds }
     public static var finishDelay: Double { totalDuration + processingGraceSeconds }
 
