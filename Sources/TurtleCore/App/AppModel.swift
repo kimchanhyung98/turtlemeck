@@ -129,10 +129,6 @@ public final class AppModel: ObservableObject {
         settings.checkIntervalSeconds = Int(interval.rounded())
     }
 
-    public func setDebugEnabled(_ enabled: Bool) {
-        settings.debugEnabled = enabled
-    }
-
     public func setBannerNotifications(_ enabled: Bool) {
         settings.bannerNotificationsEnabled = enabled
         if enabled {

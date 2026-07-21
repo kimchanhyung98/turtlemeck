@@ -14,8 +14,8 @@ struct MenuView: View {
             quickActionsPanel
             todayPanel
             settingsPanel
-            advancedPanel
-            if model.settings.debugEnabled {
+            if AppLaunchFlags.debugEnabled {
+                advancedPanel
                 debugPanel
             }
             if isPrivacyExpanded {
@@ -200,24 +200,14 @@ struct MenuView: View {
 
     private var advancedPanel: some View {
         MenuPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
                 sectionTitle("분석")
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("분석 방식: 공통 relative-depth 파이프라인")
-                        .font(.callout)
-                    Text(analysisDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Toggle(isOn: Binding(
-                    get: { model.settings.debugEnabled },
-                    set: { model.setDebugEnabled($0) }
-                )) {
-                    Label("디버그 모드", systemImage: "stethoscope")
-                        .font(.callout)
-                }
+                Text("분석 방식: 공통 relative-depth 파이프라인")
+                    .font(.callout)
+                Text("같은 판정 경로의 landmark·ROI·depth·feature를 파일로 출력합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -326,13 +316,6 @@ struct MenuView: View {
         case .noEval:
             return .accentColor
         }
-    }
-
-    private var analysisDescription: String {
-        if model.settings.debugEnabled {
-            return "같은 판정 경로의 landmark·ROI·depth·feature를 파일로 출력합니다."
-        }
-        return "2D 자세 ROI와 Depth Anything V2 상대 깊이를 개인 baseline과 비교합니다."
     }
 
     private var operationalStatusText: String {

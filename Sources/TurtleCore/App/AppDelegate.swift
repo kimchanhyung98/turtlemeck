@@ -26,15 +26,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showMainWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "turtlemeck"
         window.contentViewController = NSHostingController(
-            rootView: MenuView(model: model).frame(width: 360, height: 680)
+            rootView: ScrollView { MenuView(model: model) }
         )
+        window.setContentSize(NSSize(width: 600, height: 680))
         window.isReleasedWhenClosed = false
         window.center()
 
