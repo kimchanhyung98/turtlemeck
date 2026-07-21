@@ -1,6 +1,6 @@
 import Foundation
 
-/// 한 RGB 프레임의 Vision 2D landmark와 DA-V2 map을 하나의 정규화 feature로 변환한다.
+/// 한 RGB 프레임의 2D pose landmark와 DA-V2 map을 하나의 정규화 feature로 변환한다.
 public struct PostureFrameAnalyzer: Sendable {
     public init() {}
 
@@ -11,9 +11,6 @@ public struct PostureFrameAnalyzer: Sendable {
         let depth = DepthSummary(map: depthMap)
         guard !landmarks.reliableHeadAnchors.isEmpty else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingHeadAnchor)
-        }
-        guard let neck = landmarks.neck, neck.isReliable else {
-            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingNeck)
         }
         guard
             let leftShoulder = landmarks.leftShoulder, leftShoulder.isReliable,
@@ -30,28 +27,27 @@ public struct PostureFrameAnalyzer: Sendable {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
         }
 
-        let requiredPoints = landmarks.reliableHeadAnchors + [neck, leftShoulder, rightShoulder]
+        let requiredPoints = landmarks.reliableHeadAnchors + [leftShoulder, rightShoulder]
         guard requiredPoints.allSatisfy(isInsideFrame) else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .croppedUpperBody)
         }
 
-        let rois = makeROIs(
+        let rawROIs = makeROIs(
             headAnchors: landmarks.reliableHeadAnchors,
-            neck: neck,
             leftShoulder: leftShoulder,
             rightShoulder: rightShoulder,
             shoulderWidth: shoulderWidth
         )
         let boundaryContactRatio = max(
-            rois.head.boundaryContactRatio,
-            rois.torso.boundaryContactRatio,
-            rois.reference.boundaryContactRatio
+            rawROIs.head.boundaryContactRatio,
+            rawROIs.torso.boundaryContactRatio,
+            rawROIs.reference.boundaryContactRatio
         )
         let landmarkConfidence = requiredPoints.map(\.confidence).min() ?? 0
         guard boundaryContactRatio <= Tuning.maximumROIBoundaryContactRatio else {
             return FrameAnalysis(
                 landmarks: landmarks,
-                rois: rois,
+                rois: rawROIs,
                 depth: depth,
                 quality: FrameQuality(
                     landmarkConfidence: landmarkConfidence,
@@ -60,6 +56,11 @@ public struct PostureFrameAnalyzer: Sendable {
                 exclusionReason: .croppedUpperBody
             )
         }
+        let rois = PostureROIs(
+            head: rawROIs.head.clippedToUnitSquare,
+            torso: rawROIs.torso.clippedToUnitSquare,
+            reference: rawROIs.reference.clippedToUnitSquare
+        )
         guard rois.head.intersectionArea(with: rois.torso) <= min(rois.head.area, rois.torso.area) * Tuning.maximumROIOverlapRatio else {
             return FrameAnalysis(landmarks: landmarks, rois: rois, depth: depth, exclusionReason: .invalidROIGeometry)
         }
@@ -134,13 +135,12 @@ public struct PostureFrameAnalyzer: Sendable {
 
     private func makeROIs(
         headAnchors: [Point2D],
-        neck: Point2D,
         leftShoulder: Point2D,
         rightShoulder: Point2D,
         shoulderWidth: Double
     ) -> PostureROIs {
-        let headX = headAnchors.map(\.x).reduce(0, +) / Double(headAnchors.count)
-        let headY = headAnchors.map(\.y).reduce(0, +) / Double(headAnchors.count)
+        let headX = median(headAnchors.map(\.x)) ?? 0
+        let headY = median(headAnchors.map(\.y)) ?? 0
         let shoulderX = (leftShoulder.x + rightShoulder.x) / 2
 
         let head = centeredRect(
@@ -151,7 +151,7 @@ public struct PostureFrameAnalyzer: Sendable {
         ).inset(by: Tuning.roiErosionFraction)
         let torso = centeredRect(
             x: shoulderX,
-            y: neck.y + shoulderWidth * 0.34,
+            y: (leftShoulder.y + rightShoulder.y) / 2 + shoulderWidth * 0.34,
             width: shoulderWidth * 0.83,
             height: shoulderWidth * 0.60
         ).inset(by: Tuning.roiErosionFraction)

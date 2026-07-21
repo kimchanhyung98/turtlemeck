@@ -93,7 +93,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.settings = settings
             self.baseline = settings.baseline
             if intervalChanged, self.isRunning, self.burstStartDate == nil, self.calibrationCompletion == nil {
-                self.scheduleNextBurst(after: self.effectiveIntervalSeconds())
+                self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
             }
         }
     }
@@ -227,7 +227,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func finishBurst(runID: Int) {
-        guard burstRunID == runID else { return }
+        guard burstRunID == runID, let completedBurstStartDate = burstStartDate else { return }
         session?.stopRunning()
         emitCaptureActivity(false)
         isCollectingFrames = false
@@ -295,15 +295,14 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 calibrationResult: result,
                 baseline: baselineForSession(result),
                 frameOutputs: completedFrameOutputs,
-                afterOutput: { self.scheduleFollowingBurstIfNeeded() }
+                afterOutput: { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
             )
         } else {
             let verdictStart = Date()
             let verdict = burstProcessor.process(
                 completedFrames,
                 baseline: baseline,
-                captureConfiguration: captureConfiguration,
-                sensitivity: settings.sensitivity
+                captureConfiguration: captureConfiguration
             )
             stageTimings["baselineComparison"] = Date().timeIntervalSince(verdictStart) * 1_000
             let stateStart = Date()
@@ -327,7 +326,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 calibrationResult: nil,
                 baseline: baseline,
                 frameOutputs: completedFrameOutputs,
-                afterOutput: { self.scheduleFollowingBurstIfNeeded() }
+                afterOutput: { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
             )
         }
     }
@@ -395,29 +394,40 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     private func process(_ sample: SampleBufferBox, snapshot: CaptureSnapshot) {
         guard Date().timeIntervalSince(snapshot.startDate) <= CameraBurstTiming.finishDelay, isBurstCurrent(snapshot.runID) else { return }
-        let visionStart = Date()
-        let candidates = (try? detector.detectCandidates(sampleBuffer: sample.sampleBuffer, orientation: .up)) ?? []
-        let visionMilliseconds = Date().timeIntervalSince(visionStart) * 1_000
-        let selection = subjectSelector.select(from: candidates)
+        let poseStart = Date()
+        let poseResult = Result {
+            try detector.detectCandidates(sampleBuffer: sample.sampleBuffer, orientation: .up)
+        }
+        let poseMilliseconds = Date().timeIntervalSince(poseStart) * 1_000
         let depthStart = Date()
         let depthMap = depthProvider.estimate(sampleBuffer: sample.sampleBuffer)
         let depthMilliseconds = Date().timeIntervalSince(depthStart) * 1_000
         var analysis: FrameAnalysis
         let featureStart: Date
-        switch selection {
-        case .selected(let landmarks):
-            featureStart = Date()
-            analysis = frameAnalyzer.analyze(landmarks: landmarks, depthMap: depthMap)
-        case .rejected(let reason):
+        switch poseResult {
+        case .failure:
             featureStart = Date()
             analysis = FrameAnalysis(
                 landmarks: PoseLandmarks(),
                 depth: depthMap.map(DepthSummary.init),
-                exclusionReason: reason
+                exclusionReason: .modelFailure
             )
+        case .success(let candidates):
+            switch subjectSelector.select(from: candidates) {
+            case .selected(let landmarks):
+                featureStart = Date()
+                analysis = frameAnalyzer.analyze(landmarks: landmarks, depthMap: depthMap)
+            case .rejected(let reason):
+                featureStart = Date()
+                analysis = FrameAnalysis(
+                    landmarks: candidates.first ?? PoseLandmarks(),
+                    depth: depthMap.map(DepthSummary.init),
+                    exclusionReason: reason
+                )
+            }
         }
         analysis.processingMilliseconds = [
-            "vision2D": visionMilliseconds,
+            "pose2D": poseMilliseconds,
             "depthAnythingV2": depthMilliseconds,
             "feature": Date().timeIntervalSince(featureStart) * 1_000
         ]
@@ -496,14 +506,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             _ = resolveCalibration(.rejected(.noReliableBursts), completion: completion)
         }
         immediateCheckPending = false
-        if isRunning { scheduleNextBurst(after: effectiveIntervalSeconds()) }
-    }
-
-    private func effectiveIntervalSeconds() -> Int {
-        if ProcessInfo.processInfo.isLowPowerModeEnabled {
-            return min(180, max(120, settings.checkIntervalSeconds * 2))
-        }
-        return settings.checkIntervalSeconds
+        if isRunning { scheduleNextBurst(after: settings.checkIntervalSeconds) }
     }
 
     private func calibrationDiagnostic(
@@ -515,7 +518,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     ) -> PostureDiagnostic {
         let reason: String
         switch result {
-        case .none: reason = "calibration collecting \(calibrationAttempts)/\(Tuning.requiredCalibrationBursts)"
+        case .none:
+            reason = "calibration attempt \(calibrationAttempts)/\(CameraBurstTiming.maximumCalibrationAttempts)"
         case .some(.accepted): reason = "calibration accepted"
         case .some(.rejected(let rejectReason)): reason = "calibration rejected: \(rejectReason.rawValue)"
         }
@@ -600,8 +604,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
     }
 
-    private func scheduleFollowingBurstIfNeeded() {
-        if isRunning { scheduleNextBurst(after: effectiveIntervalSeconds()) }
+    private func scheduleFollowingBurstIfNeeded(startedAt: Date) {
+        guard isRunning else { return }
+        scheduleNextBurst(after: CameraBurstTiming.remainingCheckDelay(
+            configuredSeconds: settings.checkIntervalSeconds,
+            startedAt: startedAt
+        ))
     }
 
     private func isBurstCurrent(_ runID: Int) -> Bool {
@@ -682,7 +690,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.session?.stopRunning()
             self.emitCaptureActivity(false)
             self.invalidateCurrentBurst()
-            if self.isRunning { self.scheduleNextBurst(after: self.effectiveIntervalSeconds()) }
+            if self.isRunning { self.scheduleNextBurst(after: self.settings.checkIntervalSeconds) }
         }
     }
 
@@ -696,7 +704,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     @objc private func screensDidWake() {
         queue.async {
-            if self.isRunning { self.scheduleNextBurst(after: self.effectiveIntervalSeconds()) }
+            if self.isRunning { self.scheduleNextBurst(after: self.settings.checkIntervalSeconds) }
         }
     }
 }
@@ -839,5 +847,13 @@ public enum CameraBurstTiming {
     public static func shouldSample(collectionTime: Double, after previous: Double?) -> Bool {
         guard let previous else { return true }
         return collectionTime - previous >= minimumAnalysisFrameInterval
+    }
+
+    public static func remainingCheckDelay(
+        configuredSeconds: Int,
+        startedAt: Date,
+        now: Date = Date()
+    ) -> Int {
+        max(0, Int(ceil(Double(configuredSeconds) - now.timeIntervalSince(startedAt))))
     }
 }

@@ -1,16 +1,22 @@
 import CoreGraphics
 import CoreMedia
+import CoreML
 import Foundation
 import ImageIO
 import Vision
 
 public final class PoseDetector {
+    private let poseNet = PoseNetDetector()
+
     public init() {}
 
     public func detectCandidates(
         sampleBuffer: CMSampleBuffer,
         orientation: CGImagePropertyOrientation = .up
     ) throws -> [PoseLandmarks] {
+        if let candidates = try? poseNet.detect(sampleBuffer: sampleBuffer), candidates.contains(where: isUsableUpperBody) {
+            return candidates
+        }
         let handler = VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: orientation, options: [:])
         return try perform(handler: handler)
     }
@@ -19,12 +25,24 @@ public final class PoseDetector {
         cgImage: CGImage,
         orientation: CGImagePropertyOrientation = .up
     ) throws -> [PoseLandmarks] {
+        if let candidates = try? poseNet.detect(cgImage: cgImage), candidates.contains(where: isUsableUpperBody) {
+            return candidates
+        }
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
         return try perform(handler: handler)
     }
 
     private func perform(handler: VNImageRequestHandler) throws -> [PoseLandmarks] {
         let request = VNDetectHumanBodyPoseRequest()
+        let devices = try request.supportedComputeStageDevices
+        for (stage, supported) in devices {
+            if let cpu = supported.first(where: { device in
+                if case .cpu = device { return true }
+                return false
+            }) {
+                request.setComputeDevice(cpu, for: stage)
+            }
+        }
         try handler.perform([request])
         return (request.results ?? []).map(landmarks)
     }
@@ -50,5 +68,15 @@ public final class PoseDetector {
             y: 1 - recognized.location.y,
             confidence: Double(recognized.confidence)
         )
+    }
+
+    private func isUsableUpperBody(_ landmarks: PoseLandmarks) -> Bool {
+        guard
+            !landmarks.reliableHeadAnchors.isEmpty,
+            let left = landmarks.leftShoulder, left.isReliable,
+            let right = landmarks.rightShoulder, right.isReliable
+        else { return false }
+        return hypot(left.x - right.x, left.y - right.y) >= Tuning.minimumShoulderWidth
+            && abs(left.y - right.y) <= Tuning.maximumShoulderSlope
     }
 }

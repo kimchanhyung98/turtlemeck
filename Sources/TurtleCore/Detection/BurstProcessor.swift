@@ -35,8 +35,7 @@ public struct BurstProcessor: Sendable {
     public func process(
         _ frames: [TimedFrame],
         baseline: Baseline?,
-        captureConfiguration: CaptureConfiguration?,
-        sensitivity: Sensitivity
+        captureConfiguration: CaptureConfiguration?
     ) -> BurstVerdict {
         let summary = summarize(frames)
         guard summary.totalFrameCount >= Tuning.minimumValidFrames else {
@@ -65,7 +64,7 @@ public struct BurstProcessor: Sendable {
         }
 
         let delta = feature - baseline.center
-        let worsening = Tuning.worseningMargin(for: sensitivity, baselineDispersion: baseline.dispersion)
+        let worsening = Tuning.worseningMargin(baselineDispersion: baseline.dispersion)
         let recovery = Tuning.recoveryMargin(baselineDispersion: baseline.dispersion)
         if delta >= worsening {
             return BurstVerdict(evidence: .worsened, summary: summary, baselineDelta: delta)

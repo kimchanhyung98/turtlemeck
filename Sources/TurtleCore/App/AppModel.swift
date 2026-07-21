@@ -44,9 +44,7 @@ public final class AppModel: ObservableObject {
         }
         cameraManager.onNextCheckUpdate = { [weak self] seconds in
             Task { @MainActor in
-                // 저전력 모드에서는 실제 주기가 설정값보다 늘어날 수 있으므로 조용히 두지 않고 명시한다(C-2).
-                let suffix = ProcessInfo.processInfo.isLowPowerModeEnabled ? " · 저전력 모드" : ""
-                self?.nextCheckDescription = "다음 점검 \(seconds)초 후\(suffix)"
+                self?.nextCheckDescription = "다음 점검 \(seconds)초 후"
             }
         }
         cameraManager.onBlocked = { [weak self] reason in
@@ -83,7 +81,11 @@ public final class AppModel: ObservableObject {
             return
         }
         cameraManager.start(settings: settings, baseline: settings.baseline)
-        statusText = "자세 추적 중"
+        if settings.baseline == nil {
+            beginCalibration()
+        } else {
+            statusText = "자세 추적 중"
+        }
     }
 
     public func stop() {
@@ -168,10 +170,6 @@ public final class AppModel: ObservableObject {
         settingsStore.markOnboardingComplete()
     }
 
-    public func setSensitivity(_ sensitivity: Sensitivity) {
-        settings.sensitivity = sensitivity
-    }
-
     public func setCheckInterval(_ interval: Double) {
         settings.checkIntervalSeconds = Int(interval.rounded())
     }
@@ -206,13 +204,19 @@ public final class AppModel: ObservableObject {
     }
 
     public func recalibrateFromCurrentGoodSignal() {
+        beginCalibration()
+    }
+
+    private func beginCalibration() {
         guard !isPaused else {
             statusText = "일시정지 중"
             return
         }
+        guard postureState != .calibrating else { return }
 
         postureState = .calibrating
         statusText = "기준 자세 수집 중"
+        nextCheckDescription = "바른 자세를 유지해 주세요"
         cameraManager.runCalibration(settings: settings, baseline: settings.baseline) { [weak self] result in
             self?.handleCalibration(result) ?? .noEval
         }
@@ -319,14 +323,17 @@ public final class AppModel: ObservableObject {
             postureState = .noEval
             stateMachine.reset(to: .noEval)
             statusText = "기준 자세 저장됨"
+            nextCheckDescription = "첫 자세 비교 준비 중"
         case .rejected(.unstableBaseline):
-            postureState = .noEval
-            stateMachine.reset(to: .noEval)
+            postureState = .needsCalibration
+            stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
+            nextCheckDescription = "바른 자세로 기준자세 설정을 다시 눌러 주세요"
         case .rejected(.noReliableBursts):
-            postureState = .noEval
-            stateMachine.reset(to: .noEval)
+            postureState = .needsCalibration
+            stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세 신호 부족"
+            nextCheckDescription = "카메라 구도를 확인한 뒤 다시 시도해 주세요"
         }
         return postureState
     }
@@ -404,7 +411,7 @@ public final class AppModel: ObservableObject {
             lines.append("아직 측정 데이터 없음 (점검 대기)")
         }
         lines.append("보정  \(Self.baselineSummary(settings.baseline))")
-        lines.append("환경  주기=\(settings.checkIntervalSeconds)s  민감도=\(settings.sensitivity.title)")
+        lines.append("환경  주기=\(settings.checkIntervalSeconds)s")
         return lines
     }
 

@@ -28,6 +28,28 @@ func registerProductTests() {
         try expect(CameraBurstTiming.maximumAnalysisFrames >= Tuning.minimumValidFrames, "minimum valid frames must fit burst")
     }
 
+    TestRegistry.test("next regular check is measured from the previous capture start") {
+        let startedAt = Date(timeIntervalSince1970: 100)
+        try expectEqual(
+            CameraBurstTiming.remainingCheckDelay(
+                configuredSeconds: 60,
+                startedAt: startedAt,
+                now: Date(timeIntervalSince1970: 105.2)
+            ),
+            55,
+            "capture processing time must be subtracted from the configured interval"
+        )
+        try expectEqual(
+            CameraBurstTiming.remainingCheckDelay(
+                configuredSeconds: 60,
+                startedAt: startedAt,
+                now: Date(timeIntervalSince1970: 161)
+            ),
+            0,
+            "an overdue regular check should run immediately"
+        )
+    }
+
     TestRegistry.test("camera quality rejects black exposure frames") {
         let black = CameraFrameQuality.isUsableSampleGrid(width: 640, height: 480) { _, _ in 0 }
         let visible = CameraFrameQuality.isUsableSampleGrid(width: 640, height: 480) { x, _ in x > 320 ? 80 : 20 }

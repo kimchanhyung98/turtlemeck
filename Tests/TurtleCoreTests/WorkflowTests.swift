@@ -36,6 +36,52 @@ func registerWorkflowTests() {
         try expectEqual(analyzer.analyze(landmarks: validLandmarks(), depthMap: flat).exclusionReason, .insufficientDepthRange, "flat depth must be no-eval")
     }
 
+    TestRegistry.test("visible lower torso remains usable near frame boundary") {
+        var landmarks = validLandmarks(shoulderWidth: 0.37)
+        landmarks.nose?.y = 0.45
+        landmarks.leftEye?.y = 0.42
+        landmarks.rightEye?.y = 0.42
+        landmarks.leftEar?.y = 0.5
+        landmarks.rightEar?.y = 0.5
+        landmarks.leftShoulder?.y = 0.85
+        landmarks.rightShoulder?.y = 0.85
+        let result = PostureFrameAnalyzer().analyze(
+            landmarks: landmarks,
+            depthMap: depthMap { x, y in Double(y) + Double(x) * 0.2 }
+        )
+        try expect(result.isValid, "visible portion of slightly clipped torso ROI should be analyzed: \(String(describing: result.exclusionReason))")
+        try expect(result.quality.roiBoundaryContactRatio > 0.3, "observed close-camera clipping must remain visible in quality diagnostics")
+        try expectEqual(result.rois?.torso.maxY, 1, "torso ROI must use only visible pixels")
+    }
+
+    TestRegistry.test("slouched close-camera torso remains evaluable for confirmation") {
+        var landmarks = validLandmarks(shoulderWidth: 0.35)
+        landmarks.nose?.y = 0.5
+        landmarks.leftEye?.y = 0.47
+        landmarks.rightEye?.y = 0.47
+        landmarks.leftEar?.y = 0.5
+        landmarks.rightEar?.y = 0.5
+        landmarks.leftShoulder?.y = 0.88
+        landmarks.rightShoulder?.y = 0.88
+        let result = PostureFrameAnalyzer().analyze(
+            landmarks: landmarks,
+            depthMap: depthMap { x, y in Double(y) + Double(x) * 0.2 }
+        )
+        try expect(result.isValid, "observed 52% lower-boundary contact should retain visible torso pixels")
+        try expect(result.quality.roiBoundaryContactRatio > 0.4, "fixture should cover a heavily clipped slouched frame")
+    }
+
+    TestRegistry.test("single head-anchor outlier does not move the head ROI") {
+        var landmarks = validLandmarks()
+        landmarks.leftEar = Point2D(x: 0.02, y: 0.65, confidence: 0.95)
+        let result = PostureFrameAnalyzer().analyze(
+            landmarks: landmarks,
+            depthMap: depthMap { x, y in Double(y) + Double(x) * 0.2 }
+        )
+        let head = try unwrap(result.rois?.head, "head ROI missing")
+        try expectApprox(head.x + head.width / 2, 0.5, accuracy: 0.001, "head ROI should use a robust anchor center")
+    }
+
     TestRegistry.test("subject selector uses size then burst continuity") {
         var selector = UpperBodySubjectSelector()
         let large = validLandmarks(centerX: 0.35, shoulderWidth: 0.4)
@@ -54,27 +100,67 @@ func registerWorkflowTests() {
         try expectEqual(selector.select(from: [moved, validLandmarks(centerX: 0.7, shoulderWidth: 0.34)]), .rejected(.ambiguousSubject), "similar subjects must be rejected")
     }
 
+    TestRegistry.test("side-view shoulder confidence keeps usable landmarks only") {
+        var selector = UpperBodySubjectSelector()
+        var usable = validLandmarks()
+        usable.leftShoulder?.confidence = 0.16
+        guard case .selected = selector.select(from: [usable]) else {
+            throw testFailure("measured side-view shoulder should remain usable")
+        }
+
+        selector.reset()
+        var unreliable = validLandmarks()
+        unreliable.leftShoulder?.confidence = 0.14
+        try expectEqual(selector.select(from: [unreliable]), .rejected(.noSubject), "lower-confidence shoulder must remain no-eval")
+    }
+
     TestRegistry.test("burst aggregates median and MAD before baseline comparison") {
         let frames = [0.1, 0.12, 0.11, 4.0, 0.09].enumerated().map { timedFrame(index: $0.offset + 1, feature: $0.element) }
         let baseline = Baseline(center: 0.1, dispersion: 0.02, burstCount: 3, captureConfiguration: testCaptureConfiguration)
-        let verdict = BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration, sensitivity: .medium)
+        let verdict = BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration)
         try expectEqual(verdict.evidence, .normal, "median should resist one outlier")
         try expectApprox(try unwrap(verdict.summary.medianFeature, "median missing"), 0.11, "median")
         try expectApprox(try unwrap(verdict.summary.featureMAD, "MAD missing"), 0.01, "MAD")
         let worsened = (0..<5).map { timedFrame(index: $0 + 1, feature: 0.6 + Double($0) * 0.01) }
-        try expectEqual(BurstProcessor().process(worsened, baseline: baseline, captureConfiguration: testCaptureConfiguration, sensitivity: .medium).evidence, .worsened, "worsened delta")
-        try expectEqual(BurstProcessor().process(worsened, baseline: nil, captureConfiguration: testCaptureConfiguration, sensitivity: .medium).evidence, .noEval, "baseline is mandatory")
+        try expectEqual(BurstProcessor().process(worsened, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence, .worsened, "worsened delta")
+        try expectEqual(BurstProcessor().process(worsened, baseline: nil, captureConfiguration: testCaptureConfiguration).evidence, .noEval, "baseline is mandatory")
         let changed = CaptureConfiguration(cameraUniqueID: "other-camera", width: 640, height: 480, orientation: "up-unmirrored")
-        let changedVerdict = BurstProcessor().process(worsened, baseline: baseline, captureConfiguration: changed, sensitivity: .medium)
+        let changedVerdict = BurstProcessor().process(worsened, baseline: baseline, captureConfiguration: changed)
         try expectEqual(changedVerdict.reason, "capture configuration changed", "configuration change reason")
         try expect(changedVerdict.requiresCalibration, "configuration change requires calibration")
     }
 
+    TestRegistry.test("measured same-posture drift remains normal") {
+        let baseline = Baseline(center: -1.752, dispersion: 0.069, burstCount: 3, captureConfiguration: testCaptureConfiguration)
+        let samePosture = (0..<5).map { timedFrame(index: $0 + 1, feature: -1.565 + Double($0 - 2) * 0.01) }
+        let verdict = BurstProcessor().process(samePosture, baseline: baseline, captureConfiguration: testCaptureConfiguration)
+        try expectEqual(verdict.evidence, .normal, "observed post-calibration drift should stay in the normal band")
+
+        let uncertain = (0..<5).map { timedFrame(index: $0 + 1, feature: -1.452 + Double($0 - 2) * 0.01) }
+        try expectEqual(
+            BurstProcessor().process(uncertain, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence,
+            .insufficient,
+            "values between normal and worsening margins should remain uncertain"
+        )
+    }
+
     TestRegistry.test("burst rejects insufficient coverage and instability") {
         let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 3, captureConfiguration: testCaptureConfiguration)
-        try expectEqual(BurstProcessor().process([timedFrame(index: 1, feature: 0)], baseline: baseline, captureConfiguration: testCaptureConfiguration, sensitivity: .medium).evidence, .noEval, "one frame is insufficient")
+        try expectEqual(BurstProcessor().process([timedFrame(index: 1, feature: 0)], baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence, .noEval, "one frame is insufficient")
+        let twoVisible = [
+            timedFrame(index: 1, feature: 0.7),
+            timedFrame(index: 2, feature: nil),
+            timedFrame(index: 3, feature: 0.72),
+            timedFrame(index: 4, feature: nil),
+            timedFrame(index: 5, feature: nil)
+        ]
+        try expectEqual(
+            BurstProcessor().process(twoVisible, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence,
+            .worsened,
+            "two stable visible frames should keep the scheduled check evaluable"
+        )
         let unstable = [0.0, 1.0, 2.0, 3.0, 4.0].enumerated().map { timedFrame(index: $0.offset + 1, feature: $0.element) }
-        try expectEqual(BurstProcessor().process(unstable, baseline: baseline, captureConfiguration: testCaptureConfiguration, sensitivity: .medium).reason, "unstable burst", "high MAD")
+        try expectEqual(BurstProcessor().process(unstable, baseline: baseline, captureConfiguration: testCaptureConfiguration).reason, "unstable burst", "high MAD")
     }
 
     TestRegistry.test("calibration requires several stable bursts") {

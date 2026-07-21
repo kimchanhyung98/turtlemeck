@@ -84,10 +84,10 @@ struct MenuView: View {
                 Button {
                     model.recalibrateFromCurrentGoodSignal()
                 } label: {
-                    Label("재보정", systemImage: "scope")
+                    Label(model.settings.baseline == nil ? "기준자세 설정" : "재보정", systemImage: "scope")
                         .frame(maxWidth: .infinity)
                 }
-                .disabled(model.isPaused)
+                .disabled(model.isPaused || model.postureState == .calibrating)
             }
             .controlSize(.regular)
         }
@@ -128,28 +128,6 @@ struct MenuView: View {
         MenuPanel {
             VStack(alignment: .leading, spacing: 12) {
                 sectionTitle("설정")
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Label("민감도", systemImage: "slider.horizontal.3")
-                            .font(.callout)
-                        Spacer()
-                        Picker("민감도", selection: Binding(
-                            get: { model.settings.sensitivity },
-                            set: { model.setSensitivity($0) }
-                        )) {
-                            ForEach(Sensitivity.allCases, id: \.self) { sensitivity in
-                                Text(sensitivity.title).tag(sensitivity)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: Layout.trailingControlWidth, alignment: .trailing)
-                    }
-                    Text(model.settings.sensitivity.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
@@ -336,7 +314,7 @@ struct MenuView: View {
         if model.settings.debugEnabled {
             return "같은 판정 경로의 landmark·ROI·depth·feature를 파일로 출력합니다."
         }
-        return "Vision 2D ROI와 Depth Anything V2 상대 깊이를 개인 baseline과 비교합니다."
+        return "2D 자세 ROI와 Depth Anything V2 상대 깊이를 개인 baseline과 비교합니다."
     }
 
     private var operationalStatusText: String {

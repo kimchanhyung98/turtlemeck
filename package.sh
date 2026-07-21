@@ -31,6 +31,7 @@ cp Resources/AppIcon.icns "$RESOURCES/AppIcon.icns"
 cp Resources/ThirdPartyNotices.md "$RESOURCES/ThirdPartyNotices.md"
 cp Resources/Apache-2.0.txt "$RESOURCES/Apache-2.0.txt"
 MODEL_NAME="DepthAnythingV2SmallF16"
+POSE_MODEL_NAME="PoseNetMobileNet075S16FP16"
 compile_model() {
   local source_model="$1"
   if xcrun --find coremlcompiler >/dev/null 2>&1; then
@@ -62,6 +63,22 @@ for extension in mlmodelc mlpackage mlmodel; do
 done
 if [ "$MODEL_RESOURCE_COUNT" -ne 1 ]; then
   echo "[package] expected exactly one $MODEL_NAME model resource, found $MODEL_RESOURCE_COUNT" >&2
+  exit 1
+fi
+if [ -e "Resources/$POSE_MODEL_NAME.mlmodel" ]; then
+  if ! compile_model "Resources/$POSE_MODEL_NAME.mlmodel"; then
+    echo "[package] coremlcompiler not found; bundling $POSE_MODEL_NAME.mlmodel for runtime compilation" >&2
+    cp "Resources/$POSE_MODEL_NAME.mlmodel" "$RESOURCES/"
+  fi
+fi
+POSE_MODEL_RESOURCE_COUNT=0
+for extension in mlmodelc mlmodel; do
+  if [ -e "$RESOURCES/$POSE_MODEL_NAME.$extension" ]; then
+    POSE_MODEL_RESOURCE_COUNT=$((POSE_MODEL_RESOURCE_COUNT + 1))
+  fi
+done
+if [ "$POSE_MODEL_RESOURCE_COUNT" -ne 1 ]; then
+  echo "[package] expected exactly one $POSE_MODEL_NAME model resource, found $POSE_MODEL_RESOURCE_COUNT" >&2
   exit 1
 fi
 if [ ! -f "$RESOURCES/AppIcon.icns" ] || [ ! -f "$RESOURCES/ThirdPartyNotices.md" ] || [ ! -f "$RESOURCES/Apache-2.0.txt" ]; then

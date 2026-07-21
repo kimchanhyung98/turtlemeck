@@ -2,7 +2,6 @@ import Foundation
 
 public struct Settings: Codable, Equatable, Sendable {
     private var storedCheckIntervalSeconds: Int
-    public var sensitivity: Sensitivity
     public var bannerNotificationsEnabled: Bool
     public var notificationSoundEnabled: Bool
     public var launchAtLogin: Bool
@@ -20,7 +19,6 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init(
         checkIntervalSeconds: Int,
-        sensitivity: Sensitivity,
         bannerNotificationsEnabled: Bool,
         notificationSoundEnabled: Bool,
         launchAtLogin: Bool,
@@ -28,7 +26,6 @@ public struct Settings: Codable, Equatable, Sendable {
         baseline: Baseline? = nil
     ) {
         self.storedCheckIntervalSeconds = Self.clampInterval(checkIntervalSeconds)
-        self.sensitivity = sensitivity
         self.bannerNotificationsEnabled = bannerNotificationsEnabled
         self.notificationSoundEnabled = notificationSoundEnabled
         self.launchAtLogin = launchAtLogin
@@ -38,7 +35,6 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public static let defaults = Settings(
         checkIntervalSeconds: 60,
-        sensitivity: .medium,
         bannerNotificationsEnabled: false,
         notificationSoundEnabled: false,
         launchAtLogin: false
@@ -46,7 +42,6 @@ public struct Settings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case storedCheckIntervalSeconds
-        case sensitivity
         case bannerNotificationsEnabled
         case notificationSoundEnabled
         case launchAtLogin
@@ -57,7 +52,6 @@ public struct Settings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         storedCheckIntervalSeconds = Self.clampInterval(try container.decode(Int.self, forKey: .storedCheckIntervalSeconds))
-        sensitivity = try container.decode(Sensitivity.self, forKey: .sensitivity)
         bannerNotificationsEnabled = try container.decode(Bool.self, forKey: .bannerNotificationsEnabled)
         notificationSoundEnabled = try container.decode(Bool.self, forKey: .notificationSoundEnabled)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
@@ -69,7 +63,6 @@ public struct Settings: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(checkIntervalSeconds, forKey: .storedCheckIntervalSeconds)
-        try container.encode(sensitivity, forKey: .sensitivity)
         try container.encode(bannerNotificationsEnabled, forKey: .bannerNotificationsEnabled)
         try container.encode(notificationSoundEnabled, forKey: .notificationSoundEnabled)
         try container.encode(launchAtLogin, forKey: .launchAtLogin)

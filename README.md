@@ -53,16 +53,15 @@ make run-debug
 
 ## AI/ML 분석 방식
 
-메뉴 막대 팝오버 상단에 현재 측정값(신호 종류·값·신뢰도·시점)이 표시되며, "AI/ML 분석 방식"에서 사용할 ML 경로를 전환할 수 있습니다. 기하 기반 판정 방식은 회귀 테스트와 내부 fallback 검증용으로 남아 있지만, 제품 UI에는 노출하지 않습니다.
+앱은 하나의 고정된 온디바이스 분석 경로를 사용합니다. 사용자가 알고리즘이나 민감도를 선택할 필요가 없습니다.
 
-| 방식 | 신호 | 동작 환경 |
+| 단계 | 역할 | 동작 환경 |
 |---|---|---|
-| AI/ML 자동(기본) | Core ML 상대깊이 + Apple Vision 3D 중 가용 신호 자동 선택 | Apple Silicon 권장 |
-| Core ML Depth Anything | Depth Anything V2 Small 상대깊이 | 전 기종(Core ML) |
-| Apple Vision 3D 깊이차 | Vision 3D pose의 머리-몸통 전방 깊이차 | Apple Silicon |
-| Apple Vision 3D 신체축 | Vision 3D pose의 신체 좌표계 시상각 | Apple Silicon |
+| 2D 상체 추정 | Apple 공식 샘플 PoseNet 우선, Apple Vision 2D fallback | Core ML·Vision 지원 Mac |
+| 상대 깊이 | Depth Anything V2 Small로 머리·몸통 상대 깊이 feature 생성 | Core ML 지원 Mac |
+| 최종 판정 | 안내된 중립 자세 baseline과 버스트 대표값 비교 | 온디바이스 |
 
-- **Apple Vision 3D 기반 방식은 Apple Silicon에서만 동작**하며, 미지원 환경에서는 해당 신호가 자동 보류(noEval)됩니다.
-- **Core ML Depth Anything V2 Small 모델은 앱 번들에 포함**됩니다. 절대 cm 측정이 아니라 개인 기준자세 대비 상대 변화 신호로만 사용합니다.
-- 정면 카메라는 기준 자세(baseline) 보정이 있어야 상대 판정이 정확합니다. 좋은 자세에서 메뉴의 **"재보정"**을 한 번 실행하는 것을 권장합니다.
-- 현재 판정 임계·가중치는 잠정값이며, 실측 데이터 기반 튜닝이 필요한 개발 단계입니다.
+- **PoseNet과 Core ML Depth Anything V2 Small 모델은 앱 번들에 포함**됩니다. 분석 이미지는 외부로 전송하지 않습니다.
+- 상대 깊이는 절대 cm나 임상 CVA가 아니라 개인 기준자세 대비 변화 신호로만 사용합니다.
+- 저장된 기준 자세가 없으면 앱 시작 시 자동으로 baseline 보정을 시작합니다. 이후 촬영 환경이 달라졌을 때만 좋은 자세에서 **"재보정"**을 사용합니다.
+- 평가 가능한 입력이 부족하면 나쁜 자세로 추정하지 않고 `noEval`로 처리합니다.

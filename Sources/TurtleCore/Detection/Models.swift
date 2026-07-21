@@ -1,27 +1,5 @@
 import Foundation
 
-public enum Sensitivity: String, Codable, Equatable, CaseIterable, Sendable {
-    case low
-    case medium
-    case high
-
-    public var title: String {
-        switch self {
-        case .low: "낮음"
-        case .medium: "보통"
-        case .high: "높음"
-        }
-    }
-
-    public var description: String {
-        switch self {
-        case .low: "큰 변화만 알림"
-        case .medium: "정확도와 알림 빈도의 균형"
-        case .high: "작은 변화도 일찍 감지"
-        }
-    }
-}
-
 public enum PostureAssessment: String, Codable, Equatable, Sendable {
     case good
     case bad
@@ -102,6 +80,19 @@ public struct NormalizedRect: Codable, Equatable, Sendable {
         return 1 - (insideWidth * insideHeight / area)
     }
 
+    public var clippedToUnitSquare: NormalizedRect {
+        let clippedX = max(0, min(1, x))
+        let clippedY = max(0, min(1, y))
+        let clippedMaxX = max(clippedX, min(1, maxX))
+        let clippedMaxY = max(clippedY, min(1, maxY))
+        return NormalizedRect(
+            x: clippedX,
+            y: clippedY,
+            width: clippedMaxX - clippedX,
+            height: clippedMaxY - clippedY
+        )
+    }
+
     public func inset(by fraction: Double) -> NormalizedRect {
         let fraction = min(0.49, max(0, fraction))
         return NormalizedRect(
@@ -144,7 +135,9 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
     }
 
     public var reliableHeadAnchors: [Point2D] {
-        [nose, leftEye, rightEye, leftEar, rightEar].compactMap { $0 }.filter(\.isReliable)
+        [nose, leftEye, rightEye, leftEar, rightEar]
+            .compactMap { $0 }
+            .filter { $0.confidence >= Tuning.minimumHeadAnchorConfidence }
     }
 }
 
@@ -222,7 +215,6 @@ public enum FrameExclusionReason: String, Codable, Equatable, Hashable, Sendable
     case noSubject
     case ambiguousSubject
     case missingHeadAnchor
-    case missingNeck
     case missingShoulder
     case croppedUpperBody
     case excessiveRotation

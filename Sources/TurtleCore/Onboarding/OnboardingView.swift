@@ -10,7 +10,6 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             setupSteps
-            sensitivityPanel
             privacyPanel
             Spacer(minLength: 0)
         }
@@ -192,32 +191,6 @@ struct OnboardingView: View {
 
     private var startDetail: String {
         canStartTracking ? "준비 완료" : "권한과 기준자세 보정이 필요합니다."
-    }
-
-    private var sensitivityPanel: some View {
-        OnboardingPanel {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("민감도")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-
-                Picker("민감도", selection: Binding(
-                    get: { model.settings.sensitivity },
-                    set: { model.setSensitivity($0) }
-                )) {
-                    ForEach(Sensitivity.allCases, id: \.self) { sensitivity in
-                        Text(sensitivity.title).tag(sensitivity)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-
-                Text(model.settings.sensitivity.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private var privacyPanel: some View {
