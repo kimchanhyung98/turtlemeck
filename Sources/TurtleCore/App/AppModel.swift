@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public private(set) var postureState: PostureState = .noEval
-    @Published public private(set) var statusText = "추적 준비 중"
+    @Published public private(set) var statusText = "점검 준비 중"
     @Published public private(set) var isPaused = false
     @Published public private(set) var nextCheckDescription = "다음 점검 대기"
     @Published public private(set) var diagnosticText = "측정 대기"
@@ -69,15 +69,15 @@ public final class AppModel: ObservableObject {
                     return
                 }
                 if active {
-                    self.setNextCheck("카메라 점검 중")
+                    self.setNextCheck("카메라로 점검 중")
                 } else if self.isPaused {
-                    self.setNextCheck("일시정지")
+                    self.setNextCheck("중지됨")
                 } else if self.postureState == .calibrating {
-                    self.setNextCheck("보정 처리 중")
+                    self.setNextCheck("보정 분석 중")
                 } else if self.postureState == .needsCalibration {
                     // 재보정 안내 문구를 유지한다.
                 } else {
-                    self.setNextCheck("측정 처리 중")
+                    self.setNextCheck("점검 분석 중")
                 }
             }
         }
@@ -91,7 +91,7 @@ public final class AppModel: ObservableObject {
         if settings.baseline == nil {
             beginCalibration()
         } else {
-            statusText = "자세 추적 중"
+            statusText = "자세 점검 중"
         }
     }
 
@@ -106,7 +106,7 @@ public final class AppModel: ObservableObject {
         isPaused = true
         postureState = .paused
         stateMachine.reset(to: .paused)
-        statusText = "일시정지"
+        statusText = "중지됨"
         saveStats()
         cameraManager.stop()
     }
@@ -170,7 +170,7 @@ public final class AppModel: ObservableObject {
         guard postureState != .calibrating else { return }
 
         postureState = .calibrating
-        statusText = "기준 자세 수집 중"
+        statusText = "기준 자세 보정 중"
         setNextCheck("바른 자세를 유지해 주세요")
         // 보정 실패로 점검이 중단된 상태에서도 재보정으로 정기 점검을 재개한다.
         cameraManager.start(settings: settings, baseline: settings.baseline)
@@ -208,7 +208,7 @@ public final class AppModel: ObservableObject {
             stateMachine.reset(to: .noEval)
             postureState = .needsCalibration
             statusText = title(for: .needsCalibration)
-            setNextCheck("바른 자세로 ‘재보정’을 눌러 주세요")
+            setNextCheck("바른 자세로 ‘보정’을 눌러 주세요")
             cameraManager.stop()
         } else {
             postureState = transition.state
@@ -216,7 +216,7 @@ public final class AppModel: ObservableObject {
         }
         if transition.state == .paused {
             isPaused = true
-            setNextCheck("일시정지")
+            setNextCheck("중지됨")
             cameraManager.stop()
         }
 
@@ -318,18 +318,18 @@ public final class AppModel: ObservableObject {
             postureState = .noEval
             stateMachine.reset(to: .noEval)
             statusText = "기준 자세 저장됨"
-            setNextCheck("첫 자세 비교 준비 중")
+            setNextCheck("첫 점검 준비 중")
         case .rejected(.unstableBaseline):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
-            setNextCheck("바른 자세로 기준자세 설정을 다시 눌러 주세요")
+            setNextCheck("바른 자세로 ‘보정’을 눌러 주세요")
             cameraManager.stop()
         case .rejected(.noReliableBursts):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세 신호 부족"
-            setNextCheck("카메라 구도를 확인한 뒤 다시 시도해 주세요")
+            setNextCheck("카메라 구도를 확인한 뒤 ‘보정’을 눌러 주세요")
             cameraManager.stop()
         }
         return postureState
@@ -347,15 +347,15 @@ public final class AppModel: ObservableObject {
         case .bad:
             return "자세: 주의"
         case .calibrating:
-            return "보정 중"
+            return "기준 자세 보정 중"
         case .noEval:
-            return "추적 중"
+            return "자세 점검 중"
         case .paused:
-            return "일시정지"
+            return "중지됨"
         case .blocked:
             return "카메라 확인 필요"
         case .needsCalibration:
-            return "바른 자세 보정 필요"
+            return "보정 필요"
         }
     }
 

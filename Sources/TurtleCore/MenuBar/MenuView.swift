@@ -64,7 +64,7 @@ struct MenuView: View {
                 Button {
                     model.checkNow()
                 } label: {
-                    Label("지금 점검", systemImage: "viewfinder")
+                    Label("확인", systemImage: "viewfinder")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -77,7 +77,7 @@ struct MenuView: View {
                         model.pause()
                     }
                 } label: {
-                    Label(model.isPaused ? "재개" : "일시정지", systemImage: model.isPaused ? "play.fill" : "pause.fill")
+                    Label(model.isPaused ? "시작" : "중지", systemImage: model.isPaused ? "play.fill" : "pause.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .disabled(checksUnavailable)
@@ -85,7 +85,7 @@ struct MenuView: View {
                 Button {
                     model.recalibrateFromCurrentGoodSignal()
                 } label: {
-                    Label(model.settings.baseline == nil ? "기준자세 설정" : "재보정", systemImage: "scope")
+                    Label("보정", systemImage: "scope")
                         .frame(maxWidth: .infinity)
                 }
                 .disabled(model.isPaused || model.postureState == .calibrating)
@@ -329,15 +329,15 @@ struct MenuView: View {
         case .bad:
             return "잠시 자세를 펴고 다음 점검을 기다려 주세요"
         case .paused:
-            return "측정과 알림이 멈춰 있습니다"
+            return "점검과 알림이 멈춰 있습니다. ‘시작’으로 재개하세요"
         case .blocked:
             return "카메라 권한 또는 장치 상태를 확인해 주세요"
         case .calibrating:
             return "움직이지 말고 좋은 자세를 유지해 주세요"
         case .noEval:
-            return model.settings.baseline == nil ? "기준자세 보정이 필요합니다" : "측정 신호를 확인하는 중입니다"
+            return model.settings.baseline == nil ? "기준자세 보정이 필요합니다" : "판정할 자세 신호를 모으는 중입니다"
         case .needsCalibration:
-            return "바른 자세로 앉은 뒤 재보정을 실행해 주세요"
+            return "바른 자세로 앉은 뒤 보정을 실행해 주세요"
         }
     }
 
