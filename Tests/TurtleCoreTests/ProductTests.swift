@@ -3,11 +3,11 @@ import Foundation
 import TurtleCore
 
 func registerProductTests() {
-    TestRegistry.test("settings enforce minimum 20 second sessions and round-trip") {
+    TestRegistry.test("settings enforce minimum 15 second sessions and round-trip") {
         var settings = Settings.defaults
         settings.checkIntervalSeconds = 1
         settings.debugEnabled = true
-        try expectEqual(settings.checkIntervalSeconds, 20, "minimum interval")
+        try expectEqual(settings.checkIntervalSeconds, 15, "minimum interval")
         let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
         try expectEqual(decoded, settings, "settings round trip")
     }
@@ -17,7 +17,7 @@ func registerProductTests() {
         {"storedCheckIntervalSeconds":10,"postureAlgorithm":"bodyFrame3D","sensitivity":"medium","bannerNotificationsEnabled":false,"notificationSoundEnabled":false,"launchAtLogin":false,"baseline":{"profileAngle":70}}
         """
         let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
-        try expectEqual(settings.checkIntervalSeconds, 20, "legacy interval clamp")
+        try expectEqual(settings.checkIntervalSeconds, 15, "legacy interval clamp")
         try expectEqual(settings.baseline, nil, "incompatible baseline must require calibration")
     }
 

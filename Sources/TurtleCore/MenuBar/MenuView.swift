@@ -139,7 +139,7 @@ struct MenuView: View {
                             get: { model.settings.checkIntervalSeconds },
                             set: { model.setCheckInterval(Double($0)) }
                         )) {
-                            ForEach(stride(from: 20, through: 180, by: 10).map { $0 }, id: \.self) { seconds in
+                            ForEach([15, 30, 60, 120, 180], id: \.self) { seconds in
                                 Text("\(seconds)초").tag(seconds)
                             }
                         }

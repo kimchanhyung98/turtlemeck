@@ -71,6 +71,6 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     private static func clampInterval(_ value: Int) -> Int {
-        min(180, max(20, value))
+        min(180, max(15, value))
     }
 }
