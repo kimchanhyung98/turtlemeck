@@ -145,6 +145,22 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
             .compactMap { $0 }
             .filter { $0.confidence >= Tuning.minimumHeadAnchorConfidence }
     }
+
+    /// 디버그 표기 순서를 포함한 전체 landmark 목록.
+    public var namedPoints: [(name: String, point: Point2D?)] {
+        [
+            ("nose", nose),
+            ("leftEye", leftEye),
+            ("rightEye", rightEye),
+            ("leftEar", leftEar),
+            ("rightEar", rightEar),
+            ("neck", neck),
+            ("leftShoulder", leftShoulder),
+            ("rightShoulder", rightShoulder),
+            ("leftWrist", leftWrist),
+            ("rightWrist", rightWrist)
+        ]
+    }
 }
 
 public struct RelativeDepthMap: Codable, Equatable, Sendable {

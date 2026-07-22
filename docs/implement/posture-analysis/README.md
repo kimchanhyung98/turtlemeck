@@ -10,7 +10,8 @@ PoseNet의 모델·decoder 계약은 [`../../algorithm/apple-posenet/`](../../al
 
 | 영역 | 핵심 타입 | 책임 |
 |---|---|---|
-| 카메라 입력 | `CameraManager`, `PoseDetector`, `PoseNetDetector` | 최소 20초 간격, 안정화 후 3~5장 수집, PoseNet 우선·Vision fallback과 좌표 변환 |
+| 카메라 입력 | `CameraManager` | 최소 15초 간격, 안정화 후 3~5장 수집, 버스트 스케줄·노출 게이트, 추론→판정→출력 단계 오케스트레이션 |
+| 모델 추론 | `PoseDetector`, `PoseNetDetector`, `CoreMLRelativeDepthProvider` | PoseNet 우선·Vision fallback과 좌표 변환, DA-V2 relative depth |
 | 대상 선택 | `UpperBodySubjectSelector` | 상체 크기와 버스트 내 위치 연속성으로 한 사람 유지, 모호하면 제외 |
 | 프레임 분석 | `PostureFrameAnalyzer` | landmark 품질, 머리·몸통·reference ROI, median/IQR 정규화 feature |
 | 버스트 판정 | `BurstProcessor` | 유효 비율, 중앙값·MAD, baseline과의 절대 거리 및 hysteresis 증거 |
@@ -18,7 +19,7 @@ PoseNet의 모델·decoder 계약은 [`../../algorithm/apple-posenet/`](../../al
 | 시간 상태 | `PostureStateMachine` | 악화·회복 지속성, 장시간 `noEval`, `bad` 전이·회복 이벤트 |
 | 출력 | `DebugCaptureStore`, `LocalAIAnalysisRunner` | 공통 결과를 읽어 debug/local 파일로 출력하며 판정에는 미입력 |
 
-디렉토리도 도메인 경계를 따른다. 카메라 입력과 모델 어댑터는 `Camera/`, 판정 로직은 `Detection/`, 출력 계층은 `Output/`에 둔다.
+디렉토리도 도메인 경계를 따른다. 카메라 입력은 `Camera/`, 모델 어댑터는 `Inference/`, 판정 로직은 `Detection/`, 출력 계층은 `Output/`에 둔다.
 
 기존의 시점별 2D 알고리즘, Vision 3D, 얼굴 proxy, 신호 융합, 알고리즘 선택 UI와 단일 강한 프레임 예외는 규범의 제외 범위에 따라 제거했다.
 

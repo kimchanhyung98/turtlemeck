@@ -124,7 +124,7 @@ debug/
 - 같은 프레임의 `capture-1.png`, `overlay-1.png`, `depth-1.png`, `frame-1.json`은 같은 번호를 사용한다.
 - `depth-{n}.png`는 상대 깊이를 확인하기 위한 시각화이며 절대 거리 데이터가 아니다.
 - `session.json`에는 버스트 대표값, baseline delta, 품질, 실패 사유, 이번 버스트의 평가 결과, 현재 제품 상태와 처리 시간을 기록한다.
-- local AI CLI에는 depth 이미지가 상대 깊이라는 조건과 함께 `analysis.md`를 생성하도록 요청한다. 실제로 전달한 요청은 `request.md`에 기록한다.
+- local AI CLI에는 depth 이미지가 상대 깊이라는 조건과 함께 분석 텍스트만 반환하도록 요청한다. 응답(stdout·stderr)은 호출자가 `analysis.md`에 기록하고, 실제로 전달한 요청은 `request.md`에 기록한다.
 - 임시 파일은 `debug/` 밖에 생성하지 않는다.
 
 ### local AI CLI 추가 경로
@@ -136,7 +136,7 @@ local 워크플로우에서는 공통 파이프라인과 별도로 다음 단계
 3. 원본 이미지와 depth 결과를 하나의 분석 입력으로 묶는다.
 4. 입력을 local AI CLI에 전달한다.
 5. 원본 이미지와 depth 정보를 함께 보고 자세를 분석하도록 요청한다.
-6. 모든 결과를 `debug/{timestamp}-local`에 생성하도록 요청한다.
+6. CLI 응답을 받아 `debug/{timestamp}-local`의 `analysis.md`에 기록한다.
 7. local AI CLI의 응답을 공통 판정 결과와 분리한다.
 
 local AI CLI 경로는 공통 자세 분석을 대체하지 않는다. CLI 응답을 feature, baseline, `good`·`bad`·`noEval`, 알림 판정에 다시 입력하지 않는다. CLI 실행 실패도 공통 판정 결과를 변경하지 않는다.

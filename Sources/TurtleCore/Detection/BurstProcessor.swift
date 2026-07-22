@@ -23,8 +23,8 @@ public struct BurstProcessor: Sendable {
         for reason in frames.compactMap(\.analysis.exclusionReason) {
             exclusions[reason, default: 0] += 1
         }
-        let center = median(features)
-        let mad = center.flatMap { center in median(features.map { abs($0 - center) }) }
+        let center = Statistics.median(features)
+        let mad = center.flatMap { center in Statistics.median(features.map { abs($0 - center) }) }
         let anchors: [(midY: Double, width: Double)] = frames.compactMap { frame in
             guard
                 frame.analysis.isValid,
@@ -39,8 +39,8 @@ public struct BurstProcessor: Sendable {
             medianFeature: center,
             featureMAD: mad,
             exclusionCounts: exclusions,
-            medianShoulderMidY: median(anchors.map(\.midY)),
-            medianShoulderWidth: median(anchors.map(\.width))
+            medianShoulderMidY: Statistics.median(anchors.map(\.midY)),
+            medianShoulderWidth: Statistics.median(anchors.map(\.width))
         )
     }
 
@@ -125,12 +125,5 @@ public struct BurstProcessor: Sendable {
             return BurstVerdict(evidence: .normal, summary: summary, baselineDelta: delta)
         }
         return BurstVerdict(evidence: .insufficient, summary: summary, baselineDelta: delta, reason: "inside hysteresis band")
-    }
-
-    private func median(_ values: [Double]) -> Double? {
-        let sorted = values.sorted()
-        guard !sorted.isEmpty else { return nil }
-        let middle = sorted.count / 2
-        return sorted.count.isMultiple(of: 2) ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
     }
 }

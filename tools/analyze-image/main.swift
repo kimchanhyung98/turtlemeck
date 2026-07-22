@@ -8,37 +8,19 @@ guard !paths.isEmpty else {
     exit(2)
 }
 
-func median(_ values: [Double]) -> Double {
-    let sorted = values.sorted()
-    let rank = 0.5 * Double(sorted.count - 1)
-    let lower = Int(rank.rounded(.down))
-    let upper = Int(rank.rounded(.up))
-    return sorted[lower] + (sorted[upper] - sorted[lower]) * (rank - Double(lower))
-}
-
 func describe(_ name: String, _ point: Point2D?) -> String {
     guard let point else { return "\(name)=-" }
     return "\(name)=(\(String(format: "%.3f", point.x)),\(String(format: "%.3f", point.y)),c=\(String(format: "%.2f", point.confidence)))"
 }
 
 func printLandmarks(_ landmarks: PoseLandmarks) {
-    print("landmarks  " + [
-        describe("nose", landmarks.nose),
-        describe("leftEye", landmarks.leftEye),
-        describe("rightEye", landmarks.rightEye),
-        describe("leftEar", landmarks.leftEar),
-        describe("rightEar", landmarks.rightEar),
-        describe("leftShoulder", landmarks.leftShoulder),
-        describe("rightShoulder", landmarks.rightShoulder),
-        describe("leftWrist", landmarks.leftWrist),
-        describe("rightWrist", landmarks.rightWrist)
-    ].joined(separator: " "))
+    print("landmarks  " + landmarks.namedPoints.map { describe($0.name, $0.point) }.joined(separator: " "))
     let anchors = landmarks.reliableHeadAnchors
-    if let leftShoulder = landmarks.leftShoulder, let rightShoulder = landmarks.rightShoulder, !anchors.isEmpty {
+    if let leftShoulder = landmarks.leftShoulder, let rightShoulder = landmarks.rightShoulder,
+       let headX = Statistics.median(anchors.map(\.x)),
+       let headY = Statistics.median(anchors.map(\.y)) {
         let shoulderWidth = hypot(leftShoulder.x - rightShoulder.x, leftShoulder.y - rightShoulder.y)
         // 게이트(Tuning.minimumHeadShoulderGapRatio)와 동일한 정의: 신뢰 head anchor 중앙값 기준.
-        let headX = median(anchors.map(\.x))
-        let headY = median(anchors.map(\.y))
         let gap = ((leftShoulder.y + rightShoulder.y) / 2 - headY) / shoulderWidth
         print("headShoulderGapRatio=\(String(format: "%.3f", gap)) shoulderWidth=\(String(format: "%.3f", shoulderWidth))")
         for (name, wrist) in [("leftWrist", landmarks.leftWrist), ("rightWrist", landmarks.rightWrist)] {

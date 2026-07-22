@@ -6,7 +6,7 @@ import Foundation
 public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoDataOutputSampleBufferDelegate {
     public var onVerdict: (@MainActor @Sendable (BurstVerdict) -> PostureState)?
     public var onNextCheckUpdate: (@Sendable (Int) -> Void)?
-    public var onBlocked: (@Sendable (String) -> Void)?
+    public var onBlocked: (@Sendable (CameraBlockReason) -> Void)?
     public var onDiagnostic: (@Sendable (PostureDiagnostic) -> Void)?
     public var onCaptureActivity: (@Sendable (Bool) -> Void)?
 
@@ -25,7 +25,6 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var session: AVCaptureSession?
     private var captureConfiguration: CaptureConfiguration?
     private var settings = Settings.defaults
-    private var baseline: Baseline?
     private var frames: [TimedFrame] = []
     private var pendingFrameOutputs: [PendingFrameOutput] = []
     private var subjectSelector = UpperBodySubjectSelector()
@@ -73,19 +72,18 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         switch status {
         case .authorized: .start
         case .notDetermined: .requestAccess
-        case .denied, .restricted: .blocked("camera permission denied")
-        @unknown default: .blocked("camera permission denied")
+        case .denied, .restricted: .blocked(.permissionDenied)
+        @unknown default: .blocked(.permissionDenied)
         }
     }
 
     public static func burstCompletionAction(receivedFrameCount: Int) -> CameraBurstCompletionAction {
-        receivedFrameCount == 0 ? .blocked("camera unavailable") : .process
+        receivedFrameCount == 0 ? .blocked(.unavailable) : .process
     }
 
-    public func start(settings: Settings, baseline: Baseline?) {
+    public func start(settings: Settings) {
         queue.async {
             self.settings = settings
-            self.baseline = baseline
             self.isRunning = true
             self.scheduleNextBurst(after: 0)
         }
@@ -95,7 +93,6 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         queue.async {
             let intervalChanged = self.settings.checkIntervalSeconds != settings.checkIntervalSeconds
             self.settings = settings
-            self.baseline = settings.baseline
             if intervalChanged, self.isRunning, self.burstStartDate == nil, self.calibrationCompletion == nil {
                 self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
             }
@@ -113,12 +110,11 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
     }
 
-    public func runImmediateCheck(settings: Settings, baseline: Baseline?) {
+    public func runImmediateCheck(settings: Settings) {
         queue.async {
             // 보정 중의 즉시 점검은 보정 버스트로 흡수되므로 보정이 끝날 때까지 받지 않는다.
             guard self.calibrationCompletion == nil else { return }
             self.settings = settings
-            self.baseline = baseline
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
             if self.burstStartDate != nil {
@@ -132,12 +128,10 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     public func runCalibration(
         settings: Settings,
-        baseline: Baseline?,
         completion: @MainActor @Sendable @escaping (CalibrationResult) -> PostureState
     ) {
         queue.async {
             self.settings = settings
-            self.baseline = baseline
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
             if self.burstStartDate != nil {
@@ -171,7 +165,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
                 guard let manager = self else { return }
                 manager.queue.async {
-                    if allowed { manager.startAuthorizedBurst() } else { manager.failToStart("camera permission denied") }
+                    if allowed { manager.startAuthorizedBurst() } else { manager.failToStart(.permissionDenied) }
                 }
             }
         case .blocked(let reason):
@@ -206,7 +200,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 self.finishBurst(runID: runID)
             }
         } catch {
-            failToStart("camera unavailable")
+            failToStart(.unavailable)
         }
     }
 
@@ -285,7 +279,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                     session: debugSession,
                     verdict: nil,
                     calibrationResult: nil,
-                    baseline: baseline,
+                    baseline: settings.baseline,
                     frameOutputs: completedFrameOutputs,
                     afterOutput: {
                         self.queue.asyncAfter(deadline: .now() + CameraBurstTiming.calibrationRetryDelaySeconds) {
@@ -332,7 +326,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             let verdictStart = Date()
             let verdict = burstProcessor.process(
                 completedFrames,
-                baseline: baseline,
+                baseline: settings.baseline,
                 captureConfiguration: captureConfiguration
             )
             stageTimings["baselineComparison"] = Date().timeIntervalSince(verdictStart) * 1_000
@@ -344,7 +338,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 productState: productState,
                 evidence: verdict.evidence,
                 summary: verdict.summary,
-                baselineCenter: baseline?.center,
+                baselineCenter: settings.baseline?.center,
                 baselineDelta: verdict.baselineDelta,
                 reason: verdict.reason,
                 frames: completedFrames,
@@ -362,7 +356,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 session: debugSession,
                 verdict: verdict,
                 calibrationResult: nil,
-                baseline: baseline,
+                baseline: settings.baseline,
                 frameOutputs: completedFrameOutputs,
                 afterOutput: afterOutput
             )
@@ -538,7 +532,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         device.activeVideoMaxFrameDuration = duration
     }
 
-    private func failToStart(_ reason: String) {
+    private func failToStart(_ reason: CameraBlockReason) {
         let wasCalibrating = calibrationCompletion != nil
         calibrationCompletion = nil
         calibrationSummaries.removeAll()
@@ -553,7 +547,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func finishBlockedBurst(
-        _ reason: String,
+        _ reason: CameraBlockReason,
         startedAt: Date,
         summary: BurstSummary,
         frames: [TimedFrame],
@@ -581,8 +575,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             productState: productState,
             evidence: .noEval,
             summary: summary,
-            baselineCenter: baseline?.center,
-            reason: reason,
+            baselineCenter: settings.baseline?.center,
+            reason: reason.rawValue,
             frames: frames,
             stageProcessingMilliseconds: stageTimings
         )
@@ -597,7 +591,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             session: session,
             verdict: nil,
             calibrationResult: calibrationResult,
-            baseline: baseline,
+            baseline: settings.baseline,
             frameOutputs: frameOutputs,
             afterOutput: afterOutput
         )
@@ -621,7 +615,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         if case .some(.accepted(let accepted)) = result {
             acceptedCenter = accepted.center
         } else {
-            acceptedCenter = baseline?.center
+            acceptedCenter = settings.baseline?.center
         }
         return PostureDiagnostic(
             assessment: .noEval,
@@ -637,7 +631,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     private func baselineForSession(_ result: CalibrationResult) -> Baseline? {
         if case .accepted(let accepted) = result { return accepted }
-        return baseline
+        return settings.baseline
     }
 
     private func averageStageTimings(_ frames: [TimedFrame]) -> [String: Double] {
@@ -764,7 +758,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
     }
 
-    private func emitBlocked(_ reason: String) {
+    private func emitBlocked(_ reason: CameraBlockReason) {
         let callback = onBlocked
         DispatchQueue.main.async { callback?(reason) }
     }
@@ -824,136 +818,25 @@ private struct PendingFrameOutput: @unchecked Sendable {
     let analysis: FrameAnalysis
 }
 
-public enum CameraFrameQuality {
-    public static func isUsable(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return false }
-        let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
-
-        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return false }
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-
-        switch pixelFormat {
-        case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-             kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
-            return isUsableLumaPlane(pixelBuffer)
-        case kCVPixelFormatType_32BGRA, kCVPixelFormatType_32ARGB, kCVPixelFormatType_32RGBA:
-            return isUsableRGB(pixelBuffer, pixelFormat: pixelFormat)
-        default:
-            return false
-        }
-    }
-
-    private static func isUsableLumaPlane(_ pixelBuffer: CVPixelBuffer) -> Bool {
-        let width = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
-        let height = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
-        guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) else {
-            return false
-        }
-        let bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
-        return isUsableSampleGrid(width: width, height: height) { x, y in
-            let row = base.advanced(by: y * bytesPerRow)
-            return Double(row.assumingMemoryBound(to: UInt8.self)[x])
-        }
-    }
-
-    private static func isUsableRGB(_ pixelBuffer: CVPixelBuffer, pixelFormat: OSType) -> Bool {
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return false
-        }
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        return isUsableSampleGrid(width: width, height: height) { x, y in
-            let row = base.advanced(by: y * bytesPerRow)
-            let pixel = row.advanced(by: x * 4).assumingMemoryBound(to: UInt8.self)
-            let red: UInt8
-            let green: UInt8
-            let blue: UInt8
-            switch pixelFormat {
-            case kCVPixelFormatType_32ARGB:
-                red = pixel[1]
-                green = pixel[2]
-                blue = pixel[3]
-            case kCVPixelFormatType_32RGBA:
-                red = pixel[0]
-                green = pixel[1]
-                blue = pixel[2]
-            default:
-                blue = pixel[0]
-                green = pixel[1]
-                red = pixel[2]
-            }
-            return 0.2126 * Double(red) + 0.7152 * Double(green) + 0.0722 * Double(blue)
-        }
-    }
-
-    public static func isUsableSampleGrid(
-        width: Int,
-        height: Int,
-        sample: (Int, Int) -> Double
-    ) -> Bool {
-        guard width > 0, height > 0 else { return false }
-        let columns = 12
-        let rows = 8
-        var total = 0.0
-        var maximum = 0.0
-        for row in 0..<rows {
-            let y = min(height - 1, row * height / rows)
-            for column in 0..<columns {
-                let x = min(width - 1, column * width / columns)
-                let value = sample(x, y)
-                total += value
-                maximum = max(maximum, value)
-            }
-        }
-        let average = total / Double(columns * rows)
-        return maximum >= 24 || average >= 8
-    }
-}
-
 private enum CameraError: Error {
     case noCamera
     case cannotAddInput
     case cannotAddOutput
 }
 
+/// 점검이 진행될 수 없는 이유. rawValue는 디버그 아티팩트의 reason 문자열로도 쓰인다.
+public enum CameraBlockReason: String, Equatable, Sendable {
+    case permissionDenied = "camera permission denied"
+    case unavailable = "camera unavailable"
+}
+
 public enum CameraAuthorizationAction: Equatable {
     case start
     case requestAccess
-    case blocked(String)
+    case blocked(CameraBlockReason)
 }
 
 public enum CameraBurstCompletionAction: Equatable {
     case process
-    case blocked(String)
-}
-
-public enum CameraBurstTiming {
-    public static let warmupSeconds = 0.8
-    public static let collectionSeconds = 2.4
-    public static let processingGraceSeconds = 2.0
-    public static let maximumAnalysisFrames = 5
-    public static let minimumAnalysisFrameInterval = 0.4
-    public static let maximumCalibrationAttempts = 3
-    public static let calibrationRetryDelaySeconds = 10.0
-    public static var totalDuration: Double { warmupSeconds + collectionSeconds }
-    public static var finishDelay: Double { totalDuration + processingGraceSeconds }
-
-    public static func collectionTime(elapsed: Double) -> Double? {
-        guard elapsed >= warmupSeconds, elapsed <= totalDuration else { return nil }
-        return elapsed - warmupSeconds
-    }
-
-    public static func shouldSample(collectionTime: Double, after previous: Double?) -> Bool {
-        guard let previous else { return true }
-        return collectionTime - previous >= minimumAnalysisFrameInterval
-    }
-
-    public static func remainingCheckDelay(
-        configuredSeconds: Int,
-        startedAt: Date,
-        now: Date = Date()
-    ) -> Int {
-        max(0, Int(ceil(Double(configuredSeconds) - now.timeIntervalSince(startedAt))))
-    }
+    case blocked(CameraBlockReason)
 }

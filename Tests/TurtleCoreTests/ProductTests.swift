@@ -40,6 +40,17 @@ func registerProductTests() {
         try expectApprox(try unwrap(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds + 0.2), "collection time"), 0.2, "collection starts after warmup")
         try expectEqual(CameraBurstTiming.maximumAnalysisFrames, 5, "maximum frame count")
         try expect(CameraBurstTiming.maximumAnalysisFrames >= Tuning.minimumValidFrames, "minimum valid frames must fit burst")
+        try expectEqual(CameraBurstTiming.shouldSample(collectionTime: 0, after: nil), true, "first frame samples immediately")
+        try expectEqual(
+            CameraBurstTiming.shouldSample(collectionTime: CameraBurstTiming.minimumAnalysisFrameInterval, after: 0),
+            true,
+            "interval boundary included"
+        )
+        try expectEqual(
+            CameraBurstTiming.shouldSample(collectionTime: CameraBurstTiming.minimumAnalysisFrameInterval - 0.01, after: 0),
+            false,
+            "sub-interval frame skipped"
+        )
     }
 
     TestRegistry.test("next regular check is measured from the previous capture start") {
@@ -74,13 +85,13 @@ func registerProductTests() {
     TestRegistry.test("camera authorization separates request start and block") {
         try expectEqual(CameraManager.authorizationAction(for: .authorized), .start, "authorized")
         try expectEqual(CameraManager.authorizationAction(for: .notDetermined), .requestAccess, "request")
-        try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked("camera permission denied"), "denied")
+        try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked(.permissionDenied), "denied")
     }
 
     TestRegistry.test("camera burst with no delivered frames is unavailable") {
         try expectEqual(
             CameraManager.burstCompletionAction(receivedFrameCount: 0),
-            .blocked("camera unavailable"),
+            .blocked(.unavailable),
             "zero delivered frames must report an unavailable camera"
         )
         try expectEqual(

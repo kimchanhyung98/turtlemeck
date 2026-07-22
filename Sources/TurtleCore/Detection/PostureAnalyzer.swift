@@ -204,20 +204,10 @@ public struct PostureFrameAnalyzer: Sendable {
     }
 
     private func median(_ values: [Double]) -> Double? {
-        percentile(values, 0.5)
+        Statistics.median(values)
     }
 
     private func interquartileRange(_ values: [Double]) -> Double? {
-        guard let lower = percentile(values, 0.25), let upper = percentile(values, 0.75) else { return nil }
-        return upper - lower
-    }
-
-    private func percentile(_ values: [Double], _ fraction: Double) -> Double? {
-        let sorted = values.sorted()
-        guard !sorted.isEmpty else { return nil }
-        let rank = min(1, max(0, fraction)) * Double(sorted.count - 1)
-        let lower = Int(rank.rounded(.down))
-        let upper = Int(rank.rounded(.up))
-        return sorted[lower] + (sorted[upper] - sorted[lower]) * (rank - Double(lower))
+        Statistics.interquartileRange(values)
     }
 }

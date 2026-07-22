@@ -704,6 +704,50 @@ func registerWorkflowTests() {
         try expect(storedAnalysis["quality"] is [String: Any], "session quality")
         try expectEqual((json["stageProcessingMilliseconds"] as? [String: Double])?["feature"], 1, "session stage timing")
     }
+
+    TestRegistry.test("statistics keep the shared rank definitions") {
+        try expectEqual(Statistics.median([]), nil, "empty input has no median")
+        try expectApprox(try unwrap(Statistics.median([5, 1, 3]), "odd median"), 3, "odd count picks the middle value")
+        try expectApprox(try unwrap(Statistics.median([4, 1, 3, 2]), "even median"), 2.5, "even count averages the middle pair")
+        try expectApprox(try unwrap(Statistics.percentile([1, 2], -1), "low fraction"), 1, "fraction clamps to 0")
+        try expectApprox(try unwrap(Statistics.percentile([1, 2], 2), "high fraction"), 2, "fraction clamps to 1")
+        try expectApprox(try unwrap(Statistics.interquartileRange([1, 2, 3, 4]), "IQR"), 1.5, "IQR uses linear interpolation")
+    }
+
+    TestRegistry.test("debug panel lines read the shared diagnostic") {
+        var settings = Settings.defaults
+        try expectEqual(
+            AppModel.debugLines(diagnostic: nil, settings: settings).first,
+            "아직 측정 데이터 없음 (점검 대기)",
+            "placeholder before the first burst"
+        )
+
+        let analysis = PostureFrameAnalyzer().analyze(
+            landmarks: validLandmarks(),
+            depthMap: depthMap { x, y in Double(y) + Double(x) * 0.2 }
+        )
+        let feature = try unwrap(analysis.feature, "debug feature")
+        let diagnostic = PostureDiagnostic(
+            assessment: .good,
+            productState: .good,
+            evidence: .normal,
+            summary: burstSummary(center: feature, mad: 0.01),
+            frames: [
+                TimedFrame(time: 0.4, analysis: analysis, index: 2),
+                TimedFrame(time: 0, analysis: analysis, index: 1)
+            ],
+            stageProcessingMilliseconds: ["feature": 1]
+        )
+        settings.debugEnabled = true
+        let lines = AppModel.debugLines(diagnostic: diagnostic, settings: settings)
+        try expectEqual(lines.first, "제품 상태  good", "product state line")
+        try expect(lines.contains("이번 버스트  정상"), "assessment label")
+        let firstFrameLine = try unwrap(lines.firstIndex { $0.hasPrefix("프레임 1 ") }, "frame 1 line")
+        let secondFrameLine = try unwrap(lines.firstIndex { $0.hasPrefix("프레임 2 ") }, "frame 2 line")
+        try expect(firstFrameLine < secondFrameLine, "frames must be sorted by index")
+        try expect(lines.contains("파일  출력 불가 — 프로젝트 root 또는 TURTLEMECK_DEBUG_ROOT 확인"), "missing artifact path notice under debug")
+        try expectEqual(Array(lines.suffix(2)), ["보정  없음(미보정)", "환경  주기=60s"], "baseline and interval footer")
+    }
 }
 
 // 실측 비율 기반 fixture: (어깨midY − 신뢰 head anchor 중앙값 y)/어깨폭 ≈ 1.05 — 정상 실측(최소 0.945) 범위.

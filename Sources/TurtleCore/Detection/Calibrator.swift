@@ -50,14 +50,14 @@ public struct Calibrator: Sendable {
             return .rejected(.noReliableBursts)
         }
         let centers = valid.compactMap(\.medianFeature)
-        guard let center = median(centers) else {
+        guard let center = Statistics.median(centers) else {
             return .rejected(.noReliableBursts)
         }
-        let betweenBurstMAD = median(centers.map { abs($0 - center) }) ?? .infinity
+        let betweenBurstMAD = Statistics.median(centers.map { abs($0 - center) }) ?? .infinity
         guard betweenBurstMAD <= Tuning.maximumCalibrationMAD else {
             return .rejected(.unstableBaseline)
         }
-        let withinBurstMAD = median(valid.compactMap(\.featureMAD)) ?? 0
+        let withinBurstMAD = Statistics.median(valid.compactMap(\.featureMAD)) ?? 0
         return .accepted(Baseline(
             center: center,
             dispersion: max(withinBurstMAD, betweenBurstMAD),
@@ -65,15 +65,8 @@ public struct Calibrator: Sendable {
             createdAt: now,
             captureConfiguration: captureConfiguration,
             // 보정 시점의 구도(어깨 기준)를 함께 저장해, 책상 배치·리드 각도 변경 시 재보정을 안내한다.
-            shoulderMidY: median(valid.compactMap(\.medianShoulderMidY)),
-            shoulderWidth: median(valid.compactMap(\.medianShoulderWidth))
+            shoulderMidY: Statistics.median(valid.compactMap(\.medianShoulderMidY)),
+            shoulderWidth: Statistics.median(valid.compactMap(\.medianShoulderWidth))
         ))
-    }
-
-    private func median(_ values: [Double]) -> Double? {
-        let sorted = values.sorted()
-        guard !sorted.isEmpty else { return nil }
-        let middle = sorted.count / 2
-        return sorted.count.isMultiple(of: 2) ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
     }
 }
