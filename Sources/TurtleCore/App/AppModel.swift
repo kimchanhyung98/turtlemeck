@@ -327,6 +327,12 @@ public final class AppModel: ObservableObject {
             statusText = "보정 실패: 자세 신호 부족"
             setNextCheck("카메라 구도를 확인한 뒤 ‘보정’을 눌러 주세요")
             cameraManager.stop()
+        case .rejected(.postureUnassessable):
+            postureState = .needsCalibration
+            stateMachine.reset(to: .needsCalibration)
+            statusText = "보정 실패: 자세를 확인할 수 없음"
+            setNextCheck("턱 괴기 없이 바른 자세로 ‘보정’을 눌러 주세요")
+            cameraManager.stop()
         }
         return postureState
     }
@@ -417,7 +423,9 @@ public final class AppModel: ObservableObject {
             ("rightEar", landmarks.rightEar),
             ("neck", landmarks.neck),
             ("leftShoulder", landmarks.leftShoulder),
-            ("rightShoulder", landmarks.rightShoulder)
+            ("rightShoulder", landmarks.rightShoulder),
+            ("leftWrist", landmarks.leftWrist),
+            ("rightWrist", landmarks.rightWrist)
         ].map { name, point in
             guard let point else { return "\(name)=-" }
             return "\(name)=(\(String(format: "%.2f", point.x)),\(String(format: "%.2f", point.y)),c=\(String(format: "%.2f", point.confidence)))"

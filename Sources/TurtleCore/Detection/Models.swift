@@ -113,6 +113,8 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
     public var neck: Point2D?
     public var leftShoulder: Point2D?
     public var rightShoulder: Point2D?
+    public var leftWrist: Point2D?
+    public var rightWrist: Point2D?
 
     public init(
         nose: Point2D? = nil,
@@ -122,7 +124,9 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
         rightEar: Point2D? = nil,
         neck: Point2D? = nil,
         leftShoulder: Point2D? = nil,
-        rightShoulder: Point2D? = nil
+        rightShoulder: Point2D? = nil,
+        leftWrist: Point2D? = nil,
+        rightWrist: Point2D? = nil
     ) {
         self.nose = nose
         self.leftEye = leftEye
@@ -132,6 +136,8 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
         self.neck = neck
         self.leftShoulder = leftShoulder
         self.rightShoulder = rightShoulder
+        self.leftWrist = leftWrist
+        self.rightWrist = rightWrist
     }
 
     public var reliableHeadAnchors: [Point2D] {
@@ -222,6 +228,19 @@ public enum FrameExclusionReason: String, Codable, Equatable, Hashable, Sendable
     case insufficientDepthPixels
     case insufficientDepthRange
     case modelFailure
+    case headDropped
+
+    /// 머리는 감지됐지만 자세 때문에 정상을 확인할 수 없는 사유. 사람이 없어서 판정 불가인 경우와 구분한다.
+    /// depth 품질·기하 실패(조명·모델 기인)는 자세 증거가 아니므로 포함하지 않는다.
+    public var isSubjectUnassessable: Bool {
+        switch self {
+        case .missingShoulder, .croppedUpperBody, .excessiveRotation, .headDropped:
+            return true
+        case .unstableCapture, .noSubject, .ambiguousSubject, .missingHeadAnchor, .modelFailure,
+             .invalidROIGeometry, .insufficientDepthPixels, .insufficientDepthRange:
+            return false
+        }
+    }
 }
 
 public struct FrameQuality: Codable, Equatable, Sendable {
@@ -295,19 +314,26 @@ public struct BurstSummary: Codable, Equatable, Sendable {
     public var medianFeature: Double?
     public var featureMAD: Double?
     public var exclusionCounts: [FrameExclusionReason: Int]
+    /// 유효 프레임의 어깨 기준 구도(중점 y·폭) 중앙값. 보정 시점과 구도가 달라졌는지 비교하는 데 쓴다.
+    public var medianShoulderMidY: Double?
+    public var medianShoulderWidth: Double?
 
     public init(
         totalFrameCount: Int,
         validFrameCount: Int,
         medianFeature: Double?,
         featureMAD: Double?,
-        exclusionCounts: [FrameExclusionReason: Int]
+        exclusionCounts: [FrameExclusionReason: Int],
+        medianShoulderMidY: Double? = nil,
+        medianShoulderWidth: Double? = nil
     ) {
         self.totalFrameCount = totalFrameCount
         self.validFrameCount = validFrameCount
         self.medianFeature = medianFeature
         self.featureMAD = featureMAD
         self.exclusionCounts = exclusionCounts
+        self.medianShoulderMidY = medianShoulderMidY
+        self.medianShoulderWidth = medianShoulderWidth
     }
 }
 
@@ -333,29 +359,56 @@ public struct BurstVerdict: Codable, Equatable, Sendable {
     }
 
     public var requiresCalibration: Bool {
-        reason == "baseline required" || reason == "capture configuration changed"
+        reason == "baseline required" || reason == "capture configuration changed" || reason == "framing changed"
     }
 }
 
 public struct Baseline: Codable, Equatable, Sendable {
+    /// feature 정의(ROI 기하·정규화)가 바뀌면 올려서 이전 baseline을 재보정 대상으로 만든다.
+    /// v2: 2026-07-22 몸통 ROI를 어깨 아래 0.34sw에서 어깨선 밴드(0.05sw, 높이 0.20sw)로 이동.
+    public static let currentFeatureVersion = 2
+
     public var center: Double
     public var dispersion: Double
     public var burstCount: Int
     public var createdAt: Date
     public var captureConfiguration: CaptureConfiguration
+    public var featureVersion: Int
+    /// 보정 시점의 어깨 기준 구도. 이후 점검 버스트가 여기서 크게 벗어나면 재보정을 안내한다.
+    public var shoulderMidY: Double?
+    public var shoulderWidth: Double?
 
     public init(
         center: Double,
         dispersion: Double,
         burstCount: Int,
         createdAt: Date = Date(),
-        captureConfiguration: CaptureConfiguration
+        captureConfiguration: CaptureConfiguration,
+        featureVersion: Int = Baseline.currentFeatureVersion,
+        shoulderMidY: Double? = nil,
+        shoulderWidth: Double? = nil
     ) {
         self.center = center
         self.dispersion = dispersion
         self.burstCount = burstCount
         self.createdAt = createdAt
         self.captureConfiguration = captureConfiguration
+        self.featureVersion = featureVersion
+        self.shoulderMidY = shoulderMidY
+        self.shoulderWidth = shoulderWidth
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        center = try container.decode(Double.self, forKey: .center)
+        dispersion = try container.decode(Double.self, forKey: .dispersion)
+        burstCount = try container.decode(Int.self, forKey: .burstCount)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        captureConfiguration = try container.decode(CaptureConfiguration.self, forKey: .captureConfiguration)
+        // 버전 필드 이전에 저장된 baseline은 v1(구 torso ROI 기하)로 간주한다.
+        featureVersion = try container.decodeIfPresent(Int.self, forKey: .featureVersion) ?? 1
+        shoulderMidY = try container.decodeIfPresent(Double.self, forKey: .shoulderMidY)
+        shoulderWidth = try container.decodeIfPresent(Double.self, forKey: .shoulderWidth)
     }
 }
 

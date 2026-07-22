@@ -21,6 +21,20 @@ func registerProductTests() {
         try expectEqual(settings.baseline, nil, "incompatible baseline must require calibration")
     }
 
+    TestRegistry.test("baselines from older feature definitions require recalibration") {
+        // featureVersion 필드가 없던 구 torso ROI 기하의 baseline은 새 feature와 비교 불가하다.
+        let legacy = """
+        {"storedCheckIntervalSeconds":60,"bannerNotificationsEnabled":false,"notificationSoundEnabled":false,"launchAtLogin":false,"baseline":{"center":-0.9,"dispersion":0.05,"burstCount":1,"createdAt":0,"captureConfiguration":{"cameraUniqueID":"cam","width":640,"height":480,"orientation":"up-unmirrored"}}}
+        """
+        let decoded = try JSONDecoder().decode(Settings.self, from: Data(legacy.utf8))
+        try expectEqual(decoded.baseline, nil, "version-less baseline must be dropped")
+
+        var current = Settings.defaults
+        current.baseline = Baseline(center: -0.3, dispersion: 0.02, burstCount: 1, captureConfiguration: testCaptureConfiguration)
+        let roundTrip = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(current))
+        try expectEqual(roundTrip.baseline, current.baseline, "current-version baseline must survive")
+    }
+
     TestRegistry.test("camera burst contract is warmup plus at most five frames") {
         try expectEqual(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds - 0.01), nil, "warmup discarded")
         try expectApprox(try unwrap(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds + 0.2), "collection time"), 0.2, "collection starts after warmup")

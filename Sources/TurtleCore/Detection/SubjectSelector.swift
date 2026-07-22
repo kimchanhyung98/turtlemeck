@@ -17,7 +17,12 @@ public struct UpperBodySubjectSelector: Sendable {
 
     public mutating func select(from candidates: [PoseLandmarks]) -> SubjectSelection {
         let scored = candidates.compactMap(score)
-        guard !scored.isEmpty else { return .rejected(.noSubject) }
+        guard !scored.isEmpty else {
+            // 머리는 신뢰 가능하게 보이는데 어깨가 없으면 '사람 없음'이 아니라 '평가 불가 자세'다.
+            // 단, 사용자 크기(눈 사이 거리)에 못 미치는 머리는 원거리 배경 인물이므로 사람 없음으로 남긴다.
+            let headDetected = candidates.contains(where: isSubjectScaleHead)
+            return .rejected(headDetected ? .missingShoulder : .noSubject)
+        }
 
         let selected: Candidate
         if let previousCenter {
@@ -48,10 +53,21 @@ public struct UpperBodySubjectSelector: Sendable {
         guard
             !landmarks.reliableHeadAnchors.isEmpty,
             let left = landmarks.leftShoulder, left.isReliable,
-            let right = landmarks.rightShoulder, right.isReliable
+            let right = landmarks.rightShoulder, right.isReliable,
+            // 원거리 배경 인물은 대상 후보로 선택하지 않는다.
+            distance(left, right) >= Tuning.minimumShoulderWidth
         else { return nil }
         let center = Point2D(x: (left.x + right.x) / 2, y: (left.y + right.y) / 2, confidence: min(left.confidence, right.confidence))
         return Candidate(landmarks: landmarks, center: center, shoulderWidth: distance(left, right))
+    }
+
+    private func isSubjectScaleHead(_ landmarks: PoseLandmarks) -> Bool {
+        guard
+            !landmarks.reliableHeadAnchors.isEmpty,
+            let leftEye = landmarks.leftEye, leftEye.confidence >= Tuning.minimumHeadAnchorConfidence,
+            let rightEye = landmarks.rightEye, rightEye.confidence >= Tuning.minimumHeadAnchorConfidence
+        else { return false }
+        return distance(leftEye, rightEye) >= Tuning.minimumSubjectEyeDistance
     }
 
     private func distance(_ lhs: Point2D, _ rhs: Point2D) -> Double {

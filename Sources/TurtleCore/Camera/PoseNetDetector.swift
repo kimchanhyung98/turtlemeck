@@ -40,7 +40,9 @@ final class PoseNetDetector {
             leftEar: points[PoseNetJoint.leftEar.rawValue],
             rightEar: points[PoseNetJoint.rightEar.rawValue],
             leftShoulder: points[PoseNetJoint.leftShoulder.rawValue],
-            rightShoulder: points[PoseNetJoint.rightShoulder.rawValue]
+            rightShoulder: points[PoseNetJoint.rightShoulder.rawValue],
+            leftWrist: points[PoseNetJoint.leftWrist.rawValue],
+            rightWrist: points[PoseNetJoint.rightWrist.rawValue]
         )]
     }
 

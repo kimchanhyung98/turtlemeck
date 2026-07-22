@@ -57,7 +57,9 @@ public struct Settings: Codable, Equatable, Sendable {
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         debugEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .debugEnabled)) ?? false
         // 이전 다중 알고리즘 baseline은 현재 단일 relative-depth 계약과 호환되지 않으므로 재보정한다.
-        baseline = (try? container.decodeIfPresent(Baseline.self, forKey: .baseline)) ?? nil
+        // feature 정의(ROI 기하)가 바뀐 구버전 baseline도 값이 비교 불가능하므로 재보정한다.
+        let decodedBaseline = (try? container.decodeIfPresent(Baseline.self, forKey: .baseline)) ?? nil
+        baseline = decodedBaseline?.featureVersion == Baseline.currentFeatureVersion ? decodedBaseline : nil
     }
 
     public func encode(to encoder: Encoder) throws {

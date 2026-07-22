@@ -437,7 +437,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             case .rejected(let reason):
                 featureStart = Date()
                 analysis = FrameAnalysis(
-                    landmarks: candidates.first ?? PoseLandmarks(),
+                    // 거부 사유 판단(머리 검출 여부)과 같은 후보를 기록해야 버스트 집계가 일관된다.
+                    landmarks: candidates.first(where: { !$0.reliableHeadAnchors.isEmpty }) ?? candidates.first ?? PoseLandmarks(),
                     depth: depthMap.map(DepthSummary.init),
                     exclusionReason: reason
                 )

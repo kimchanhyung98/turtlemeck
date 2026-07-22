@@ -27,6 +27,23 @@ public struct PostureFrameAnalyzer: Sendable {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
         }
 
+        // 팔이나 자세가 어깨를 가려(턱 괴기 등) 어깨 신뢰도가 낮으면 정상 자세를 확인할 수 없다.
+        // 몸을 세운 턱 괴기는 head-torso depth 차이가 변하지 않아 이 게이트가 유일한 방어선이다.
+        guard
+            leftShoulder.confidence >= Tuning.minimumAssessableShoulderConfidence,
+            rightShoulder.confidence >= Tuning.minimumAssessableShoulderConfidence
+        else {
+            return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingShoulder)
+        }
+
+        // 머리(신뢰 anchor 중앙값)가 어깨선에 비정상적으로 가까우면 옆으로 기울거나 앞으로 숙인 자세다.
+        if let headAnchorY = median(landmarks.reliableHeadAnchors.map(\.y)) {
+            let shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2
+            if (shoulderMidY - headAnchorY) / shoulderWidth < Tuning.minimumHeadShoulderGapRatio {
+                return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .headDropped)
+            }
+        }
+
         let requiredPoints = landmarks.reliableHeadAnchors + [leftShoulder, rightShoulder]
         guard requiredPoints.allSatisfy(isInsideFrame) else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .croppedUpperBody)
@@ -149,11 +166,14 @@ public struct PostureFrameAnalyzer: Sendable {
             width: shoulderWidth * 0.54,
             height: shoulderWidth * 0.66
         ).inset(by: Tuning.roiErosionFraction)
+        // 몸통 ROI는 어깨선 바로 아래의 얇은 상흉부 밴드다. 노트북 내장캠의 전형 구도(어깨 y 0.86~0.93)에서
+        // 어깨 아래 0.34sw 배치는 프레임 하단을 항상 벗어났다(2026-07-21~22 debug 42프레임 전수 실측).
+        // 밴드(0.05sw, 높이 0.20sw)는 같은 데이터에서 45/45 프레임 화면 안 + 나쁜 자세 분리 유지가 검증됐다.
         let torso = centeredRect(
             x: shoulderX,
-            y: (leftShoulder.y + rightShoulder.y) / 2 + shoulderWidth * 0.34,
+            y: (leftShoulder.y + rightShoulder.y) / 2 + shoulderWidth * 0.05,
             width: shoulderWidth * 0.83,
-            height: shoulderWidth * 0.60
+            height: shoulderWidth * 0.20
         ).inset(by: Tuning.roiErosionFraction)
         let padding = shoulderWidth * 0.08
         let reference = NormalizedRect(

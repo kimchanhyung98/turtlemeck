@@ -20,7 +20,7 @@ depth map에는 신체 부위 라벨이 없고, Vision landmark에는 깊이가 
 ## 최소 처리 흐름
 
 1. 2D body-pose 품질을 확인한다.
-2. landmark로 머리 ROI와 몸통 ROI를 정한다.
+2. landmark로 머리 ROI와 몸통 ROI를 정한다. 몸통 ROI는 어깨선 바로 아래의 얇은 상흉부 밴드다 — 어깨 아래 깊은 위치는 노트북 구도에서 화면 밖으로 나간다(2026-07-22 실측, [확정 워크플로우 §4](../../algorithm/posture-analysis-workflow.md) 참조).
 3. landmark 기반 reference ROI를 만들고 경계 픽셀을 제외한다.
 4. 각 ROI의 median depth를 계산한다.
 5. reference ROI의 IQR로 머리-몸통 차이를 정규화한다.

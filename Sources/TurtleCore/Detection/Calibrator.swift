@@ -3,6 +3,8 @@ import Foundation
 public enum CalibrationRejectReason: String, Codable, Equatable, Sendable {
     case noReliableBursts
     case unstableBaseline
+    /// 머리는 감지됐지만 자세 때문에 평가 불가한 프레임이 우세 — 구도가 아니라 자세를 고치라고 안내한다.
+    case postureUnassessable
 }
 
 public enum CalibrationResult: Equatable, Sendable {
@@ -30,6 +32,16 @@ public struct Calibrator: Sendable {
         }
         let valid = summaries.filter(Self.isReliable)
         guard valid.count >= Tuning.requiredCalibrationBursts else {
+            // 유효 버스트가 없는 이유가 '자세 때문에 평가 불가'(턱 괴기·머리 처짐 등)가 우세한 것이면
+            // 구도 안내 대신 자세 안내를 할 수 있게 사유를 구분한다.
+            let unassessable = summaries
+                .flatMap { $0.exclusionCounts }
+                .filter { $0.key.isSubjectUnassessable }
+                .reduce(0) { $0 + $1.value }
+            let totalFrames = summaries.reduce(0) { $0 + $1.totalFrameCount }
+            if unassessable >= Tuning.minimumValidFrames, unassessable * 2 > totalFrames {
+                return .rejected(.postureUnassessable)
+            }
             return .rejected(.noReliableBursts)
         }
         let centers = valid.compactMap(\.medianFeature)
@@ -46,7 +58,10 @@ public struct Calibrator: Sendable {
             dispersion: max(withinBurstMAD, betweenBurstMAD),
             burstCount: valid.count,
             createdAt: now,
-            captureConfiguration: captureConfiguration
+            captureConfiguration: captureConfiguration,
+            // 보정 시점의 구도(어깨 기준)를 함께 저장해, 책상 배치·리드 각도 변경 시 재보정을 안내한다.
+            shoulderMidY: median(valid.compactMap(\.medianShoulderMidY)),
+            shoulderWidth: median(valid.compactMap(\.medianShoulderWidth))
         ))
     }
 

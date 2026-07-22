@@ -14,22 +14,30 @@ public final class PoseDetector {
         sampleBuffer: CMSampleBuffer,
         orientation: CGImagePropertyOrientation = .up
     ) throws -> [PoseLandmarks] {
-        if let candidates = try? poseNet.detect(sampleBuffer: sampleBuffer), candidates.contains(where: isUsableUpperBody) {
-            return candidates
+        let poseNetCandidates = (try? poseNet.detect(sampleBuffer: sampleBuffer)) ?? []
+        if poseNetCandidates.contains(where: isUsableUpperBody) {
+            return poseNetCandidates
         }
         let handler = VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: orientation, options: [:])
-        return try perform(handler: handler)
+        return merged(fallback: try perform(handler: handler), poseNet: poseNetCandidates)
     }
 
     public func detectCandidates(
         cgImage: CGImage,
         orientation: CGImagePropertyOrientation = .up
     ) throws -> [PoseLandmarks] {
-        if let candidates = try? poseNet.detect(cgImage: cgImage), candidates.contains(where: isUsableUpperBody) {
-            return candidates
+        let poseNetCandidates = (try? poseNet.detect(cgImage: cgImage)) ?? []
+        if poseNetCandidates.contains(where: isUsableUpperBody) {
+            return poseNetCandidates
         }
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
-        return try perform(handler: handler)
+        return merged(fallback: try perform(handler: handler), poseNet: poseNetCandidates)
+    }
+
+    /// Vision도 후보를 못 내면 PoseNet 부분 검출을 보존한다.
+    /// 하류에서 '사람 없음'과 '머리는 있으나 어깨 미신뢰'를 구분하는 데 필요하다.
+    private func merged(fallback: [PoseLandmarks], poseNet: [PoseLandmarks]) -> [PoseLandmarks] {
+        fallback.isEmpty ? poseNet : fallback
     }
 
     private func perform(handler: VNImageRequestHandler) throws -> [PoseLandmarks] {
@@ -56,7 +64,9 @@ public final class PoseDetector {
             rightEar: point(.rightEar, in: observation),
             neck: point(.neck, in: observation),
             leftShoulder: point(.leftShoulder, in: observation),
-            rightShoulder: point(.rightShoulder, in: observation)
+            rightShoulder: point(.rightShoulder, in: observation),
+            leftWrist: point(.leftWrist, in: observation),
+            rightWrist: point(.rightWrist, in: observation)
         )
     }
 

@@ -138,7 +138,9 @@ public final class DebugCaptureStore: @unchecked Sendable {
             landmarks.rightEar,
             landmarks.neck,
             landmarks.leftShoulder,
-            landmarks.rightShoulder
+            landmarks.rightShoulder,
+            landmarks.leftWrist,
+            landmarks.rightWrist
         ].compactMap { $0 }
     }
 
