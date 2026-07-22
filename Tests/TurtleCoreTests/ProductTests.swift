@@ -77,6 +77,19 @@ func registerProductTests() {
         try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked("camera permission denied"), "denied")
     }
 
+    TestRegistry.test("camera burst with no delivered frames is unavailable") {
+        try expectEqual(
+            CameraManager.burstCompletionAction(receivedFrameCount: 0),
+            .blocked("camera unavailable"),
+            "zero delivered frames must report an unavailable camera"
+        )
+        try expectEqual(
+            CameraManager.burstCompletionAction(receivedFrameCount: 1),
+            .process,
+            "a delivered frame must continue through posture processing"
+        )
+    }
+
     TestRegistry.test("notification policy only sends rate-limited bad transitions") {
         var policy = NotificationPolicy(minimumInterval: 60)
         try expect(policy.shouldSend(alert: .cautionStarted, at: Date(timeIntervalSince1970: 100)), "first caution")

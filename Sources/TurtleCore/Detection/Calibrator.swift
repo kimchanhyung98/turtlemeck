@@ -1,6 +1,7 @@
 import Foundation
 
 public enum CalibrationRejectReason: String, Codable, Equatable, Sendable {
+    case cameraUnavailable
     case noReliableBursts
     case unstableBaseline
     /// 머리는 감지됐지만 자세 때문에 평가 불가한 프레임이 우세 — 구도가 아니라 자세를 고치라고 안내한다.

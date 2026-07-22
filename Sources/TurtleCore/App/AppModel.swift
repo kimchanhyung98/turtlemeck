@@ -74,8 +74,8 @@ public final class AppModel: ObservableObject {
                     self.setNextCheck("중지됨")
                 } else if self.postureState == .calibrating {
                     self.setNextCheck("보정 분석 중")
-                } else if self.postureState == .needsCalibration {
-                    // 재보정 안내 문구를 유지한다.
+                } else if self.postureState == .needsCalibration || self.postureState == .blocked {
+                    // 재보정·카메라 확인 안내 문구를 유지한다.
                 } else {
                     self.setNextCheck("점검 분석 중")
                 }
@@ -321,6 +321,12 @@ public final class AppModel: ObservableObject {
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
             setNextCheck("바른 자세로 ‘보정’을 눌러 주세요")
             cameraManager.stop()
+        case .rejected(.cameraUnavailable):
+            postureState = .blocked
+            stateMachine.reset(to: .blocked)
+            statusText = "카메라 사용 불가"
+            setNextCheck("카메라를 사용할 수 있는 상태로 만든 뒤 ‘보정’을 눌러 주세요")
+            cameraManager.stop()
         case .rejected(.noReliableBursts):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
@@ -339,7 +345,11 @@ public final class AppModel: ObservableObject {
 
     private func handleBlocked(reason: String) {
         postureState = .blocked
-        statusText = reason == "camera permission denied" ? "카메라 권한 필요" : "카메라 확인 필요"
+        stateMachine.reset(to: .blocked)
+        statusText = reason == "camera permission denied" ? "카메라 권한 필요" : "카메라 사용 불가"
+        setNextCheck(reason == "camera permission denied"
+            ? "카메라 권한을 허용해 주세요"
+            : "카메라를 사용할 수 있는 상태인지 확인해 주세요")
     }
 
     private func title(for state: PostureState) -> String {

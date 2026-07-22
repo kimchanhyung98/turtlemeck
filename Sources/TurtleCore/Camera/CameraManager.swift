@@ -78,6 +78,10 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
     }
 
+    public static func burstCompletionAction(receivedFrameCount: Int) -> CameraBurstCompletionAction {
+        receivedFrameCount == 0 ? .blocked("camera unavailable") : .process
+    }
+
     public func start(settings: Settings, baseline: Baseline?) {
         queue.async {
             self.settings = settings
@@ -235,6 +239,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         let aggregationStart = Date()
         let completedFrames = frames.sorted { $0.index < $1.index }
         let completedFrameOutputs = pendingFrameOutputs.sorted { $0.index < $1.index }
+        let receivedFrameCount = enqueuedFrameCount
         let summary = burstProcessor.summarize(completedFrames)
         var stageTimings = averageStageTimings(completedFrames)
         stageTimings["burstAggregation"] = Date().timeIntervalSince(aggregationStart) * 1_000
@@ -246,6 +251,22 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         immediateCheckPending = false
         frames.removeAll()
         pendingFrameOutputs.removeAll()
+
+        switch Self.burstCompletionAction(receivedFrameCount: receivedFrameCount) {
+        case .process:
+            break
+        case .blocked(let reason):
+            finishBlockedBurst(
+                reason,
+                startedAt: completedBurstStartDate,
+                summary: summary,
+                frames: completedFrames,
+                stageTimings: stageTimings,
+                session: debugSession,
+                frameOutputs: completedFrameOutputs
+            )
+            return
+        }
 
         if let completion = calibrationCompletion {
             calibrationAttempts += 1
@@ -518,13 +539,68 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func failToStart(_ reason: String) {
+        let wasCalibrating = calibrationCompletion != nil
+        calibrationCompletion = nil
+        calibrationSummaries.removeAll()
+        calibrationAttempts = 0
         emitBlocked(reason)
+        immediateCheckPending = false
+        if wasCalibrating {
+            isRunning = false
+        } else if isRunning {
+            scheduleNextBurst(after: settings.checkIntervalSeconds)
+        }
+    }
+
+    private func finishBlockedBurst(
+        _ reason: String,
+        startedAt: Date,
+        summary: BurstSummary,
+        frames: [TimedFrame],
+        stageTimings: [String: Double],
+        session: DebugCaptureSession?,
+        frameOutputs: [PendingFrameOutput]
+    ) {
+        let wasCalibrating = calibrationCompletion != nil
+        let calibrationResult: CalibrationResult?
+        let productState: PostureState
         if let completion = calibrationCompletion {
             calibrationCompletion = nil
-            _ = resolveCalibration(.rejected(.noReliableBursts), completion: completion)
+            calibrationSummaries.removeAll()
+            calibrationAttempts = 0
+            let result = CalibrationResult.rejected(.cameraUnavailable)
+            calibrationResult = result
+            productState = resolveCalibration(result, completion: completion)
+        } else {
+            calibrationResult = nil
+            productState = .blocked
+            emitBlocked(reason)
         }
-        immediateCheckPending = false
-        if isRunning { scheduleNextBurst(after: settings.checkIntervalSeconds) }
+        let diagnostic = PostureDiagnostic(
+            assessment: .noEval,
+            productState: productState,
+            evidence: .noEval,
+            summary: summary,
+            baselineCenter: baseline?.center,
+            reason: reason,
+            frames: frames,
+            stageProcessingMilliseconds: stageTimings
+        )
+        let afterOutput: @Sendable () -> Void
+        if wasCalibrating {
+            afterOutput = {}
+        } else {
+            afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: startedAt) }
+        }
+        deliverDiagnostic(
+            diagnostic,
+            session: session,
+            verdict: nil,
+            calibrationResult: calibrationResult,
+            baseline: baseline,
+            frameOutputs: frameOutputs,
+            afterOutput: afterOutput
+        )
     }
 
     private func calibrationDiagnostic(
@@ -844,6 +920,11 @@ private enum CameraError: Error {
 public enum CameraAuthorizationAction: Equatable {
     case start
     case requestAccess
+    case blocked(String)
+}
+
+public enum CameraBurstCompletionAction: Equatable {
+    case process
     case blocked(String)
 }
 
