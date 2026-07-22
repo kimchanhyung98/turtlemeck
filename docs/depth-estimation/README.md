@@ -67,7 +67,7 @@ flowchart LR
 
 - 2D body-pose로 정의한 머리·몸통 ROI의 반복성
 - DA-V2 near/far 방향과 relative-depth feature의 안정성
-- 중립 자세와 악화 자세의 분리도
+- 사용자가 저장한 baseline과 라벨 자세 사이 거리의 분리도
 - 버스트 대표값·임계·지속 시간에 따른 오경보와 지연
 - 지원 Mac에서 전체 파이프라인의 지연·발열·배터리 사용
 

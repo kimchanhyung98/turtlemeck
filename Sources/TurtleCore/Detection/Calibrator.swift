@@ -17,7 +17,11 @@ public struct Calibrator: Sendable {
 
     /// 보정에 쓸 수 있는 버스트 기준. 수집 루프의 조기 종료 판단도 같은 기준을 사용해야 한다.
     public static func isReliable(_ summary: BurstSummary) -> Bool {
-        summary.validFrameCount >= Tuning.minimumValidFrames &&
+        let unassessableCount = summary.exclusionCounts
+            .filter { $0.key.isSubjectUnassessable }
+            .reduce(0) { $0 + $1.value }
+        return unassessableCount * 2 <= summary.totalFrameCount &&
+            summary.validFrameCount >= Tuning.minimumValidFrames &&
             (summary.featureMAD ?? .infinity) <= Tuning.maximumBurstMAD &&
             summary.medianFeature != nil
     }

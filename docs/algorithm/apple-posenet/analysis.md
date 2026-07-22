@@ -102,7 +102,7 @@ TensorFlow PoseNet 자료는 관절별 score가 해당 keypoint의 confidence를
 - `heatmap` 또는 `offsets`가 없음
 - 머리·양쪽 어깨 품질 조건 미달
 
-fallback은 detector 교체이지 두 모델 관절의 혼합이 아니다. 한 프레임의 PoseNet 머리와 Vision 어깨를 합성하지 않는다. 둘 다 유효하지 않으면 관절을 추정해서 채우지 말고 `noEval` 경로로 보낸다.
+fallback은 detector 교체이지 두 모델 관절의 혼합이 아니다. 한 프레임의 PoseNet 머리와 Vision 어깨를 합성하지 않는다. Vision도 후보를 내지 못하면 PoseNet의 부분 검출을 보존한다. 하류 분석은 신뢰할 수 있는 머리가 있으면 자세 기인 평가 불가 여부를 판단하고, 머리조차 없으면 `noEval`로 보낸다.
 
 ## 8. 제품 적용 경계
 

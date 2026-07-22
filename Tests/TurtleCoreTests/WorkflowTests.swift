@@ -185,6 +185,145 @@ func registerWorkflowTests() {
         )
     }
 
+    TestRegistry.test("baseline distance boundaries are symmetric") {
+        let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 1, captureConfiguration: testCaptureConfiguration)
+        let recovery = Tuning.recoveryMargin(baselineDispersion: baseline.dispersion)
+        let worsening = Tuning.worseningMargin(baselineDispersion: baseline.dispersion)
+        func evidence(at offset: Double) -> BurstEvidence {
+            let frames = (1...5).map { timedFrame(index: $0, feature: offset) }
+            return BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence
+        }
+
+        for direction in [-1.0, 1.0] {
+            try expectEqual(evidence(at: direction * recovery), .normal, "the recovery boundary must be inclusive in both directions")
+            try expectEqual(
+                evidence(at: direction * ((recovery + worsening) / 2)),
+                .insufficient,
+                "the hysteresis band must be symmetric"
+            )
+            try expectEqual(evidence(at: direction * worsening), .worsened, "the worsening boundary must be inclusive in both directions")
+        }
+    }
+
+    TestRegistry.test("invalid baselines fail closed and request recalibration") {
+        func baseline(
+            center: Double = 0,
+            dispersion: Double = 0.01,
+            burstCount: Int = 1,
+            featureVersion: Int = Baseline.currentFeatureVersion
+        ) -> Baseline {
+            Baseline(
+                center: center,
+                dispersion: dispersion,
+                burstCount: burstCount,
+                captureConfiguration: testCaptureConfiguration,
+                featureVersion: featureVersion
+            )
+        }
+        let invalidCases = [
+            ("non-finite center", baseline(center: .infinity)),
+            ("NaN center", baseline(center: .nan)),
+            ("non-finite dispersion", baseline(dispersion: .infinity)),
+            ("out-of-range dispersion", baseline(dispersion: .greatestFiniteMagnitude)),
+            ("negative dispersion", baseline(dispersion: -0.01)),
+            ("empty calibration", baseline(burstCount: 0)),
+            ("stale feature version", baseline(featureVersion: Baseline.currentFeatureVersion - 1))
+        ]
+        let frames = (1...5).map { timedFrame(index: $0, feature: 0) }
+
+        for (name, invalidBaseline) in invalidCases {
+            let verdict = BurstProcessor().process(
+                frames,
+                baseline: invalidBaseline,
+                captureConfiguration: testCaptureConfiguration
+            )
+            try expectEqual(verdict.evidence, .noEval, "\(name) must not produce posture evidence")
+            try expectEqual(verdict.reason, "baseline invalid", "\(name) reason")
+            try expect(verdict.requiresCalibration, "\(name) must request recalibration")
+        }
+    }
+
+    TestRegistry.test("posture judgment follows an abnormal user baseline in either direction") {
+        let reference = (0..<Tuning.requiredCalibrationBursts).map { _ in
+            BurstSummary(
+                totalFrameCount: 5,
+                validFrameCount: 5,
+                medianFeature: 0.47,
+                featureMAD: 0.04,
+                exclusionCounts: [:],
+                medianShoulderMidY: 0.84,
+                medianShoulderWidth: 0.4
+            )
+        }
+        guard case .accepted(let abnormalBaseline) = Calibrator().capture(from: reference, captureConfiguration: testCaptureConfiguration) else {
+            throw testFailure("stable user reference must be accepted without an objective-posture override")
+        }
+        func anchoredBurst(feature: Double) -> [TimedFrame] {
+            (1...5).map { anchoredFrame(index: $0, feature: feature, shoulderMidY: 0.84, shoulderWidth: 0.4) }
+        }
+
+        let sameAbnormalPosture = BurstProcessor().process(
+            anchoredBurst(feature: 0.47),
+            baseline: abnormalBaseline,
+            captureConfiguration: testCaptureConfiguration
+        )
+        try expectEqual(sameAbnormalPosture.evidence, .normal, "the user reference itself must be normal evidence")
+        try expectEqual(sameAbnormalPosture.assessment, .good, "the user reference itself must be a good product assessment")
+
+        let fartherPositive = BurstProcessor().process(
+            anchoredBurst(feature: 0.84),
+            baseline: abnormalBaseline,
+            captureConfiguration: testCaptureConfiguration
+        )
+        try expectEqual(fartherPositive.evidence, .worsened, "a large positive deviation must be abnormal too")
+
+        let objectivelyNormal = anchoredBurst(feature: -1.21)
+        let verdict = BurstProcessor().process(objectivelyNormal, baseline: abnormalBaseline, captureConfiguration: testCaptureConfiguration)
+        try expectEqual(
+            verdict.evidence,
+            .worsened,
+            "a large deviation from the user baseline must be abnormal even when feature decreases"
+        )
+        try expectEqual(verdict.assessment, .bad, "an objectively normal posture can be bad relative to the user reference")
+        try expectApprox(try unwrap(verdict.baselineDelta, "signed baseline delta"), -1.68, "diagnostics preserve deviation direction")
+
+        let changedConfiguration = CaptureConfiguration(cameraUniqueID: "other-camera", width: 640, height: 480, orientation: "up-unmirrored")
+        let missingConfiguration = BurstProcessor().process(
+            anchoredBurst(feature: 0.47),
+            baseline: abnormalBaseline,
+            captureConfiguration: nil
+        )
+        try expectEqual(missingConfiguration.evidence, .noEval, "missing capture metadata must fail closed")
+        try expectEqual(missingConfiguration.reason, "capture configuration unavailable", "missing configuration reason")
+
+        let configurationFailureCases: [(String, [TimedFrame])] = [
+            ("absent subject", (1...5).map { excludedFrame(index: $0, reason: .noSubject, landmarks: PoseLandmarks()) }),
+            ("model failure", (1...5).map { excludedFrame(index: $0, reason: .modelFailure, landmarks: validLandmarks()) }),
+            ("unassessable posture", (1...5).map { excludedFrame(index: $0, reason: .missingShoulder, landmarks: validLandmarks()) })
+        ]
+        for (name, frames) in configurationFailureCases {
+            let verdict = BurstProcessor().process(
+                frames,
+                baseline: abnormalBaseline,
+                captureConfiguration: changedConfiguration
+            )
+            try expectEqual(verdict.evidence, .noEval, "\(name) must not hide a stale capture configuration")
+            try expectEqual(verdict.reason, "capture configuration changed", "\(name) configuration reason")
+            try expect(verdict.requiresCalibration, "\(name) must preserve the recalibration request")
+        }
+
+        let movedFraming = (1...5).map {
+            anchoredFrame(index: $0, feature: 0.47, shoulderMidY: 0.77, shoulderWidth: 0.4)
+        }
+        let framingError = BurstProcessor().process(
+            movedFraming,
+            baseline: abnormalBaseline,
+            captureConfiguration: testCaptureConfiguration
+        )
+        try expectEqual(framingError.evidence, .noEval, "an abnormal baseline must not bypass framing validation")
+        try expect(framingError.requiresCalibration, "framing drift must still request recalibration")
+    }
+
     TestRegistry.test("burst rejects insufficient coverage and instability") {
         let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 3, captureConfiguration: testCaptureConfiguration)
         try expectEqual(BurstProcessor().process([timedFrame(index: 1, feature: 0)], baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence, .noEval, "one frame is insufficient")
@@ -202,6 +341,29 @@ func registerWorkflowTests() {
         )
         let unstable = [0.0, 1.0, 2.0, 3.0, 4.0].enumerated().map { timedFrame(index: $0.offset + 1, feature: $0.element) }
         try expectEqual(BurstProcessor().process(unstable, baseline: baseline, captureConfiguration: testCaptureConfiguration).reason, "unstable burst", "high MAD")
+    }
+
+    TestRegistry.test("excluded frames never contribute stale features") {
+        let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 1, captureConfiguration: testCaptureConfiguration)
+        let staleFeature = TimedFrame(
+            time: 0.8,
+            analysis: FrameAnalysis(
+                landmarks: validLandmarks(),
+                feature: 0,
+                exclusionReason: .modelFailure
+            ),
+            index: 2
+        )
+        let frames = [
+            timedFrame(index: 1, feature: 0),
+            staleFeature,
+            excludedFrame(index: 3, reason: .noSubject, landmarks: PoseLandmarks()),
+            excludedFrame(index: 4, reason: .noSubject, landmarks: PoseLandmarks()),
+            excludedFrame(index: 5, reason: .noSubject, landmarks: PoseLandmarks())
+        ]
+        let verdict = BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration)
+        try expectEqual(verdict.summary.validFrameCount, 1, "a feature attached to an excluded frame must stay invalid")
+        try expectEqual(verdict.evidence, .noEval, "stale feature data must not mask insufficient coverage")
     }
 
     TestRegistry.test("head detected but unassessable posture is abnormal, absent subject stays no-eval") {
@@ -269,24 +431,41 @@ func registerWorkflowTests() {
 
     TestRegistry.test("only posture-caused exclusions count as abnormal evidence") {
         let abnormal: [FrameExclusionReason] = [.missingShoulder, .croppedUpperBody, .excessiveRotation, .headDropped]
-        let neutral: [FrameExclusionReason] = [
+        let technical: [FrameExclusionReason] = [
             .unstableCapture, .noSubject, .ambiguousSubject, .missingHeadAnchor, .modelFailure,
             .invalidROIGeometry, .insufficientDepthPixels, .insufficientDepthRange
         ]
         for reason in abnormal {
             try expect(reason.isSubjectUnassessable, "\(reason.rawValue) must be abnormal evidence")
         }
-        for reason in neutral {
+        for reason in technical {
             try expect(!reason.isSubjectUnassessable, "\(reason.rawValue) must stay no-eval (not posture-caused)")
         }
-        // depth 품질 실패는 조명·모델 기인일 수 있으므로 비정상으로 승격하면 오탐 채널이 된다.
-        let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 1, captureConfiguration: testCaptureConfiguration)
-        let depthFailure = (1...5).map { excludedFrame(index: $0, reason: .insufficientDepthRange, landmarks: validLandmarks()) }
-        try expectEqual(
-            BurstProcessor().process(depthFailure, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence,
-            .noEval,
-            "depth-quality failure must stay no-eval"
-        )
+
+        let baselines = [
+            ("normal", Baseline(center: -1.21, dispersion: 0.04, burstCount: 1, captureConfiguration: testCaptureConfiguration)),
+            ("abnormal", Baseline(center: 0.47, dispersion: 0.04, burstCount: 1, captureConfiguration: testCaptureConfiguration))
+        ]
+        for (baselineName, baseline) in baselines {
+            for reason in abnormal {
+                let frames = (1...5).map { excludedFrame(index: $0, reason: reason, landmarks: validLandmarks()) }
+                try expectEqual(
+                    BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence,
+                    .worsened,
+                    "\(baselineName) baseline: \(reason.rawValue) must be abnormal"
+                )
+            }
+            for reason in technical {
+                let hasNoReliableHead = reason == .noSubject || reason == .ambiguousSubject || reason == .missingHeadAnchor
+                let landmarks = hasNoReliableHead ? PoseLandmarks() : validLandmarks()
+                let frames = (1...5).map { excludedFrame(index: $0, reason: reason, landmarks: landmarks) }
+                try expectEqual(
+                    BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence,
+                    .noEval,
+                    "\(baselineName) baseline: \(reason.rawValue) must stay no-eval"
+                )
+            }
+        }
     }
 
     TestRegistry.test("analyzer gate boundaries follow tuning values") {
@@ -391,6 +570,18 @@ func registerWorkflowTests() {
             Calibrator().capture(from: [chinPropSummary], captureConfiguration: testCaptureConfiguration),
             .rejected(.postureUnassessable),
             "posture-caused calibration failure must guide the user to fix posture"
+        )
+        let partiallyMeasurableChinProp = BurstSummary(
+            totalFrameCount: 5,
+            validFrameCount: 2,
+            medianFeature: 0.1,
+            featureMAD: 0.02,
+            exclusionCounts: [.missingShoulder: 3]
+        )
+        try expectEqual(
+            Calibrator().capture(from: [partiallyMeasurableChinProp], captureConfiguration: testCaptureConfiguration),
+            .rejected(.postureUnassessable),
+            "a measurable minority must not turn a mostly unassessable posture into a baseline"
         )
         let emptySummary = BurstSummary(
             totalFrameCount: 5,

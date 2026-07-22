@@ -2,17 +2,9 @@ import AppKit
 import Foundation
 import TurtleCore
 
-guard let path = CommandLine.arguments.dropFirst().first else {
-    FileHandle.standardError.write(Data("usage: analyze-image <image-path>\n".utf8))
-    exit(2)
-}
-
-let url = URL(fileURLWithPath: path)
-guard
-    let image = NSImage(contentsOf: url),
-    let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-else {
-    FileHandle.standardError.write(Data("could not load image: \(path)\n".utf8))
+let paths = Array(CommandLine.arguments.dropFirst())
+guard !paths.isEmpty else {
+    FileHandle.standardError.write(Data("usage: analyze-image <image-path> [image-path ...]\n".utf8))
     exit(2)
 }
 
@@ -57,32 +49,54 @@ func printLandmarks(_ landmarks: PoseLandmarks) {
     }
 }
 
-do {
-    let candidates = try PoseDetector().detectCandidates(cgImage: cgImage)
-    var selector = UpperBodySubjectSelector()
-    switch selector.select(from: candidates) {
-    case .rejected(let reason):
-        print("valid=false")
-        print("reason=\(reason.rawValue)")
-        if let first = candidates.first {
-            printLandmarks(first)
-        }
-    case .selected(let landmarks):
-        let depth = CoreMLRelativeDepthProvider().estimate(cgImage: cgImage)
-        let analysis = PostureFrameAnalyzer().analyze(landmarks: landmarks, depthMap: depth)
-        print("valid=\(analysis.isValid)")
-        if let feature = analysis.feature {
-            print("feature=\(String(format: "%.6f", feature))")
-        }
-        if let iqr = analysis.quality.referenceIQR {
-            print("referenceIQR=\(String(format: "%.6f", iqr))")
-        }
-        if let reason = analysis.exclusionReason {
-            print("reason=\(reason.rawValue)")
-        }
-        printLandmarks(landmarks)
+let detector = PoseDetector()
+let depthProvider = CoreMLRelativeDepthProvider()
+var selectors: [URL: UpperBodySubjectSelector] = [:]
+
+for path in paths {
+    let url = URL(fileURLWithPath: path)
+    let directory = url.deletingLastPathComponent().standardizedFileURL
+    guard
+        let image = NSImage(contentsOf: url),
+        let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else {
+        FileHandle.standardError.write(Data("could not load image: \(path)\n".utf8))
+        exit(2)
     }
-} catch {
-    FileHandle.standardError.write(Data("analysis failed: \(error)\n".utf8))
-    exit(1)
+
+    if paths.count > 1 {
+        print("path=\(path)")
+    }
+
+    do {
+        let candidates = try detector.detectCandidates(cgImage: cgImage)
+        var selector = selectors[directory, default: UpperBodySubjectSelector()]
+        let selection = selector.select(from: candidates)
+        selectors[directory] = selector
+        switch selection {
+        case .rejected(let reason):
+            print("valid=false")
+            print("reason=\(reason.rawValue)")
+            if let first = candidates.first {
+                printLandmarks(first)
+            }
+        case .selected(let landmarks):
+            let depth = depthProvider.estimate(cgImage: cgImage)
+            let analysis = PostureFrameAnalyzer().analyze(landmarks: landmarks, depthMap: depth)
+            print("valid=\(analysis.isValid)")
+            if let feature = analysis.feature {
+                print("feature=\(String(format: "%.6f", feature))")
+            }
+            if let iqr = analysis.quality.referenceIQR {
+                print("referenceIQR=\(String(format: "%.6f", iqr))")
+            }
+            if let reason = analysis.exclusionReason {
+                print("reason=\(reason.rawValue)")
+            }
+            printLandmarks(landmarks)
+        }
+    } catch {
+        FileHandle.standardError.write(Data("analysis failed for \(path): \(error)\n".utf8))
+        exit(1)
+    }
 }

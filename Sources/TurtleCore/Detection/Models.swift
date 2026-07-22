@@ -359,7 +359,8 @@ public struct BurstVerdict: Codable, Equatable, Sendable {
     }
 
     public var requiresCalibration: Bool {
-        reason == "baseline required" || reason == "capture configuration changed" || reason == "framing changed"
+        reason == "baseline required" || reason == "baseline invalid" ||
+            reason == "capture configuration changed" || reason == "framing changed"
     }
 }
 

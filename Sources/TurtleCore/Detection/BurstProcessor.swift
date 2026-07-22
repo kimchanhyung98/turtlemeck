@@ -16,7 +16,9 @@ public struct BurstProcessor: Sendable {
     public init() {}
 
     public func summarize(_ frames: [TimedFrame]) -> BurstSummary {
-        let features = frames.compactMap(\.analysis.feature)
+        let features = frames.compactMap { frame in
+            frame.analysis.isValid ? frame.analysis.feature : nil
+        }
         var exclusions: [FrameExclusionReason: Int] = [:]
         for reason in frames.compactMap(\.analysis.exclusionReason) {
             exclusions[reason, default: 0] += 1
@@ -52,8 +54,30 @@ public struct BurstProcessor: Sendable {
             return BurstVerdict(evidence: .noEval, summary: summary, reason: "insufficient captured frames")
         }
 
+        let validatedBaseline: Baseline?
+        if let baseline {
+            guard
+                baseline.center.isFinite,
+                baseline.dispersion.isFinite,
+                (0...Tuning.maximumBurstMAD).contains(baseline.dispersion),
+                baseline.burstCount >= Tuning.requiredCalibrationBursts,
+                baseline.featureVersion == Baseline.currentFeatureVersion
+            else {
+                return BurstVerdict(evidence: .noEval, summary: summary, reason: "baseline invalid")
+            }
+            guard let captureConfiguration else {
+                return BurstVerdict(evidence: .noEval, summary: summary, reason: "capture configuration unavailable")
+            }
+            guard baseline.captureConfiguration == captureConfiguration else {
+                return BurstVerdict(evidence: .noEval, summary: summary, reason: "capture configuration changed")
+            }
+            validatedBaseline = baseline
+        } else {
+            validatedBaseline = nil
+        }
+
         // 머리는 감지됐지만 정상 자세를 확인할 수 없는 프레임(턱 괴기·머리 처짐·어깨 미신뢰 등)이
-        // 버스트의 과반이면 판정 불가(noEval)가 아니라 비정상 자세 증거다. 사람이 없는 경우만 noEval로 남긴다.
+        // 버스트의 과반이면 판정 불가(noEval)가 아니라 비정상 자세 증거다. 사람 부재·기술적 실패는 noEval로 남긴다.
         // 과반 조건은 사람 부재(noSubject) 프레임이 섞인 버스트가 소수 프레임만으로 비정상이 되는 것을 막는다.
         let unassessableCount = frames.filter { frame in
             guard let reason = frame.analysis.exclusionReason else { return false }
@@ -75,14 +99,8 @@ public struct BurstProcessor: Sendable {
         guard mad <= Tuning.maximumBurstMAD else {
             return BurstVerdict(evidence: .noEval, summary: summary, reason: "unstable burst")
         }
-        guard let baseline else {
+        guard let baseline = validatedBaseline else {
             return BurstVerdict(evidence: .noEval, summary: summary, reason: "baseline required")
-        }
-        guard let captureConfiguration else {
-            return BurstVerdict(evidence: .noEval, summary: summary, reason: "capture configuration unavailable")
-        }
-        guard baseline.captureConfiguration == captureConfiguration else {
-            return BurstVerdict(evidence: .noEval, summary: summary, reason: "capture configuration changed")
         }
 
         // 카메라·해상도·방향이 같아도 리드 각도나 착석 거리(책상 배치)가 바뀌면 feature 규모가 달라진다.
@@ -97,12 +115,13 @@ public struct BurstProcessor: Sendable {
         }
 
         let delta = feature - baseline.center
+        let distanceFromBaseline = abs(delta)
         let worsening = Tuning.worseningMargin(baselineDispersion: baseline.dispersion)
         let recovery = Tuning.recoveryMargin(baselineDispersion: baseline.dispersion)
-        if delta >= worsening {
+        if distanceFromBaseline >= worsening {
             return BurstVerdict(evidence: .worsened, summary: summary, baselineDelta: delta)
         }
-        if delta <= recovery {
+        if distanceFromBaseline <= recovery {
             return BurstVerdict(evidence: .normal, summary: summary, baselineDelta: delta)
         }
         return BurstVerdict(evidence: .insufficient, summary: summary, baselineDelta: delta, reason: "inside hysteresis band")
