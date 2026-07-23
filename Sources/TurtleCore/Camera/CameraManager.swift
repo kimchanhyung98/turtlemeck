@@ -29,6 +29,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var pendingFrameOutputs: [PendingFrameOutput] = []
     private var subjectSelector = UpperBodySubjectSelector()
     private var burstStartDate: Date?
+    private var lastBurstStartedAt: Date?
     private var isCollectingFrames = false
     private var enqueuedFrameCount = 0
     private var lastEnqueuedCollectionTime: Double?
@@ -41,6 +42,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var burstRunID = 0
     private var immediateCheckPending = false
     private var isPrewarmingModel = false
+    private var isScreenSleeping = false
+    private var isSessionInterrupted = false
 
     public override init() {
         super.init()
@@ -48,6 +51,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self,
             selector: #selector(sessionInterrupted),
             name: AVCaptureSession.wasInterruptedNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sessionInterruptionEnded),
+            name: AVCaptureSession.interruptionEndedNotification,
             object: nil
         )
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -66,6 +75,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     public static func authorizationAction(for status: AVAuthorizationStatus) -> CameraAuthorizationAction {
@@ -81,11 +91,20 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         receivedFrameCount == 0 ? .blocked(.unavailable) : .process
     }
 
+    public static func calibrationRejectReason(for reason: CameraBlockReason) -> CalibrationRejectReason {
+        switch reason {
+        case .permissionDenied: .cameraPermissionDenied
+        case .unavailable: .cameraUnavailable
+        }
+    }
+
     public func start(settings: Settings) {
         queue.async {
             self.settings = settings
             self.isRunning = true
-            self.scheduleNextBurst(after: 0)
+            self.scheduleNextBurst(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: self.lastBurstStartedAt
+            ))
         }
     }
 
@@ -119,10 +138,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.scheduledWorkItem = nil
             if self.burstStartDate != nil {
                 self.session?.stopRunning()
-                self.invalidateCurrentBurst()
             }
+            self.invalidateCurrentBurst()
             self.immediateCheckPending = true
-            self.performBurst()
+            self.scheduleImmediateCheck(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: self.lastBurstStartedAt
+            ))
         }
     }
 
@@ -136,8 +157,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self.scheduledWorkItem = nil
             if self.burstStartDate != nil {
                 self.session?.stopRunning()
-                self.invalidateCurrentBurst()
             }
+            self.invalidateCurrentBurst()
             self.immediateCheckPending = false
             self.calibrationSummaries.removeAll()
             self.calibrationAttempts = 0
@@ -148,7 +169,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     private func scheduleNextBurst(after seconds: Int) {
         scheduledWorkItem?.cancel()
-        guard isRunning else { return }
+        guard isRunning, !isScreenSleeping, !isSessionInterrupted else { return }
         // 즉시 실행은 "다음 점검 0초 후" 안내가 무의미하므로 알리지 않는다.
         if seconds > 0 { emitNextCheck(seconds) }
         let item = DispatchWorkItem { [weak self] in self?.performBurst() }
@@ -156,8 +177,27 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
     }
 
+    private func scheduleCalibrationRetry(completingRunID: Int? = nil) {
+        if let completingRunID, burstRunID != completingRunID { return }
+        scheduledWorkItem?.cancel()
+        guard calibrationCompletion != nil, !isScreenSleeping, !isSessionInterrupted else { return }
+        let item = DispatchWorkItem { [weak self] in self?.performBurst() }
+        scheduledWorkItem = item
+        queue.asyncAfter(deadline: .now() + CameraBurstTiming.calibrationRetryDelaySeconds, execute: item)
+    }
+
+    private func scheduleImmediateCheck(after seconds: Int) {
+        scheduledWorkItem?.cancel()
+        guard immediateCheckPending, !isScreenSleeping, !isSessionInterrupted else { return }
+        if seconds > 0 { emitNextCheck(seconds) }
+        let item = DispatchWorkItem { [weak self] in self?.performBurst() }
+        scheduledWorkItem = item
+        queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
+    }
+
     private func performBurst() {
-        guard burstStartDate == nil, isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
+        guard !isScreenSleeping, !isSessionInterrupted, burstStartDate == nil,
+              isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
         switch Self.authorizationAction(for: AVCaptureDevice.authorizationStatus(for: .video)) {
         case .start:
             startAuthorizedBurst()
@@ -174,6 +214,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func startAuthorizedBurst() {
+        guard !isScreenSleeping, !isSessionInterrupted, burstStartDate == nil,
+              isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
         do {
             try configureSessionIfNeeded()
             if !depthProvider.isModelLoadResolved {
@@ -188,7 +230,9 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 ? debugStore.prepareRun()
                 : nil
             session?.startRunning()
-            burstStartDate = Date()
+            let startedAt = Date()
+            burstStartDate = startedAt
+            lastBurstStartedAt = startedAt
             isCollectingFrames = true
             enqueuedFrameCount = 0
             lastEnqueuedCollectionTime = nil
@@ -207,12 +251,17 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private func prewarmModelThenStart() {
         guard !isPrewarmingModel else { return }
         isPrewarmingModel = true
+        let lifecycleID = burstRunID
         let provider = depthProvider
         analysisQueue.async { [weak self] in
             guard let manager = self else { return }
             _ = provider.prewarm()
             manager.queue.async {
+                guard manager.burstRunID == lifecycleID else { return }
                 manager.isPrewarmingModel = false
+                guard manager.isRunning || manager.calibrationCompletion != nil || manager.immediateCheckPending else {
+                    return
+                }
                 manager.startAuthorizedBurst()
             }
         }
@@ -252,6 +301,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         case .blocked(let reason):
             finishBlockedBurst(
                 reason,
+                runID: runID,
                 startedAt: completedBurstStartDate,
                 summary: summary,
                 frames: completedFrames,
@@ -282,9 +332,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                     baseline: settings.baseline,
                     frameOutputs: completedFrameOutputs,
                     afterOutput: {
-                        self.queue.asyncAfter(deadline: .now() + CameraBurstTiming.calibrationRetryDelaySeconds) {
-                            self.performBurst()
-                        }
+                        self.scheduleCalibrationRetry(completingRunID: runID)
                     }
                 )
                 return
@@ -309,7 +357,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             // 보정 실패는 수동 보정 전까지 다음 점검을 예약하지 않는다.
             let afterOutput: @Sendable () -> Void
             if case .accepted = result {
-                afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+                afterOutput = {
+                    self.scheduleFollowingBurstIfNeeded(
+                        startedAt: completedBurstStartDate,
+                        completingRunID: runID
+                    )
+                }
             } else {
                 afterOutput = {}
             }
@@ -349,7 +402,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             if productState == .needsCalibration {
                 afterOutput = {}
             } else {
-                afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+                afterOutput = {
+                    self.scheduleFollowingBurstIfNeeded(
+                        startedAt: completedBurstStartDate,
+                        completingRunID: runID
+                    )
+                }
             }
             deliverDiagnostic(
                 diagnostic,
@@ -533,21 +591,25 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func failToStart(_ reason: CameraBlockReason) {
-        let wasCalibrating = calibrationCompletion != nil
+        let completion = calibrationCompletion
         calibrationCompletion = nil
         calibrationSummaries.removeAll()
         calibrationAttempts = 0
-        emitBlocked(reason)
         immediateCheckPending = false
-        if wasCalibrating {
+        if let completion {
             isRunning = false
+            _ = resolveCalibration(.rejected(Self.calibrationRejectReason(for: reason)), completion: completion)
         } else if isRunning {
+            emitBlocked(reason)
             scheduleNextBurst(after: settings.checkIntervalSeconds)
+        } else {
+            emitBlocked(reason)
         }
     }
 
     private func finishBlockedBurst(
         _ reason: CameraBlockReason,
+        runID: Int,
         startedAt: Date,
         summary: BurstSummary,
         frames: [TimedFrame],
@@ -562,7 +624,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             calibrationCompletion = nil
             calibrationSummaries.removeAll()
             calibrationAttempts = 0
-            let result = CalibrationResult.rejected(.cameraUnavailable)
+            let result = CalibrationResult.rejected(Self.calibrationRejectReason(for: reason))
             calibrationResult = result
             productState = resolveCalibration(result, completion: completion)
         } else {
@@ -584,7 +646,9 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         if wasCalibrating {
             afterOutput = {}
         } else {
-            afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: startedAt) }
+            afterOutput = {
+                self.scheduleFollowingBurstIfNeeded(startedAt: startedAt, completingRunID: runID)
+            }
         }
         deliverDiagnostic(
             diagnostic,
@@ -664,6 +728,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
         let store = debugStore
         let runner = localAnalysisRunner
+        queue.async(execute: afterOutput)
         outputQueue.async {
             var completed = diagnostic
             for frame in frameOutputs {
@@ -685,15 +750,14 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             )
             if !path.isEmpty { completed.debugArtifactPath = path }
             self.emitDiagnostic(completed)
-            self.queue.async(execute: afterOutput)
             if runner.isEnabled, !path.isEmpty {
                 self.localAnalysisQueue.async { runner.run(commonSessionPath: path) }
             }
         }
     }
 
-    private func scheduleFollowingBurstIfNeeded(startedAt: Date) {
-        guard isRunning else { return }
+    private func scheduleFollowingBurstIfNeeded(startedAt: Date, completingRunID: Int) {
+        guard burstRunID == completingRunID, isRunning else { return }
         scheduleNextBurst(after: CameraBurstTiming.remainingCheckDelay(
             configuredSeconds: settings.checkIntervalSeconds,
             startedAt: startedAt
@@ -709,7 +773,10 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         return burstRunID
     }
 
-    private func invalidateCurrentBurst() {
+    private func invalidateCurrentBurst(
+        preservingCalibration: Bool = false,
+        preservingImmediateCheck: Bool = false
+    ) {
         burstRunID += 1
         burstStartDate = nil
         isCollectingFrames = false
@@ -718,11 +785,15 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         currentDebugSession = nil
         frames.removeAll()
         pendingFrameOutputs.removeAll()
-        immediateCheckPending = false
+        if !preservingImmediateCheck {
+            immediateCheckPending = false
+        }
         isPrewarmingModel = false
-        calibrationCompletion = nil
-        calibrationSummaries.removeAll()
-        calibrationAttempts = 0
+        if !preservingCalibration {
+            calibrationCompletion = nil
+            calibrationSummaries.removeAll()
+            calibrationAttempts = 0
+        }
     }
 
     private func resolveVerdict(_ verdict: BurstVerdict) -> PostureState {
@@ -775,24 +846,62 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     @objc private func sessionInterrupted() {
         queue.async {
+            self.isSessionInterrupted = true
+            self.scheduledWorkItem?.cancel()
+            self.scheduledWorkItem = nil
             self.session?.stopRunning()
             self.emitCaptureActivity(false)
-            self.invalidateCurrentBurst()
-            if self.isRunning { self.scheduleNextBurst(after: self.settings.checkIntervalSeconds) }
+            let wasCalibrating = self.calibrationCompletion != nil
+            self.invalidateCurrentBurst(
+                preservingCalibration: wasCalibrating,
+                preservingImmediateCheck: self.immediateCheckPending
+            )
+        }
+    }
+
+    @objc private func sessionInterruptionEnded() {
+        queue.async {
+            self.isSessionInterrupted = false
+            self.session?.stopRunning()
+            self.emitCaptureActivity(false)
+            if self.calibrationCompletion != nil {
+                self.scheduleCalibrationRetry()
+            } else if self.immediateCheckPending {
+                self.scheduleImmediateCheck(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                    lastStartedAt: self.lastBurstStartedAt
+                ))
+            } else if self.isRunning {
+                self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
+            }
         }
     }
 
     @objc private func screensDidSleep() {
         queue.async {
+            self.isScreenSleeping = true
+            self.scheduledWorkItem?.cancel()
+            self.scheduledWorkItem = nil
             self.session?.stopRunning()
             self.emitCaptureActivity(false)
-            self.invalidateCurrentBurst()
+            self.invalidateCurrentBurst(
+                preservingCalibration: self.calibrationCompletion != nil,
+                preservingImmediateCheck: self.immediateCheckPending
+            )
         }
     }
 
     @objc private func screensDidWake() {
         queue.async {
-            if self.isRunning { self.scheduleNextBurst(after: self.settings.checkIntervalSeconds) }
+            self.isScreenSleeping = false
+            if self.calibrationCompletion != nil {
+                self.scheduleCalibrationRetry()
+            } else if self.immediateCheckPending {
+                self.scheduleImmediateCheck(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                    lastStartedAt: self.lastBurstStartedAt
+                ))
+            } else if self.isRunning {
+                self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
+            }
         }
     }
 }

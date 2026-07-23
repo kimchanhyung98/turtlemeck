@@ -35,7 +35,7 @@ PoseNet의 모델·decoder 계약은 [`../../algorithm/apple-posenet/`](../../al
 - `noEval`과 경계 사이의 불충분 증거는 모두 "판단을 확정할 수 없는 버스트"로 세어, 정해진 횟수 이상 이어지면 유지 중인 제품 상태를 `noEval`로 전환한다. 불충분 증거는 악화·회복 연속 횟수에는 포함하지 않는다.
 - 보정이 진행 중일 때의 즉시 점검 요청은 무시한다. 받으면 즉시 점검 버스트가 보정 표본으로 흡수되기 때문이다.
 - 저장된 baseline이 없으면 앱 시작 시 기존 보정 경로를 자동 실행한다. 별도 자동 재보정이나 일상 결과 기반 baseline 갱신은 하지 않는다.
-- 악화는 정기 점검 두 번이 연속으로 악화일 때 확정한다. 첫 악화 뒤 별도 확인 타이머를 만들지 않고, 이전 캡처 시작 시각을 기준으로 설정된 정기 점검 주기를 그대로 사용한다.
+- 악화는 최소 15초 간격의 점검 두 번이 연속으로 악화일 때 확정한다. 첫 악화 뒤 별도 확인 타이머를 만들지 않고 자동 점검은 이전 캡처 시작 시각 기준의 설정 주기를 사용한다. `확인`으로 앞당긴 점검도 15초 하한과 같은 상태 지속성 판정을 사용한다.
 
 ## 출력 계약
 
@@ -45,7 +45,7 @@ PoseNet의 모델·decoder 계약은 [`../../algorithm/apple-posenet/`](../../al
 - 파일 번호는 `1`부터 시작하고 자릿수를 채우지 않는다.
 - debug 화면은 이번 버스트 평가와 유지 중인 제품 상태를 구분하고, 프레임별 landmark·ROI·depth 요약·feature·품질·제외 사유와 단계별 처리 시간을 표시한다.
 - `session.json`은 raw 버스트 평가, 지속성 적용 후 제품 상태, 프레임 진단, baseline delta와 단계별 처리 시간을 함께 기록한다.
-- 여러 버스트를 사용하는 보정에서도 각 timestamp 디렉토리에 `session.json`을 기록한다. 중간 버스트의 제품 상태는 `calibrating`이다.
+- 보정 수집이 재시도될 때도 각 timestamp 디렉토리에 `session.json`을 기록한다. 중간 시도의 제품 상태는 `calibrating`이다.
 - local AI는 `TURTLEMECK_LOCAL_AI_EXECUTABLE`이 절대 경로로 설정된 경우에만 실행한다. 선택 인자는 `TURTLEMECK_LOCAL_AI_ARGUMENTS_JSON`의 JSON 문자열 배열로 전달한다.
 - local 프로세스는 요청문을 stdin으로 받고 stdout/stderr를 같은 timestamp의 `debug/{timestamp}-local/analysis.md`에 기록한다. 실패와 응답은 공통 판정에 영향을 주지 않는다.
 - local AI에는 실제로 생성된 `capture-{n}.png`와 `depth-{n}.png` 중 번호가 같은 쌍만 전달한다. 품질 실패로 depth가 없는 프레임 하나가 나머지 유효 쌍의 분석을 막지 않는다.
@@ -112,4 +112,4 @@ Tests/run.sh
 swift build --disable-sandbox
 ```
 
-테스트는 affine scale·shift 불변성, 품질 실패, 머리 기준 측면 ROI와 기존 턱 괴기·머리 처짐 방어, 화면 경계 ROI clipping, 머리 anchor 이상치, 2~5장 버스트 집계, 여러 보정 버스트, 상태 지속성, 최소 점검 주기, 보정 안내, debug 파일명과 `session.json`의 제품 상태·프레임 진단·처리 시간, local RGB-depth 쌍 선택을 직접 확인한다. 실제 카메라 통합 경로는 위 장치 검증으로 별도 확인했다.
+테스트는 affine scale·shift 불변성, 품질 실패, 머리 기준 측면 ROI와 기존 턱 괴기·머리 처짐 방어, 화면 경계 ROI clipping, 머리 anchor 이상치, 2~5장 버스트 집계, 보정 표본 수용·거절, 상태 지속성, 최소 점검 주기, 보정 안내, debug 파일명과 `session.json`의 제품 상태·프레임 진단·처리 시간, local RGB-depth 쌍 선택을 직접 확인한다. 카메라 수명주기와 10초·최대 3회의 보정 재시도 오케스트레이션은 현재 직접 테스트 seam이 없어 코드 검토와 장치 검증으로 확인한다.

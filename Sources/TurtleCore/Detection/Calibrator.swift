@@ -1,6 +1,7 @@
 import Foundation
 
 public enum CalibrationRejectReason: String, Codable, Equatable, Sendable {
+    case cameraPermissionDenied
     case cameraUnavailable
     case noReliableBursts
     case unstableBaseline

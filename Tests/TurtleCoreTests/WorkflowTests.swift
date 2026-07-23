@@ -286,6 +286,11 @@ func registerWorkflowTests() {
     TestRegistry.test("calibration posture guidance does not invent a chin prop") {
         let guidance = AppModel.calibrationGuidance(for: .postureUnassessable)
         try expectEqual(guidance, "바른 자세로 ‘보정’을 눌러 주세요", "the aggregate posture reason needs aggregate guidance")
+        try expectEqual(
+            AppModel.calibrationGuidance(for: .cameraPermissionDenied),
+            "카메라 권한을 허용한 뒤 ‘보정’을 눌러 주세요",
+            "camera permission rejection needs permission-specific guidance"
+        )
         try expect(!guidance.contains("턱"), "postureUnassessable does not prove a chin prop")
     }
 
@@ -337,6 +342,34 @@ func registerWorkflowTests() {
             )
             try expectEqual(evidence(at: direction * worsening), .worsened, "the worsening boundary must be inclusive in both directions")
         }
+    }
+
+    TestRegistry.test("hysteresis margins remain separated for accepted baseline dispersion") {
+        for dispersion in [0, 0.1, 0.2, Tuning.maximumBurstMAD] {
+            let recovery = Tuning.recoveryMargin(baselineDispersion: dispersion)
+            let worsening = Tuning.worseningMargin(baselineDispersion: dispersion)
+            try expect(recovery < worsening, "recovery must remain below worsening at dispersion \(dispersion)")
+            try expectApprox(worsening - recovery, 0.10, "minimum hysteresis width")
+        }
+
+        let summary = BurstSummary(
+            totalFrameCount: 5,
+            validFrameCount: 5,
+            medianFeature: 0.2,
+            featureMAD: 0.2,
+            exclusionCounts: [:]
+        )
+        guard case .accepted(let baseline) = Calibrator().capture(
+            from: [summary],
+            captureConfiguration: testCaptureConfiguration
+        ) else {
+            throw testFailure("reachable noisy baseline must be accepted")
+        }
+        try expect(
+            Tuning.recoveryMargin(baselineDispersion: baseline.dispersion) <
+                Tuning.worseningMargin(baselineDispersion: baseline.dispersion),
+            "calibrated baseline must retain hysteresis"
+        )
     }
 
     TestRegistry.test("invalid baselines fail closed and request recalibration") {
@@ -795,6 +828,11 @@ func registerWorkflowTests() {
         try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .good, "single no-eval preserves state")
         try expectEqual(machine.apply(simpleVerdict(.insufficient)).state, .good, "hysteresis band preserves state")
         try expectEqual(machine.apply(simpleVerdict(.insufficient)).state, .noEval, "all unavailable evidence expires stale state")
+
+        machine.reset(to: .bad)
+        try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .bad, "single no-eval preserves bad state")
+        try expectEqual(machine.apply(simpleVerdict(.insufficient)).state, .bad, "second unavailable burst preserves bad state")
+        try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .noEval, "bad state also expires after unavailable evidence")
     }
 
     TestRegistry.test("debug artifacts use timestamp session and unpadded frame names") {

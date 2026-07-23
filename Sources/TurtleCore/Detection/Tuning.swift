@@ -48,6 +48,6 @@ public enum Tuning {
     }
 
     public static func recoveryMargin(baselineDispersion: Double) -> Double {
-        max(0.25, baselineDispersion * 3)
+        max(0.25, worseningMargin(baselineDispersion: baselineDispersion) - 0.10)
     }
 }

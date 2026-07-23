@@ -57,6 +57,23 @@ func registerProductTests() {
             false,
             "sub-interval frame skipped"
         )
+        let startedAt = Date(timeIntervalSince1970: 100)
+        try expectEqual(
+            CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: startedAt,
+                now: startedAt.addingTimeInterval(0.1)
+            ),
+            CameraBurstTiming.minimumSessionIntervalSeconds,
+            "manual checks must wait for the minimum session interval"
+        )
+        try expectEqual(
+            CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: startedAt,
+                now: startedAt.addingTimeInterval(Double(CameraBurstTiming.minimumSessionIntervalSeconds))
+            ),
+            0,
+            "manual checks can start at the minimum interval boundary"
+        )
     }
 
     TestRegistry.test("next regular check is measured from the previous capture start") {
@@ -92,6 +109,16 @@ func registerProductTests() {
         try expectEqual(CameraManager.authorizationAction(for: .authorized), .start, "authorized")
         try expectEqual(CameraManager.authorizationAction(for: .notDetermined), .requestAccess, "request")
         try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked(.permissionDenied), "denied")
+        try expectEqual(
+            CameraManager.calibrationRejectReason(for: .permissionDenied),
+            .cameraPermissionDenied,
+            "calibration must preserve a camera permission failure"
+        )
+        try expectEqual(
+            CameraManager.calibrationRejectReason(for: .unavailable),
+            .cameraUnavailable,
+            "calibration must preserve a camera availability failure"
+        )
     }
 
     TestRegistry.test("camera burst with no delivered frames is unavailable") {
@@ -125,6 +152,33 @@ func registerProductTests() {
         stats.recordDuration(state: .bad, seconds: 10)
         try store.save([stats])
         try expectEqual(try store.load(), [stats], "stats round trip")
+    }
+
+    TestRegistry.test("stats updates preserve history and corrupt data") {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("turtlemeck-tests-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("stats.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = StatsStore(fileURL: url)
+        let earlier = DailyPostureStats(day: "2026-07-22", goodSeconds: 120)
+        let current = DailyPostureStats(day: "2026-07-23", badSeconds: 30)
+        try store.save([earlier])
+        try store.save(current)
+        try expectEqual(try store.load(), [earlier, current], "daily update must preserve prior days")
+        let updated = DailyPostureStats(day: current.day, badSeconds: 45)
+        try store.save(updated)
+        try expectEqual(try store.load(), [earlier, updated], "daily update must replace rather than duplicate the same day")
+
+        let corruptData = Data("{not-json".utf8)
+        try corruptData.write(to: url, options: [.atomic])
+        var rejectedCorruptHistory = false
+        do {
+            try store.save(updated)
+        } catch {
+            rejectedCorruptHistory = true
+        }
+        try expect(rejectedCorruptHistory, "corrupt history must stop the update")
+        try expectEqual(try Data(contentsOf: url), corruptData, "corrupt history must not be overwritten")
     }
 
     TestRegistry.test("missing Core ML model fails closed") {

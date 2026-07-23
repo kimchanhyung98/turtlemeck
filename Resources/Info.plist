@@ -29,7 +29,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>turtlemeck briefly uses the built-in camera to estimate posture on device. Frames are not sent and are saved locally only when you enable Debug Mode.</string>
+	<string>turtlemeck briefly uses the built-in camera to estimate posture on device. Frames are not sent and are saved locally only when you explicitly enable debug or local analysis output.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 kimchanhyung98</string>
 </dict>

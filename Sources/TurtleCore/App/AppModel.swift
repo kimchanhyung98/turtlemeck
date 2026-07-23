@@ -14,17 +14,14 @@ public final class AppModel: ObservableObject {
     @Published public var settings: Settings {
         didSet {
             var persisted = settings
-            if AppLaunchFlags.debugEnabled {
-                // --debug 주입 값은 세션 한정이므로 저장 시 기존 영속 값으로 되돌린다.
-                persisted.debugEnabled = persistedDebugEnabled
-            }
+            // debug 출력은 명시적인 launch flag로만 켜고 UserDefaults에는 남기지 않는다.
+            persisted.debugEnabled = false
             settingsStore.save(persisted)
             cameraManager.update(settings: settings)
         }
     }
 
     private let settingsStore = SettingsStore()
-    private let persistedDebugEnabled: Bool
     private let statsStore = StatsStore()
     private let cameraManager = CameraManager()
     private var stateMachine = PostureStateMachine()
@@ -35,13 +32,13 @@ public final class AppModel: ObservableObject {
     private var nextCheckDate: Date?
 
     public init() {
-        // --debug 주입은 세션 한정: didSet 저장 시 persistedDebugEnabled로 되돌려 영속을 막는다.
         var loadedSettings = settingsStore.load()
-        persistedDebugEnabled = loadedSettings.debugEnabled
-        if AppLaunchFlags.debugEnabled {
-            loadedSettings.debugEnabled = true
-        }
+        loadedSettings.launchAtLogin = LaunchAtLogin.isEnabled
+        loadedSettings.debugEnabled = AppLaunchFlags.debugEnabled
         settings = loadedSettings
+        var persistedSettings = loadedSettings
+        persistedSettings.debugEnabled = false
+        settingsStore.save(persistedSettings)
         todayStats = (try? statsStore.load().first { $0.day == Self.todayKey() }) ?? DailyPostureStats(day: Self.todayKey())
 
         cameraManager.onVerdict = { [weak self] verdict in
@@ -165,6 +162,7 @@ public final class AppModel: ObservableObject {
         }
         guard postureState != .calibrating else { return }
 
+        recordElapsedStats()
         postureState = .calibrating
         statusText = "기준 자세 보정 중"
         setNextCheck("바른 자세를 유지해 주세요")
@@ -198,6 +196,9 @@ public final class AppModel: ObservableObject {
     }
 
     private func handle(_ verdict: BurstVerdict) -> PostureState {
+        guard !isPaused, postureState != .calibrating else {
+            return postureState
+        }
         recordElapsedStats()
         let transition = stateMachine.apply(verdict)
         if settings.baseline == nil || verdict.requiresCalibration {
@@ -244,6 +245,7 @@ public final class AppModel: ObservableObject {
     }
 
     private func startNextCheckCountdown(seconds: Int) {
+        guard !isPaused, postureState != .calibrating else { return }
         stopNextCheckCountdown()
         nextCheckDate = Date().addingTimeInterval(Double(seconds))
         updateNextCheckCountdown()
@@ -298,16 +300,13 @@ public final class AppModel: ObservableObject {
     }
 
     private func saveStats() {
-        var allStats = (try? statsStore.load()) ?? []
-        if let index = allStats.firstIndex(where: { $0.day == todayStats.day }) {
-            allStats[index] = todayStats
-        } else {
-            allStats.append(todayStats)
-        }
-        try? statsStore.save(allStats)
+        try? statsStore.save(todayStats)
     }
 
     private func handleCalibration(_ result: CalibrationResult) -> PostureState {
+        guard !isPaused, postureState == .calibrating else {
+            return postureState
+        }
         switch result {
         case .accepted(let baseline):
             settings.baseline = baseline
@@ -320,6 +319,12 @@ public final class AppModel: ObservableObject {
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
             setNextCheck(Self.calibrationGuidance(for: .unstableBaseline))
+            cameraManager.stop()
+        case .rejected(.cameraPermissionDenied):
+            postureState = .blocked
+            stateMachine.reset(to: .blocked)
+            statusText = "카메라 권한 필요"
+            setNextCheck(Self.calibrationGuidance(for: .cameraPermissionDenied))
             cameraManager.stop()
         case .rejected(.cameraUnavailable):
             postureState = .blocked
@@ -347,6 +352,8 @@ public final class AppModel: ObservableObject {
         switch reason {
         case .unstableBaseline:
             "바른 자세로 ‘보정’을 눌러 주세요"
+        case .cameraPermissionDenied:
+            "카메라 권한을 허용한 뒤 ‘보정’을 눌러 주세요"
         case .cameraUnavailable:
             "카메라를 사용할 수 있는 상태로 만든 뒤 ‘보정’을 눌러 주세요"
         case .noReliableBursts:
@@ -357,6 +364,8 @@ public final class AppModel: ObservableObject {
     }
 
     private func handleBlocked(reason: CameraBlockReason) {
+        guard !isPaused, postureState != .calibrating else { return }
+        recordElapsedStats()
         postureState = .blocked
         stateMachine.reset(to: .blocked)
         switch reason {

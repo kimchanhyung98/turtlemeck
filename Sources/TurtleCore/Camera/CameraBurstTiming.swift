@@ -1,6 +1,7 @@
 import Foundation
 
 public enum CameraBurstTiming {
+    public static let minimumSessionIntervalSeconds = 15
     public static let warmupSeconds = 0.8
     public static let collectionSeconds = 2.4
     public static let processingGraceSeconds = 2.0
@@ -27,5 +28,15 @@ public enum CameraBurstTiming {
         now: Date = Date()
     ) -> Int {
         max(0, Int(ceil(Double(configuredSeconds) - now.timeIntervalSince(startedAt))))
+    }
+
+    public static func remainingMinimumSessionDelay(
+        lastStartedAt: Date?,
+        now: Date = Date()
+    ) -> Int {
+        guard let lastStartedAt else { return 0 }
+        return max(0, Int(ceil(
+            Double(minimumSessionIntervalSeconds) - now.timeIntervalSince(lastStartedAt)
+        )))
     }
 }

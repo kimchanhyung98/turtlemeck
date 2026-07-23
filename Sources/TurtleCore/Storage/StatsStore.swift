@@ -96,4 +96,14 @@ public final class StatsStore {
         let data = try JSONEncoder().encode(stats)
         try data.write(to: fileURL, options: [.atomic])
     }
+
+    public func save(_ stat: DailyPostureStats) throws {
+        var stats = try load()
+        if let index = stats.firstIndex(where: { $0.day == stat.day }) {
+            stats[index] = stat
+        } else {
+            stats.append(stat)
+        }
+        try save(stats)
+    }
 }
