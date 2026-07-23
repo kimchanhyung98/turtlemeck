@@ -40,6 +40,11 @@ vendor/
 target/
 hs_err_pid*
 
+# KNOU 제출 개인정보
+docs/knou/participants.env
+docs/knou/turtlemeck-application.docx
+docs/knou/turtlemeck-application.pdf
+
 # env
 .env
 .env.bak
