@@ -319,28 +319,41 @@ public final class AppModel: ObservableObject {
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 유지한 뒤 다시 시도"
-            setNextCheck("바른 자세로 ‘보정’을 눌러 주세요")
+            setNextCheck(Self.calibrationGuidance(for: .unstableBaseline))
             cameraManager.stop()
         case .rejected(.cameraUnavailable):
             postureState = .blocked
             stateMachine.reset(to: .blocked)
             statusText = "카메라 사용 불가"
-            setNextCheck("카메라를 사용할 수 있는 상태로 만든 뒤 ‘보정’을 눌러 주세요")
+            setNextCheck(Self.calibrationGuidance(for: .cameraUnavailable))
             cameraManager.stop()
         case .rejected(.noReliableBursts):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세 신호 부족"
-            setNextCheck("카메라 구도를 확인한 뒤 ‘보정’을 눌러 주세요")
+            setNextCheck(Self.calibrationGuidance(for: .noReliableBursts))
             cameraManager.stop()
         case .rejected(.postureUnassessable):
             postureState = .needsCalibration
             stateMachine.reset(to: .needsCalibration)
             statusText = "보정 실패: 자세를 확인할 수 없음"
-            setNextCheck("턱 괴기 없이 바른 자세로 ‘보정’을 눌러 주세요")
+            setNextCheck(Self.calibrationGuidance(for: .postureUnassessable))
             cameraManager.stop()
         }
         return postureState
+    }
+
+    public nonisolated static func calibrationGuidance(for reason: CalibrationRejectReason) -> String {
+        switch reason {
+        case .unstableBaseline:
+            "바른 자세로 ‘보정’을 눌러 주세요"
+        case .cameraUnavailable:
+            "카메라를 사용할 수 있는 상태로 만든 뒤 ‘보정’을 눌러 주세요"
+        case .noReliableBursts:
+            "카메라 구도를 확인한 뒤 ‘보정’을 눌러 주세요"
+        case .postureUnassessable:
+            "바른 자세로 ‘보정’을 눌러 주세요"
+        }
     }
 
     private func handleBlocked(reason: CameraBlockReason) {

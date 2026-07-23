@@ -155,6 +155,140 @@ func registerWorkflowTests() {
         try expectEqual(selector.select(from: [headless]), .rejected(.noSubject), "no reliable head anchor means no subject")
     }
 
+    TestRegistry.test("side-view analysis follows the stable head when the far shoulder hits the chair") {
+        let analyzer = PostureFrameAnalyzer()
+        let map = depthMap { x, y in Double(y) + Double(x) * 0.2 }
+        let frames = [0.687, 0.689, 0.691, 0.692, 0.690].enumerated().map { offset, farShoulderY in
+            var landmarks = capturedSideLandmarks(farShoulderY: farShoulderY)
+            landmarks.rightShoulder?.confidence = 0.22
+            let analysis = analyzer.analyze(
+                landmarks: landmarks,
+                depthMap: map
+            )
+            return TimedFrame(time: Double(offset) * 0.4, analysis: analysis, index: offset + 1)
+        }
+
+        try expect(frames.allSatisfy(\.analysis.isValid), "stable side-view head and adjacent shoulder must not be rejected because the far shoulder hits the chair")
+        let summary = BurstProcessor().summarize(frames)
+        try expectEqual(summary.validFrameCount, 5, "all captured side-view frames must remain usable")
+        guard case .accepted = Calibrator().capture(from: [summary], captureConfiguration: testCaptureConfiguration) else {
+            throw testFailure("stable side-view calibration must be accepted")
+        }
+
+        var dropped = capturedSideLandmarks(farShoulderY: 0.69)
+        for keyPath in [\PoseLandmarks.nose, \PoseLandmarks.leftEye, \PoseLandmarks.rightEye, \PoseLandmarks.rightEar] {
+            dropped[keyPath: keyPath]?.y = 0.70
+        }
+        try expectEqual(
+            analyzer.analyze(landmarks: dropped, depthMap: map).exclusionReason,
+            .headDropped,
+            "the head-relative side path must still reject an actually dropped head"
+        )
+
+        var chinProp = validLandmarks()
+        chinProp.leftEar?.confidence = 0.02
+        chinProp.leftShoulder?.confidence = 0.31
+        for keyPath in [\PoseLandmarks.nose, \PoseLandmarks.leftEye, \PoseLandmarks.rightEye, \PoseLandmarks.leftEar, \PoseLandmarks.rightEar] {
+            chinProp[keyPath: keyPath]?.x += 0.08
+        }
+        try expectEqual(
+            analyzer.analyze(landmarks: chinProp, depthMap: map).exclusionReason,
+            .missingShoulder,
+            "a side cue must not hide a low-confidence shoulder when both shoulders are level"
+        )
+
+        var misleadingChair = capturedSideLandmarks(farShoulderY: 0.69)
+        misleadingChair.rightShoulder?.x = 0.37
+        let chairGeometry = try unwrap(misleadingChair.upperBodyGeometry, "side geometry missing")
+        try expectApprox(
+            chairGeometry.shoulderY,
+            0.83,
+            "the elevated chair point must not move the torso ROI even when its x is closer to the head"
+        )
+        try expect(
+            analyzer.analyze(landmarks: misleadingChair, depthMap: map).isValid,
+            "an elevated chair point closer in x must not make an upright side view unassessable"
+        )
+
+        var centeredSide = validLandmarks()
+        centeredSide.leftEar?.confidence = 0.02
+        let centeredGeometry = try unwrap(centeredSide.upperBodyGeometry, "centered side geometry missing")
+        try expect(
+            centeredGeometry.isHeadAnchoredSide,
+            "a one-ear side cue with assessable shoulders must not switch geometry at a per-frame closeness boundary"
+        )
+
+        var slumpedSide = capturedSideLandmarks(farShoulderY: 0.924)
+        slumpedSide.leftShoulder = Point2D(x: 0.47, y: 0.865, confidence: 0.78)
+        slumpedSide.rightShoulder = Point2D(x: 0.20, y: 0.924, confidence: 0.52)
+        slumpedSide.nose?.y = 0.73
+        slumpedSide.leftEye?.y = 0.649
+        slumpedSide.rightEye?.y = 0.649
+        slumpedSide.rightEar?.y = 0.64
+        let slumpedGeometry = try unwrap(slumpedSide.upperBodyGeometry, "slumped side geometry missing")
+        try expectApprox(
+            slumpedGeometry.shoulderY,
+            0.865,
+            "when both shoulder points agree, the head-adjacent shoulder must remain the side anchor"
+        )
+        try expectEqual(
+            analyzer.analyze(landmarks: slumpedSide, depthMap: map).exclusionReason,
+            .headDropped,
+            "the stable side geometry must not hide a slumped head when both shoulder points agree"
+        )
+
+        let steepSlump = PoseLandmarks(
+            nose: Point2D(x: 0.443, y: 0.687, confidence: 0.87),
+            leftEye: Point2D(x: 0.455, y: 0.611, confidence: 0.58),
+            rightEye: Point2D(x: 0.444, y: 0.595, confidence: 0.94),
+            leftEar: Point2D(x: 0.314, y: 0.536, confidence: 0.13),
+            rightEar: Point2D(x: 0.306, y: 0.544, confidence: 0.99),
+            leftShoulder: Point2D(x: 0.424, y: 0.825, confidence: 0.71),
+            rightShoulder: Point2D(x: 0.106, y: 0.936, confidence: 0.46)
+        )
+        let steepSlumpGeometry = try unwrap(steepSlump.upperBodyGeometry, "steep slump geometry missing")
+        try expectApprox(
+            steepSlumpGeometry.shoulderY,
+            0.936,
+            "the torso ROI may still use the lower shoulder"
+        )
+        try expectApprox(
+            steepSlumpGeometry.headShoulderY,
+            0.825,
+            "the head safety gate must use the head-adjacent shoulder"
+        )
+        try expectEqual(
+            analyzer.analyze(landmarks: steepSlump, depthMap: map).exclusionReason,
+            .headDropped,
+            "a large shoulder height difference must not hide a slumped head"
+        )
+
+        var occludedHeadShoulder = steepSlump
+        occludedHeadShoulder.leftShoulder?.confidence = 0.31
+        occludedHeadShoulder.rightShoulder?.confidence = 0.90
+        try expectEqual(
+            analyzer.analyze(landmarks: occludedHeadShoulder, depthMap: map).exclusionReason,
+            .missingShoulder,
+            "a high-confidence lower shoulder must not hide an occluded head-adjacent shoulder"
+        )
+
+        var noisyFarEar = capturedSideLandmarks(farShoulderY: 0.69)
+        noisyFarEar.leftEar?.confidence = Tuning.minimumLandmarkConfidence - 0.001
+        let belowTrackingThreshold = try unwrap(noisyFarEar.upperBodyGeometry, "side geometry below tracking threshold missing")
+        noisyFarEar.leftEar?.confidence = Tuning.minimumLandmarkConfidence
+        let atTrackingThreshold = try unwrap(noisyFarEar.upperBodyGeometry, "side geometry at tracking threshold missing")
+        try expect(
+            belowTrackingThreshold.isHeadAnchoredSide && atTrackingThreshold.isHeadAnchoredSide,
+            "a noisy far ear must not switch the side geometry at the shoulder tracking threshold"
+        )
+    }
+
+    TestRegistry.test("calibration posture guidance does not invent a chin prop") {
+        let guidance = AppModel.calibrationGuidance(for: .postureUnassessable)
+        try expectEqual(guidance, "바른 자세로 ‘보정’을 눌러 주세요", "the aggregate posture reason needs aggregate guidance")
+        try expect(!guidance.contains("턱"), "postureUnassessable does not prove a chin prop")
+    }
+
     TestRegistry.test("burst aggregates median and MAD before baseline comparison") {
         let frames = [0.1, 0.12, 0.11, 4.0, 0.09].enumerated().map { timedFrame(index: $0.offset + 1, feature: $0.element) }
         let baseline = Baseline(center: 0.1, dispersion: 0.02, burstCount: 3, captureConfiguration: testCaptureConfiguration)
@@ -709,9 +843,34 @@ func registerWorkflowTests() {
         try expectEqual(Statistics.median([]), nil, "empty input has no median")
         try expectApprox(try unwrap(Statistics.median([5, 1, 3]), "odd median"), 3, "odd count picks the middle value")
         try expectApprox(try unwrap(Statistics.median([4, 1, 3, 2]), "even median"), 2.5, "even count averages the middle pair")
+        try expectEqual(
+            Statistics.median([-0.05, 0.55]),
+            0.25,
+            "even median must preserve the burst path's exact average at a judgment boundary"
+        )
         try expectApprox(try unwrap(Statistics.percentile([1, 2], -1), "low fraction"), 1, "fraction clamps to 0")
         try expectApprox(try unwrap(Statistics.percentile([1, 2], 2), "high fraction"), 2, "fraction clamps to 1")
         try expectApprox(try unwrap(Statistics.interquartileRange([1, 2, 3, 4]), "IQR"), 1.5, "IQR uses linear interpolation")
+
+        let boundaryFrames = [
+            timedFrame(index: 1, feature: -0.05),
+            timedFrame(index: 2, feature: 0.55)
+        ]
+        let boundaryBaseline = Baseline(
+            center: 0,
+            dispersion: 0,
+            burstCount: 1,
+            captureConfiguration: testCaptureConfiguration
+        )
+        try expectEqual(
+            BurstProcessor().process(
+                boundaryFrames,
+                baseline: boundaryBaseline,
+                captureConfiguration: testCaptureConfiguration
+            ).evidence,
+            .normal,
+            "an exact recovery-boundary median must remain normal after statistics extraction"
+        )
     }
 
     TestRegistry.test("debug panel lines read the shared diagnostic") {
@@ -762,6 +921,21 @@ private func validLandmarks(centerX: Double = 0.5, shoulderWidth: Double = 0.4) 
         neck: point(centerX, 0.62),
         leftShoulder: point(centerX - shoulderWidth / 2, 0.84),
         rightShoulder: point(centerX + shoulderWidth / 2, 0.84)
+    )
+}
+
+private func capturedSideLandmarks(farShoulderY: Double) -> PoseLandmarks {
+    func point(_ x: Double, _ y: Double, confidence: Double = 0.95) -> Point2D {
+        Point2D(x: x, y: y, confidence: confidence)
+    }
+    return PoseLandmarks(
+        nose: point(0.46, 0.50),
+        leftEye: point(0.47, 0.45),
+        rightEye: point(0.41, 0.44),
+        leftEar: point(0.90, 0.55, confidence: 0.02),
+        rightEar: point(0.33, 0.50, confidence: 0.82),
+        leftShoulder: point(0.56, 0.83),
+        rightShoulder: point(0.24, farShoulderY, confidence: 0.52)
     )
 }
 

@@ -28,10 +28,9 @@ public struct BurstProcessor: Sendable {
         let anchors: [(midY: Double, width: Double)] = frames.compactMap { frame in
             guard
                 frame.analysis.isValid,
-                let left = frame.analysis.landmarks.leftShoulder,
-                let right = frame.analysis.landmarks.rightShoulder
+                let geometry = frame.analysis.landmarks.upperBodyGeometry
             else { return nil }
-            return ((left.y + right.y) / 2, hypot(left.x - right.x, left.y - right.y))
+            return (geometry.shoulderY, geometry.shoulderWidth)
         }
         return BurstSummary(
             totalFrameCount: frames.count,

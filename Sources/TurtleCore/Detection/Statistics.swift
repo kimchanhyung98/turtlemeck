@@ -1,9 +1,15 @@
 import Foundation
 
-/// 판정 경로 전반이 공유하는 순위 통계. median은 percentile(0.5)과 같은 선형 보간 정의를 쓴다.
+/// 판정 경로 전반이 공유하는 순위 통계.
 public enum Statistics {
+    /// BurstProcessor와 Calibrator가 추출 전부터 사용하던 짝수 중앙값 연산을 보존한다.
     public static func median(_ values: [Double]) -> Double? {
-        percentile(values, 0.5)
+        let sorted = values.sorted()
+        guard !sorted.isEmpty else { return nil }
+        let middle = sorted.count / 2
+        return sorted.count.isMultiple(of: 2)
+            ? (sorted[middle - 1] + sorted[middle]) / 2
+            : sorted[middle]
     }
 
     public static func percentile(_ values: [Double], _ fraction: Double) -> Double? {

@@ -163,6 +163,97 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
     }
 }
 
+public struct UpperBodyGeometry: Sendable {
+    public var centerX: Double
+    public var shoulderY: Double
+    public var headShoulderY: Double
+    public var shoulderWidth: Double
+    public var assessableShoulderConfidence: Double
+    public var isHeadAnchoredSide: Bool
+}
+
+extension PoseLandmarks {
+    public var upperBodyGeometry: UpperBodyGeometry? {
+        guard
+            let headX = Statistics.percentile(reliableHeadAnchors.map(\.x), 0.5),
+            let headY = Statistics.percentile(reliableHeadAnchors.map(\.y), 0.5),
+            let left = leftShoulder, left.isReliable,
+            let right = rightShoulder, right.isReliable
+        else {
+            return nil
+        }
+
+        let standard = UpperBodyGeometry(
+            centerX: (left.x + right.x) / 2,
+            shoulderY: (left.y + right.y) / 2,
+            headShoulderY: (left.y + right.y) / 2,
+            shoulderWidth: hypot(left.x - right.x, left.y - right.y),
+            assessableShoulderConfidence: min(left.confidence, right.confidence),
+            isHeadAnchoredSide: false
+        )
+
+        let leftEarVisible = (leftEar?.confidence ?? 0) >= Tuning.minimumHeadAnchorConfidence
+        let rightEarVisible = (rightEar?.confidence ?? 0) >= Tuning.minimumHeadAnchorConfidence
+        guard leftEarVisible != rightEarVisible else {
+            return standard
+        }
+
+        let horizontalWidth = abs(left.x - right.x)
+        guard horizontalWidth >= Tuning.minimumShoulderWidth else {
+            return standard
+        }
+
+        let headShoulder: Point2D
+        let otherShoulder: Point2D
+        if abs(left.x - headX) <= abs(right.x - headX) {
+            headShoulder = left
+            otherShoulder = right
+        } else {
+            headShoulder = right
+            otherShoulder = left
+        }
+
+        let anchor: Point2D
+        let opposite: Point2D
+        if abs(left.y - right.y) >= Tuning.minimumSideShoulderVerticalSeparation,
+           left.y > right.y {
+            anchor = left
+            opposite = right
+        } else if abs(left.y - right.y) >= Tuning.minimumSideShoulderVerticalSeparation {
+            anchor = right
+            opposite = left
+        } else {
+            anchor = headShoulder
+            opposite = otherShoulder
+        }
+        guard
+            anchor.confidence >= Tuning.minimumAssessableShoulderConfidence,
+            headShoulder.confidence >= Tuning.minimumAssessableShoulderConfidence,
+            anchor.y > headY,
+            (0...1).contains(anchor.x),
+            (0...1).contains(anchor.y)
+        else {
+            return standard
+        }
+
+        let bothShouldersAssessable = opposite.confidence >= Tuning.minimumAssessableShoulderConfidence
+        let oppositeHitBackground =
+            anchor.y - opposite.y >= Tuning.minimumSideShoulderVerticalSeparation
+        guard bothShouldersAssessable || oppositeHitBackground else {
+            return standard
+        }
+
+        return UpperBodyGeometry(
+            centerX: headX,
+            shoulderY: anchor.y,
+            headShoulderY: headShoulder.y,
+            shoulderWidth: horizontalWidth,
+            assessableShoulderConfidence: min(anchor.confidence, headShoulder.confidence),
+            isHeadAnchoredSide: true
+        )
+    }
+}
+
 public struct RelativeDepthMap: Codable, Equatable, Sendable {
     public var width: Int
     public var height: Int
@@ -383,7 +474,8 @@ public struct BurstVerdict: Codable, Equatable, Sendable {
 public struct Baseline: Codable, Equatable, Sendable {
     /// feature 정의(ROI 기하·정규화)가 바뀌면 올려서 이전 baseline을 재보정 대상으로 만든다.
     /// v2: 2026-07-22 몸통 ROI를 어깨 아래 0.34sw에서 어깨선 밴드(0.05sw, 높이 0.20sw)로 이동.
-    public static let currentFeatureVersion = 2
+    /// v3: 2026-07-23 측면/3-4 입력은 안정된 머리와 인접 어깨를 ROI 기준으로 사용.
+    public static let currentFeatureVersion = 3
 
     public var center: Double
     public var dispersion: Double

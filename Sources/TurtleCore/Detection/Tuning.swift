@@ -10,6 +10,9 @@ public enum Tuning {
     // 정상 실측 최소 0.51). 이 아래면 '머리는 있으나 정상 판정 불가'로 비정상 증거 처리한다.
     // PoseNet 손목 채널은 배경 고정점 오검출(유령 손목)로 판정 근거에서 제외했다 — 2026-07-22 실측.
     public static let minimumAssessableShoulderConfidence = 0.35
+    // 반대쪽 어깨 confidence가 낮을 때, 머리 인접 어깨보다 이만큼 위로 튄 점만
+    // 의자·헤드레스트 오검출로 허용한다(정상 측면 실측 차이 0.125~0.225).
+    public static let minimumSideShoulderVerticalSeparation = 0.08
     // (어깨midY − 신뢰 head anchor 중앙값 y)/어깨폭. anchor 중앙값 기준 실측: 정상 최소 0.945,
     // 옆 기움 0.70, 턱괴기+숙임 0.81. 임계는 정상 최소값 아래 여유(≥0.045)를 두고 잡는다.
     public static let minimumHeadShoulderGapRatio = 0.90

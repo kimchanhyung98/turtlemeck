@@ -16,13 +16,13 @@ func describe(_ name: String, _ point: Point2D?) -> String {
 func printLandmarks(_ landmarks: PoseLandmarks) {
     print("landmarks  " + landmarks.namedPoints.map { describe($0.name, $0.point) }.joined(separator: " "))
     let anchors = landmarks.reliableHeadAnchors
-    if let leftShoulder = landmarks.leftShoulder, let rightShoulder = landmarks.rightShoulder,
-       let headX = Statistics.median(anchors.map(\.x)),
-       let headY = Statistics.median(anchors.map(\.y)) {
-        let shoulderWidth = hypot(leftShoulder.x - rightShoulder.x, leftShoulder.y - rightShoulder.y)
-        // 게이트(Tuning.minimumHeadShoulderGapRatio)와 동일한 정의: 신뢰 head anchor 중앙값 기준.
-        let gap = ((leftShoulder.y + rightShoulder.y) / 2 - headY) / shoulderWidth
+    if let geometry = landmarks.upperBodyGeometry,
+       let headX = Statistics.percentile(anchors.map(\.x), 0.5),
+       let headY = Statistics.percentile(anchors.map(\.y), 0.5) {
+        let shoulderWidth = geometry.shoulderWidth
+        let gap = (geometry.headShoulderY - headY) / shoulderWidth
         print("headShoulderGapRatio=\(String(format: "%.3f", gap)) shoulderWidth=\(String(format: "%.3f", shoulderWidth))")
+        print("upperBodyGeometry=\(geometry.isHeadAnchoredSide ? "headAnchoredSide" : "standard")")
         for (name, wrist) in [("leftWrist", landmarks.leftWrist), ("rightWrist", landmarks.rightWrist)] {
             guard let wrist else { continue }
             let ratio = hypot(wrist.x - headX, wrist.y - headY) / shoulderWidth
