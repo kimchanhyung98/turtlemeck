@@ -5,7 +5,7 @@
 | 문서 | 용도 |
 |---|---|
 | [참가신청서 문안](application.md) | 참가신청서에 옮겨 적을 프로젝트 정보와 작품 개요 |
-| [참가신청서 생성기](generate-application.py) | `participants.env`의 개인정보로 공식 양식과 같은 표 구조의 제출용 docx·PDF 생성. 산출물과 env 파일은 커밋하지 않는다. |
+| [참가신청서 생성기](generate-application.py) | `participants.env`의 개인정보로 공식 양식과 같은 표 구조의 제출용 docx를 생성하고, Google Chrome이 있으면 PDF도 생성. 산출물과 env 파일은 커밋하지 않는다. |
 | [참가신청서 원본 양식](application-form.hwp) | 공지에 첨부된 공식 HWP 양식 |
 | [발표 자료](presentation.md) | 8분 발표용 슬라이드 구성과 발표 대본 |
 | [발표 자료 초안](turtlemeck-presentation.pptx) | 슬라이드 구성과 대본(발표자 노트)을 옮긴 편집용 pptx |

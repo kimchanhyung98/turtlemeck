@@ -22,7 +22,7 @@ turtlemeck-submission/
 └── README.pdf
 ```
 
-이 구조는 `.build/turtlemeck-submission/`에 조립되어 있다. 시연 영상(`05-video`)을 추가하고 서명한 신청서 PDF로 교체하면 제출할 수 있다.
+이 구조는 `.build/turtlemeck-submission/`에 조립한다. `package.sh`는 `02-app`에 넣을 앱 ZIP·DMG·체크섬까지만 생성하므로, 신청서·소스 압축·발표 자료·시연 영상·실행 안내서는 [제작 실행 가이드](production-guide.md)에 따라 직접 추가한다.
 
 참가신청서는 공식 HWP 양식과 같은 표 구조로 작성한 `turtlemeck-application.docx`를 제출하고, 심사자가 바로 확인할 수 있도록 PDF를 함께 넣는다. 한글 프로그램을 사용할 수 있으면 같은 내용을 원본 양식(`application-form.hwp`)에 옮겨 HWP로 제출해도 된다. `README.pdf`는 [실행 안내](run-guide.md)를 PDF로 변환한 파일이다.
 
@@ -32,6 +32,7 @@ turtlemeck-submission/
 
 - `Sources`
 - `Tests`
+- `tools`
 - `Resources`
 - `docs`
 - `Package.swift`

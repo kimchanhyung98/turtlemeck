@@ -8,6 +8,7 @@
 |---|---|---|
 | 참가신청서 | 작성된 `turtlemeck-application.docx` + Word for Mac | 무료 |
 | 신청서 PDF | Word `파일 > 다른 이름으로 저장 > PDF`, 서명은 macOS 미리보기 | 무료 |
+| 소스 ZIP | 최종 Git revision의 `git archive` | 무료 |
 | 발표 자료 PPTX | 초안 `turtlemeck-presentation.pptx` + PowerPoint for Mac | 초안 무료 |
 | 화면 녹화 | macOS 내장 `Cmd+Shift+5`, 자동 줌 연출은 Screen Studio, 무료 대안 QuickRecorder·OBS | 무료(Screen Studio만 유료) |
 | 영상 편집·내보내기 | iMovie | 무료 |
@@ -203,7 +204,19 @@ macOS 15 Sequoia부터 우클릭 후 열기로 Gatekeeper를 우회하는 방법
 
 터미널에 익숙한 심사자를 위한 보조 수단으로 `xattr -d com.apple.quarantine /Applications/turtlemeck.app`을 병기할 수 있다. 시스템 전체 Gatekeeper를 끄는 `spctl --master-disable`은 안내문에 넣지 않는다.
 
-## 5. 제출 파일 전송
+## 5. 소스 압축과 제출 폴더 조립
+
+모든 수정과 검증이 끝난 최종 Git revision에서 다음 명령으로 개인정보·빌드 결과·debug 산출물을 제외한 추적 파일만 압축한다.
+
+```bash
+mkdir -p .build/turtlemeck-submission/03-source
+git archive --format=zip --prefix=turtlemeck/ --output=.build/turtlemeck-submission/03-source/turtlemeck-source.zip HEAD
+unzip -t .build/turtlemeck-submission/03-source/turtlemeck-source.zip
+```
+
+`package.sh`가 만든 앱 ZIP·DMG·`SHA256SUMS`는 `02-app`, 완성한 신청서는 `01-application`, 발표 자료는 `04-presentation`, 시연 영상은 `05-video`에 복사한다. [실행 안내](run-guide.md)를 PDF로 변환해 루트의 `README.pdf`로 둔 뒤, [제출 안내](submission.md)의 디렉토리 구조와 파일명을 대조한다.
+
+## 6. 제출 파일 전송
 
 ### Google Drive 업로드와 공유
 
