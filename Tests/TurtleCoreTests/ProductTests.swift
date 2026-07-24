@@ -22,12 +22,18 @@ func registerProductTests() {
     }
 
     TestRegistry.test("baselines from older feature definitions require recalibration") {
-        // featureVersion 필드가 없던 구 torso ROI 기하의 baseline은 새 feature와 비교 불가하다.
+        // featureVersion 필드가 없던 구 torso ROI 기하와 v2 어깨 중점 기하는 새 feature와 비교 불가하다.
         let legacy = """
         {"storedCheckIntervalSeconds":60,"bannerNotificationsEnabled":false,"notificationSoundEnabled":false,"launchAtLogin":false,"baseline":{"center":-0.9,"dispersion":0.05,"burstCount":1,"createdAt":0,"captureConfiguration":{"cameraUniqueID":"cam","width":640,"height":480,"orientation":"up-unmirrored"}}}
         """
         let decoded = try JSONDecoder().decode(Settings.self, from: Data(legacy.utf8))
         try expectEqual(decoded.baseline, nil, "version-less baseline must be dropped")
+
+        let version2 = """
+        {"storedCheckIntervalSeconds":60,"bannerNotificationsEnabled":false,"notificationSoundEnabled":false,"launchAtLogin":false,"baseline":{"center":-0.9,"dispersion":0.05,"burstCount":1,"createdAt":0,"captureConfiguration":{"cameraUniqueID":"cam","width":640,"height":480,"orientation":"up-unmirrored"},"featureVersion":2}}
+        """
+        let decodedVersion2 = try JSONDecoder().decode(Settings.self, from: Data(version2.utf8))
+        try expectEqual(decodedVersion2.baseline, nil, "v2 shoulder-midpoint baseline must be dropped")
 
         var current = Settings.defaults
         current.baseline = Baseline(center: -0.3, dispersion: 0.02, burstCount: 1, captureConfiguration: testCaptureConfiguration)
@@ -40,6 +46,34 @@ func registerProductTests() {
         try expectApprox(try unwrap(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds + 0.2), "collection time"), 0.2, "collection starts after warmup")
         try expectEqual(CameraBurstTiming.maximumAnalysisFrames, 5, "maximum frame count")
         try expect(CameraBurstTiming.maximumAnalysisFrames >= Tuning.minimumValidFrames, "minimum valid frames must fit burst")
+        try expectEqual(CameraBurstTiming.shouldSample(collectionTime: 0, after: nil), true, "first frame samples immediately")
+        try expectEqual(
+            CameraBurstTiming.shouldSample(collectionTime: CameraBurstTiming.minimumAnalysisFrameInterval, after: 0),
+            true,
+            "interval boundary included"
+        )
+        try expectEqual(
+            CameraBurstTiming.shouldSample(collectionTime: CameraBurstTiming.minimumAnalysisFrameInterval - 0.01, after: 0),
+            false,
+            "sub-interval frame skipped"
+        )
+        let startedAt = Date(timeIntervalSince1970: 100)
+        try expectEqual(
+            CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: startedAt,
+                now: startedAt.addingTimeInterval(0.1)
+            ),
+            CameraBurstTiming.minimumSessionIntervalSeconds,
+            "manual checks must wait for the minimum session interval"
+        )
+        try expectEqual(
+            CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: startedAt,
+                now: startedAt.addingTimeInterval(Double(CameraBurstTiming.minimumSessionIntervalSeconds))
+            ),
+            0,
+            "manual checks can start at the minimum interval boundary"
+        )
     }
 
     TestRegistry.test("next regular check is measured from the previous capture start") {
@@ -74,13 +108,23 @@ func registerProductTests() {
     TestRegistry.test("camera authorization separates request start and block") {
         try expectEqual(CameraManager.authorizationAction(for: .authorized), .start, "authorized")
         try expectEqual(CameraManager.authorizationAction(for: .notDetermined), .requestAccess, "request")
-        try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked("camera permission denied"), "denied")
+        try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked(.permissionDenied), "denied")
+        try expectEqual(
+            CameraManager.calibrationRejectReason(for: .permissionDenied),
+            .cameraPermissionDenied,
+            "calibration must preserve a camera permission failure"
+        )
+        try expectEqual(
+            CameraManager.calibrationRejectReason(for: .unavailable),
+            .cameraUnavailable,
+            "calibration must preserve a camera availability failure"
+        )
     }
 
     TestRegistry.test("camera burst with no delivered frames is unavailable") {
         try expectEqual(
             CameraManager.burstCompletionAction(receivedFrameCount: 0),
-            .blocked("camera unavailable"),
+            .blocked(.unavailable),
             "zero delivered frames must report an unavailable camera"
         )
         try expectEqual(
@@ -108,6 +152,33 @@ func registerProductTests() {
         stats.recordDuration(state: .bad, seconds: 10)
         try store.save([stats])
         try expectEqual(try store.load(), [stats], "stats round trip")
+    }
+
+    TestRegistry.test("stats updates preserve history and corrupt data") {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("turtlemeck-tests-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("stats.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = StatsStore(fileURL: url)
+        let earlier = DailyPostureStats(day: "2026-07-22", goodSeconds: 120)
+        let current = DailyPostureStats(day: "2026-07-23", badSeconds: 30)
+        try store.save([earlier])
+        try store.save(current)
+        try expectEqual(try store.load(), [earlier, current], "daily update must preserve prior days")
+        let updated = DailyPostureStats(day: current.day, badSeconds: 45)
+        try store.save(updated)
+        try expectEqual(try store.load(), [earlier, updated], "daily update must replace rather than duplicate the same day")
+
+        let corruptData = Data("{not-json".utf8)
+        try corruptData.write(to: url, options: [.atomic])
+        var rejectedCorruptHistory = false
+        do {
+            try store.save(updated)
+        } catch {
+            rejectedCorruptHistory = true
+        }
+        try expect(rejectedCorruptHistory, "corrupt history must stop the update")
+        try expectEqual(try Data(contentsOf: url), corruptData, "corrupt history must not be overwritten")
     }
 
     TestRegistry.test("missing Core ML model fails closed") {
