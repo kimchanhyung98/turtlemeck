@@ -14,32 +14,29 @@ public struct PostureFrameAnalyzer: Sendable {
         }
         guard
             let leftShoulder = landmarks.leftShoulder, leftShoulder.isReliable,
-            let rightShoulder = landmarks.rightShoulder, rightShoulder.isReliable
+            let rightShoulder = landmarks.rightShoulder, rightShoulder.isReliable,
+            let geometry = landmarks.upperBodyGeometry
         else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingShoulder)
         }
 
-        let shoulderWidth = distance(leftShoulder, rightShoulder)
+        let shoulderWidth = geometry.shoulderWidth
         guard shoulderWidth >= Tuning.minimumShoulderWidth else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
         }
-        guard abs(leftShoulder.y - rightShoulder.y) <= Tuning.maximumShoulderSlope else {
+        guard geometry.isHeadAnchoredSide || abs(leftShoulder.y - rightShoulder.y) <= Tuning.maximumShoulderSlope else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
         }
 
-        // 팔이나 자세가 어깨를 가려(턱 괴기 등) 어깨 신뢰도가 낮으면 정상 자세를 확인할 수 없다.
-        // 몸을 세운 턱 괴기는 head-torso depth 차이가 변하지 않아 이 게이트가 유일한 방어선이다.
-        guard
-            leftShoulder.confidence >= Tuning.minimumAssessableShoulderConfidence,
-            rightShoulder.confidence >= Tuning.minimumAssessableShoulderConfidence
-        else {
+        // 기준 어깨 신뢰도가 낮으면 정상 자세를 확인할 수 없다. 측면에서 반대쪽 점만 위의
+        // 의자·헤드레스트로 튄 경우에는 upperBodyGeometry가 신뢰 가능한 머리 아래 어깨를 고른다.
+        guard geometry.assessableShoulderConfidence >= Tuning.minimumAssessableShoulderConfidence else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingShoulder)
         }
 
         // 머리(신뢰 anchor 중앙값)가 어깨선에 비정상적으로 가까우면 옆으로 기울거나 앞으로 숙인 자세다.
         if let headAnchorY = median(landmarks.reliableHeadAnchors.map(\.y)) {
-            let shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2
-            if (shoulderMidY - headAnchorY) / shoulderWidth < Tuning.minimumHeadShoulderGapRatio {
+            if (geometry.headShoulderY - headAnchorY) / shoulderWidth < Tuning.minimumHeadShoulderGapRatio {
                 return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .headDropped)
             }
         }
@@ -51,8 +48,8 @@ public struct PostureFrameAnalyzer: Sendable {
 
         let rawROIs = makeROIs(
             headAnchors: landmarks.reliableHeadAnchors,
-            leftShoulder: leftShoulder,
-            rightShoulder: rightShoulder,
+            shoulderX: geometry.centerX,
+            shoulderY: geometry.shoulderY,
             shoulderWidth: shoulderWidth
         )
         let boundaryContactRatio = max(
@@ -152,13 +149,12 @@ public struct PostureFrameAnalyzer: Sendable {
 
     private func makeROIs(
         headAnchors: [Point2D],
-        leftShoulder: Point2D,
-        rightShoulder: Point2D,
+        shoulderX: Double,
+        shoulderY: Double,
         shoulderWidth: Double
     ) -> PostureROIs {
         let headX = median(headAnchors.map(\.x)) ?? 0
         let headY = median(headAnchors.map(\.y)) ?? 0
-        let shoulderX = (leftShoulder.x + rightShoulder.x) / 2
 
         let head = centeredRect(
             x: headX,
@@ -171,7 +167,7 @@ public struct PostureFrameAnalyzer: Sendable {
         // 밴드(0.05sw, 높이 0.20sw)는 같은 데이터에서 45/45 프레임 화면 안 + 나쁜 자세 분리 유지가 검증됐다.
         let torso = centeredRect(
             x: shoulderX,
-            y: (leftShoulder.y + rightShoulder.y) / 2 + shoulderWidth * 0.05,
+            y: shoulderY + shoulderWidth * 0.05,
             width: shoulderWidth * 0.83,
             height: shoulderWidth * 0.20
         ).inset(by: Tuning.roiErosionFraction)
@@ -194,30 +190,17 @@ public struct PostureFrameAnalyzer: Sendable {
         return point.x >= margin && point.x <= 1 - margin && point.y >= margin && point.y <= 1 - margin
     }
 
-    private func distance(_ lhs: Point2D, _ rhs: Point2D) -> Double {
-        hypot(lhs.x - rhs.x, lhs.y - rhs.y)
-    }
-
     private func validRatio(_ count: Int, rect: NormalizedRect, map: RelativeDepthMap) -> Double {
         let expected = max(1, Int((rect.area * Double(map.width * map.height)).rounded()))
         return min(1, Double(count) / Double(expected))
     }
 
     private func median(_ values: [Double]) -> Double? {
-        percentile(values, 0.5)
+        // ROI 경로는 기존 percentile 보간 연산을 유지한다. 짝수 표본의 반올림은 Statistics.median과 다를 수 있다.
+        Statistics.percentile(values, 0.5)
     }
 
     private func interquartileRange(_ values: [Double]) -> Double? {
-        guard let lower = percentile(values, 0.25), let upper = percentile(values, 0.75) else { return nil }
-        return upper - lower
-    }
-
-    private func percentile(_ values: [Double], _ fraction: Double) -> Double? {
-        let sorted = values.sorted()
-        guard !sorted.isEmpty else { return nil }
-        let rank = min(1, max(0, fraction)) * Double(sorted.count - 1)
-        let lower = Int(rank.rounded(.down))
-        let upper = Int(rank.rounded(.up))
-        return sorted[lower] + (sorted[upper] - sorted[lower]) * (rank - Double(lower))
+        Statistics.interquartileRange(values)
     }
 }

@@ -51,14 +51,16 @@ public struct UpperBodySubjectSelector: Sendable {
 
     private func score(_ landmarks: PoseLandmarks) -> Candidate? {
         guard
-            !landmarks.reliableHeadAnchors.isEmpty,
-            let left = landmarks.leftShoulder, left.isReliable,
-            let right = landmarks.rightShoulder, right.isReliable,
+            let geometry = landmarks.upperBodyGeometry,
             // 원거리 배경 인물은 대상 후보로 선택하지 않는다.
-            distance(left, right) >= Tuning.minimumShoulderWidth
+            geometry.shoulderWidth >= Tuning.minimumShoulderWidth
         else { return nil }
-        let center = Point2D(x: (left.x + right.x) / 2, y: (left.y + right.y) / 2, confidence: min(left.confidence, right.confidence))
-        return Candidate(landmarks: landmarks, center: center, shoulderWidth: distance(left, right))
+        let center = Point2D(
+            x: geometry.centerX,
+            y: geometry.shoulderY,
+            confidence: geometry.assessableShoulderConfidence
+        )
+        return Candidate(landmarks: landmarks, center: center, shoulderWidth: geometry.shoulderWidth)
     }
 
     private func isSubjectScaleHead(_ landmarks: PoseLandmarks) -> Bool {

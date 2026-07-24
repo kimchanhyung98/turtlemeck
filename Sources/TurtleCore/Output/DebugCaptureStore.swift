@@ -130,18 +130,7 @@ public final class DebugCaptureStore: @unchecked Sendable {
     }
 
     private func allLandmarks(_ landmarks: PoseLandmarks) -> [Point2D] {
-        [
-            landmarks.nose,
-            landmarks.leftEye,
-            landmarks.rightEye,
-            landmarks.leftEar,
-            landmarks.rightEar,
-            landmarks.neck,
-            landmarks.leftShoulder,
-            landmarks.rightShoulder,
-            landmarks.leftWrist,
-            landmarks.rightWrist
-        ].compactMap { $0 }
+        landmarks.namedPoints.compactMap(\.point)
     }
 
     private func write(_ image: CGImage, to url: URL) {

@@ -82,11 +82,11 @@ public final class PoseDetector {
 
     private func isUsableUpperBody(_ landmarks: PoseLandmarks) -> Bool {
         guard
-            !landmarks.reliableHeadAnchors.isEmpty,
+            let geometry = landmarks.upperBodyGeometry,
             let left = landmarks.leftShoulder, left.isReliable,
             let right = landmarks.rightShoulder, right.isReliable
         else { return false }
-        return hypot(left.x - right.x, left.y - right.y) >= Tuning.minimumShoulderWidth
-            && abs(left.y - right.y) <= Tuning.maximumShoulderSlope
+        return geometry.shoulderWidth >= Tuning.minimumShoulderWidth
+            && (geometry.isHeadAnchoredSide || abs(left.y - right.y) <= Tuning.maximumShoulderSlope)
     }
 }

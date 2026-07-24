@@ -6,7 +6,7 @@ import Foundation
 public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoDataOutputSampleBufferDelegate {
     public var onVerdict: (@MainActor @Sendable (BurstVerdict) -> PostureState)?
     public var onNextCheckUpdate: (@Sendable (Int) -> Void)?
-    public var onBlocked: (@Sendable (String) -> Void)?
+    public var onBlocked: (@Sendable (CameraBlockReason) -> Void)?
     public var onDiagnostic: (@Sendable (PostureDiagnostic) -> Void)?
     public var onCaptureActivity: (@Sendable (Bool) -> Void)?
 
@@ -25,11 +25,11 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var session: AVCaptureSession?
     private var captureConfiguration: CaptureConfiguration?
     private var settings = Settings.defaults
-    private var baseline: Baseline?
     private var frames: [TimedFrame] = []
     private var pendingFrameOutputs: [PendingFrameOutput] = []
     private var subjectSelector = UpperBodySubjectSelector()
     private var burstStartDate: Date?
+    private var lastBurstStartedAt: Date?
     private var isCollectingFrames = false
     private var enqueuedFrameCount = 0
     private var lastEnqueuedCollectionTime: Double?
@@ -42,6 +42,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private var burstRunID = 0
     private var immediateCheckPending = false
     private var isPrewarmingModel = false
+    private var isScreenSleeping = false
+    private var isSessionInterrupted = false
 
     public override init() {
         super.init()
@@ -49,6 +51,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             self,
             selector: #selector(sessionInterrupted),
             name: AVCaptureSession.wasInterruptedNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sessionInterruptionEnded),
+            name: AVCaptureSession.interruptionEndedNotification,
             object: nil
         )
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -67,27 +75,36 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     public static func authorizationAction(for status: AVAuthorizationStatus) -> CameraAuthorizationAction {
         switch status {
         case .authorized: .start
         case .notDetermined: .requestAccess
-        case .denied, .restricted: .blocked("camera permission denied")
-        @unknown default: .blocked("camera permission denied")
+        case .denied, .restricted: .blocked(.permissionDenied)
+        @unknown default: .blocked(.permissionDenied)
         }
     }
 
     public static func burstCompletionAction(receivedFrameCount: Int) -> CameraBurstCompletionAction {
-        receivedFrameCount == 0 ? .blocked("camera unavailable") : .process
+        receivedFrameCount == 0 ? .blocked(.unavailable) : .process
     }
 
-    public func start(settings: Settings, baseline: Baseline?) {
+    public static func calibrationRejectReason(for reason: CameraBlockReason) -> CalibrationRejectReason {
+        switch reason {
+        case .permissionDenied: .cameraPermissionDenied
+        case .unavailable: .cameraUnavailable
+        }
+    }
+
+    public func start(settings: Settings) {
         queue.async {
             self.settings = settings
-            self.baseline = baseline
             self.isRunning = true
-            self.scheduleNextBurst(after: 0)
+            self.scheduleNextBurst(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: self.lastBurstStartedAt
+            ))
         }
     }
 
@@ -95,7 +112,6 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         queue.async {
             let intervalChanged = self.settings.checkIntervalSeconds != settings.checkIntervalSeconds
             self.settings = settings
-            self.baseline = settings.baseline
             if intervalChanged, self.isRunning, self.burstStartDate == nil, self.calibrationCompletion == nil {
                 self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
             }
@@ -113,37 +129,36 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
     }
 
-    public func runImmediateCheck(settings: Settings, baseline: Baseline?) {
+    public func runImmediateCheck(settings: Settings) {
         queue.async {
             // 보정 중의 즉시 점검은 보정 버스트로 흡수되므로 보정이 끝날 때까지 받지 않는다.
             guard self.calibrationCompletion == nil else { return }
             self.settings = settings
-            self.baseline = baseline
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
             if self.burstStartDate != nil {
                 self.session?.stopRunning()
-                self.invalidateCurrentBurst()
             }
+            self.invalidateCurrentBurst()
             self.immediateCheckPending = true
-            self.performBurst()
+            self.scheduleImmediateCheck(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                lastStartedAt: self.lastBurstStartedAt
+            ))
         }
     }
 
     public func runCalibration(
         settings: Settings,
-        baseline: Baseline?,
         completion: @MainActor @Sendable @escaping (CalibrationResult) -> PostureState
     ) {
         queue.async {
             self.settings = settings
-            self.baseline = baseline
             self.scheduledWorkItem?.cancel()
             self.scheduledWorkItem = nil
             if self.burstStartDate != nil {
                 self.session?.stopRunning()
-                self.invalidateCurrentBurst()
             }
+            self.invalidateCurrentBurst()
             self.immediateCheckPending = false
             self.calibrationSummaries.removeAll()
             self.calibrationAttempts = 0
@@ -154,7 +169,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     private func scheduleNextBurst(after seconds: Int) {
         scheduledWorkItem?.cancel()
-        guard isRunning else { return }
+        guard isRunning, !isScreenSleeping, !isSessionInterrupted else { return }
         // 즉시 실행은 "다음 점검 0초 후" 안내가 무의미하므로 알리지 않는다.
         if seconds > 0 { emitNextCheck(seconds) }
         let item = DispatchWorkItem { [weak self] in self?.performBurst() }
@@ -162,8 +177,27 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
     }
 
+    private func scheduleCalibrationRetry(completingRunID: Int? = nil) {
+        if let completingRunID, burstRunID != completingRunID { return }
+        scheduledWorkItem?.cancel()
+        guard calibrationCompletion != nil, !isScreenSleeping, !isSessionInterrupted else { return }
+        let item = DispatchWorkItem { [weak self] in self?.performBurst() }
+        scheduledWorkItem = item
+        queue.asyncAfter(deadline: .now() + CameraBurstTiming.calibrationRetryDelaySeconds, execute: item)
+    }
+
+    private func scheduleImmediateCheck(after seconds: Int) {
+        scheduledWorkItem?.cancel()
+        guard immediateCheckPending, !isScreenSleeping, !isSessionInterrupted else { return }
+        if seconds > 0 { emitNextCheck(seconds) }
+        let item = DispatchWorkItem { [weak self] in self?.performBurst() }
+        scheduledWorkItem = item
+        queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
+    }
+
     private func performBurst() {
-        guard burstStartDate == nil, isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
+        guard !isScreenSleeping, !isSessionInterrupted, burstStartDate == nil,
+              isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
         switch Self.authorizationAction(for: AVCaptureDevice.authorizationStatus(for: .video)) {
         case .start:
             startAuthorizedBurst()
@@ -171,7 +205,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
                 guard let manager = self else { return }
                 manager.queue.async {
-                    if allowed { manager.startAuthorizedBurst() } else { manager.failToStart("camera permission denied") }
+                    if allowed { manager.startAuthorizedBurst() } else { manager.failToStart(.permissionDenied) }
                 }
             }
         case .blocked(let reason):
@@ -180,6 +214,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     }
 
     private func startAuthorizedBurst() {
+        guard !isScreenSleeping, !isSessionInterrupted, burstStartDate == nil,
+              isRunning || calibrationCompletion != nil || immediateCheckPending else { return }
         do {
             try configureSessionIfNeeded()
             if !depthProvider.isModelLoadResolved {
@@ -194,7 +230,9 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 ? debugStore.prepareRun()
                 : nil
             session?.startRunning()
-            burstStartDate = Date()
+            let startedAt = Date()
+            burstStartDate = startedAt
+            lastBurstStartedAt = startedAt
             isCollectingFrames = true
             enqueuedFrameCount = 0
             lastEnqueuedCollectionTime = nil
@@ -206,19 +244,24 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 self.finishBurst(runID: runID)
             }
         } catch {
-            failToStart("camera unavailable")
+            failToStart(.unavailable)
         }
     }
 
     private func prewarmModelThenStart() {
         guard !isPrewarmingModel else { return }
         isPrewarmingModel = true
+        let lifecycleID = burstRunID
         let provider = depthProvider
         analysisQueue.async { [weak self] in
             guard let manager = self else { return }
             _ = provider.prewarm()
             manager.queue.async {
+                guard manager.burstRunID == lifecycleID else { return }
                 manager.isPrewarmingModel = false
+                guard manager.isRunning || manager.calibrationCompletion != nil || manager.immediateCheckPending else {
+                    return
+                }
                 manager.startAuthorizedBurst()
             }
         }
@@ -258,6 +301,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         case .blocked(let reason):
             finishBlockedBurst(
                 reason,
+                runID: runID,
                 startedAt: completedBurstStartDate,
                 summary: summary,
                 frames: completedFrames,
@@ -285,12 +329,10 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                     session: debugSession,
                     verdict: nil,
                     calibrationResult: nil,
-                    baseline: baseline,
+                    baseline: settings.baseline,
                     frameOutputs: completedFrameOutputs,
                     afterOutput: {
-                        self.queue.asyncAfter(deadline: .now() + CameraBurstTiming.calibrationRetryDelaySeconds) {
-                            self.performBurst()
-                        }
+                        self.scheduleCalibrationRetry(completingRunID: runID)
                     }
                 )
                 return
@@ -315,7 +357,12 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             // 보정 실패는 수동 보정 전까지 다음 점검을 예약하지 않는다.
             let afterOutput: @Sendable () -> Void
             if case .accepted = result {
-                afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+                afterOutput = {
+                    self.scheduleFollowingBurstIfNeeded(
+                        startedAt: completedBurstStartDate,
+                        completingRunID: runID
+                    )
+                }
             } else {
                 afterOutput = {}
             }
@@ -332,7 +379,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             let verdictStart = Date()
             let verdict = burstProcessor.process(
                 completedFrames,
-                baseline: baseline,
+                baseline: settings.baseline,
                 captureConfiguration: captureConfiguration
             )
             stageTimings["baselineComparison"] = Date().timeIntervalSince(verdictStart) * 1_000
@@ -344,7 +391,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 productState: productState,
                 evidence: verdict.evidence,
                 summary: verdict.summary,
-                baselineCenter: baseline?.center,
+                baselineCenter: settings.baseline?.center,
                 baselineDelta: verdict.baselineDelta,
                 reason: verdict.reason,
                 frames: completedFrames,
@@ -355,14 +402,19 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             if productState == .needsCalibration {
                 afterOutput = {}
             } else {
-                afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: completedBurstStartDate) }
+                afterOutput = {
+                    self.scheduleFollowingBurstIfNeeded(
+                        startedAt: completedBurstStartDate,
+                        completingRunID: runID
+                    )
+                }
             }
             deliverDiagnostic(
                 diagnostic,
                 session: debugSession,
                 verdict: verdict,
                 calibrationResult: nil,
-                baseline: baseline,
+                baseline: settings.baseline,
                 frameOutputs: completedFrameOutputs,
                 afterOutput: afterOutput
             )
@@ -538,22 +590,26 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         device.activeVideoMaxFrameDuration = duration
     }
 
-    private func failToStart(_ reason: String) {
-        let wasCalibrating = calibrationCompletion != nil
+    private func failToStart(_ reason: CameraBlockReason) {
+        let completion = calibrationCompletion
         calibrationCompletion = nil
         calibrationSummaries.removeAll()
         calibrationAttempts = 0
-        emitBlocked(reason)
         immediateCheckPending = false
-        if wasCalibrating {
+        if let completion {
             isRunning = false
+            _ = resolveCalibration(.rejected(Self.calibrationRejectReason(for: reason)), completion: completion)
         } else if isRunning {
+            emitBlocked(reason)
             scheduleNextBurst(after: settings.checkIntervalSeconds)
+        } else {
+            emitBlocked(reason)
         }
     }
 
     private func finishBlockedBurst(
-        _ reason: String,
+        _ reason: CameraBlockReason,
+        runID: Int,
         startedAt: Date,
         summary: BurstSummary,
         frames: [TimedFrame],
@@ -568,7 +624,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             calibrationCompletion = nil
             calibrationSummaries.removeAll()
             calibrationAttempts = 0
-            let result = CalibrationResult.rejected(.cameraUnavailable)
+            let result = CalibrationResult.rejected(Self.calibrationRejectReason(for: reason))
             calibrationResult = result
             productState = resolveCalibration(result, completion: completion)
         } else {
@@ -581,8 +637,8 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             productState: productState,
             evidence: .noEval,
             summary: summary,
-            baselineCenter: baseline?.center,
-            reason: reason,
+            baselineCenter: settings.baseline?.center,
+            reason: reason.rawValue,
             frames: frames,
             stageProcessingMilliseconds: stageTimings
         )
@@ -590,14 +646,16 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         if wasCalibrating {
             afterOutput = {}
         } else {
-            afterOutput = { self.scheduleFollowingBurstIfNeeded(startedAt: startedAt) }
+            afterOutput = {
+                self.scheduleFollowingBurstIfNeeded(startedAt: startedAt, completingRunID: runID)
+            }
         }
         deliverDiagnostic(
             diagnostic,
             session: session,
             verdict: nil,
             calibrationResult: calibrationResult,
-            baseline: baseline,
+            baseline: settings.baseline,
             frameOutputs: frameOutputs,
             afterOutput: afterOutput
         )
@@ -621,7 +679,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         if case .some(.accepted(let accepted)) = result {
             acceptedCenter = accepted.center
         } else {
-            acceptedCenter = baseline?.center
+            acceptedCenter = settings.baseline?.center
         }
         return PostureDiagnostic(
             assessment: .noEval,
@@ -637,7 +695,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     private func baselineForSession(_ result: CalibrationResult) -> Baseline? {
         if case .accepted(let accepted) = result { return accepted }
-        return baseline
+        return settings.baseline
     }
 
     private func averageStageTimings(_ frames: [TimedFrame]) -> [String: Double] {
@@ -670,6 +728,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
         let store = debugStore
         let runner = localAnalysisRunner
+        queue.async(execute: afterOutput)
         outputQueue.async {
             var completed = diagnostic
             for frame in frameOutputs {
@@ -691,15 +750,14 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             )
             if !path.isEmpty { completed.debugArtifactPath = path }
             self.emitDiagnostic(completed)
-            self.queue.async(execute: afterOutput)
             if runner.isEnabled, !path.isEmpty {
                 self.localAnalysisQueue.async { runner.run(commonSessionPath: path) }
             }
         }
     }
 
-    private func scheduleFollowingBurstIfNeeded(startedAt: Date) {
-        guard isRunning else { return }
+    private func scheduleFollowingBurstIfNeeded(startedAt: Date, completingRunID: Int) {
+        guard burstRunID == completingRunID, isRunning else { return }
         scheduleNextBurst(after: CameraBurstTiming.remainingCheckDelay(
             configuredSeconds: settings.checkIntervalSeconds,
             startedAt: startedAt
@@ -715,7 +773,10 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         return burstRunID
     }
 
-    private func invalidateCurrentBurst() {
+    private func invalidateCurrentBurst(
+        preservingCalibration: Bool = false,
+        preservingImmediateCheck: Bool = false
+    ) {
         burstRunID += 1
         burstStartDate = nil
         isCollectingFrames = false
@@ -724,11 +785,15 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         currentDebugSession = nil
         frames.removeAll()
         pendingFrameOutputs.removeAll()
-        immediateCheckPending = false
+        if !preservingImmediateCheck {
+            immediateCheckPending = false
+        }
         isPrewarmingModel = false
-        calibrationCompletion = nil
-        calibrationSummaries.removeAll()
-        calibrationAttempts = 0
+        if !preservingCalibration {
+            calibrationCompletion = nil
+            calibrationSummaries.removeAll()
+            calibrationAttempts = 0
+        }
     }
 
     private func resolveVerdict(_ verdict: BurstVerdict) -> PostureState {
@@ -764,7 +829,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         }
     }
 
-    private func emitBlocked(_ reason: String) {
+    private func emitBlocked(_ reason: CameraBlockReason) {
         let callback = onBlocked
         DispatchQueue.main.async { callback?(reason) }
     }
@@ -781,24 +846,62 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     @objc private func sessionInterrupted() {
         queue.async {
+            self.isSessionInterrupted = true
+            self.scheduledWorkItem?.cancel()
+            self.scheduledWorkItem = nil
             self.session?.stopRunning()
             self.emitCaptureActivity(false)
-            self.invalidateCurrentBurst()
-            if self.isRunning { self.scheduleNextBurst(after: self.settings.checkIntervalSeconds) }
+            let wasCalibrating = self.calibrationCompletion != nil
+            self.invalidateCurrentBurst(
+                preservingCalibration: wasCalibrating,
+                preservingImmediateCheck: self.immediateCheckPending
+            )
+        }
+    }
+
+    @objc private func sessionInterruptionEnded() {
+        queue.async {
+            self.isSessionInterrupted = false
+            self.session?.stopRunning()
+            self.emitCaptureActivity(false)
+            if self.calibrationCompletion != nil {
+                self.scheduleCalibrationRetry()
+            } else if self.immediateCheckPending {
+                self.scheduleImmediateCheck(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                    lastStartedAt: self.lastBurstStartedAt
+                ))
+            } else if self.isRunning {
+                self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
+            }
         }
     }
 
     @objc private func screensDidSleep() {
         queue.async {
+            self.isScreenSleeping = true
+            self.scheduledWorkItem?.cancel()
+            self.scheduledWorkItem = nil
             self.session?.stopRunning()
             self.emitCaptureActivity(false)
-            self.invalidateCurrentBurst()
+            self.invalidateCurrentBurst(
+                preservingCalibration: self.calibrationCompletion != nil,
+                preservingImmediateCheck: self.immediateCheckPending
+            )
         }
     }
 
     @objc private func screensDidWake() {
         queue.async {
-            if self.isRunning { self.scheduleNextBurst(after: self.settings.checkIntervalSeconds) }
+            self.isScreenSleeping = false
+            if self.calibrationCompletion != nil {
+                self.scheduleCalibrationRetry()
+            } else if self.immediateCheckPending {
+                self.scheduleImmediateCheck(after: CameraBurstTiming.remainingMinimumSessionDelay(
+                    lastStartedAt: self.lastBurstStartedAt
+                ))
+            } else if self.isRunning {
+                self.scheduleNextBurst(after: self.settings.checkIntervalSeconds)
+            }
         }
     }
 }
@@ -824,136 +927,25 @@ private struct PendingFrameOutput: @unchecked Sendable {
     let analysis: FrameAnalysis
 }
 
-public enum CameraFrameQuality {
-    public static func isUsable(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return false }
-        let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
-
-        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return false }
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-
-        switch pixelFormat {
-        case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-             kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
-            return isUsableLumaPlane(pixelBuffer)
-        case kCVPixelFormatType_32BGRA, kCVPixelFormatType_32ARGB, kCVPixelFormatType_32RGBA:
-            return isUsableRGB(pixelBuffer, pixelFormat: pixelFormat)
-        default:
-            return false
-        }
-    }
-
-    private static func isUsableLumaPlane(_ pixelBuffer: CVPixelBuffer) -> Bool {
-        let width = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
-        let height = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
-        guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) else {
-            return false
-        }
-        let bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
-        return isUsableSampleGrid(width: width, height: height) { x, y in
-            let row = base.advanced(by: y * bytesPerRow)
-            return Double(row.assumingMemoryBound(to: UInt8.self)[x])
-        }
-    }
-
-    private static func isUsableRGB(_ pixelBuffer: CVPixelBuffer, pixelFormat: OSType) -> Bool {
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        guard width > 0, height > 0, let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return false
-        }
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        return isUsableSampleGrid(width: width, height: height) { x, y in
-            let row = base.advanced(by: y * bytesPerRow)
-            let pixel = row.advanced(by: x * 4).assumingMemoryBound(to: UInt8.self)
-            let red: UInt8
-            let green: UInt8
-            let blue: UInt8
-            switch pixelFormat {
-            case kCVPixelFormatType_32ARGB:
-                red = pixel[1]
-                green = pixel[2]
-                blue = pixel[3]
-            case kCVPixelFormatType_32RGBA:
-                red = pixel[0]
-                green = pixel[1]
-                blue = pixel[2]
-            default:
-                blue = pixel[0]
-                green = pixel[1]
-                red = pixel[2]
-            }
-            return 0.2126 * Double(red) + 0.7152 * Double(green) + 0.0722 * Double(blue)
-        }
-    }
-
-    public static func isUsableSampleGrid(
-        width: Int,
-        height: Int,
-        sample: (Int, Int) -> Double
-    ) -> Bool {
-        guard width > 0, height > 0 else { return false }
-        let columns = 12
-        let rows = 8
-        var total = 0.0
-        var maximum = 0.0
-        for row in 0..<rows {
-            let y = min(height - 1, row * height / rows)
-            for column in 0..<columns {
-                let x = min(width - 1, column * width / columns)
-                let value = sample(x, y)
-                total += value
-                maximum = max(maximum, value)
-            }
-        }
-        let average = total / Double(columns * rows)
-        return maximum >= 24 || average >= 8
-    }
-}
-
 private enum CameraError: Error {
     case noCamera
     case cannotAddInput
     case cannotAddOutput
 }
 
+/// 점검이 진행될 수 없는 이유. rawValue는 디버그 아티팩트의 reason 문자열로도 쓰인다.
+public enum CameraBlockReason: String, Equatable, Sendable {
+    case permissionDenied = "camera permission denied"
+    case unavailable = "camera unavailable"
+}
+
 public enum CameraAuthorizationAction: Equatable {
     case start
     case requestAccess
-    case blocked(String)
+    case blocked(CameraBlockReason)
 }
 
 public enum CameraBurstCompletionAction: Equatable {
     case process
-    case blocked(String)
-}
-
-public enum CameraBurstTiming {
-    public static let warmupSeconds = 0.8
-    public static let collectionSeconds = 2.4
-    public static let processingGraceSeconds = 2.0
-    public static let maximumAnalysisFrames = 5
-    public static let minimumAnalysisFrameInterval = 0.4
-    public static let maximumCalibrationAttempts = 3
-    public static let calibrationRetryDelaySeconds = 10.0
-    public static var totalDuration: Double { warmupSeconds + collectionSeconds }
-    public static var finishDelay: Double { totalDuration + processingGraceSeconds }
-
-    public static func collectionTime(elapsed: Double) -> Double? {
-        guard elapsed >= warmupSeconds, elapsed <= totalDuration else { return nil }
-        return elapsed - warmupSeconds
-    }
-
-    public static func shouldSample(collectionTime: Double, after previous: Double?) -> Bool {
-        guard let previous else { return true }
-        return collectionTime - previous >= minimumAnalysisFrameInterval
-    }
-
-    public static func remainingCheckDelay(
-        configuredSeconds: Int,
-        startedAt: Date,
-        now: Date = Date()
-    ) -> Int {
-        max(0, Int(ceil(Double(configuredSeconds) - now.timeIntervalSince(startedAt))))
-    }
+    case blocked(CameraBlockReason)
 }
