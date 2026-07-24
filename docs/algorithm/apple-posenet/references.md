@@ -33,8 +33,8 @@
 - 모델: `Resources/PoseNetMobileNet075S16FP16.mlmodel`
 - 모델·샘플 배포 고지: `Resources/ThirdPartyNotices.md`
 - 라이선스 사본: `Resources/Apache-2.0.txt`
-- 모델 실행·단일 인물 decoder: `Sources/TurtleCore/Camera/PoseNetDetector.swift`
-- PoseNet 우선·Vision fallback: `Sources/TurtleCore/Camera/PoseDetector.swift`
+- 모델 실행·단일 인물 decoder: `Sources/TurtleCore/Inference/PoseNetDetector.swift`
+- PoseNet 우선·Vision fallback: `Sources/TurtleCore/Inference/PoseDetector.swift`
 
 번들 모델 metadata는 원본 TensorFlow `tfjs-models` PoseNet 저장소와 Core ML converter 저장소를 출처로 가리킨다. 라이선스는 문서의 요약만 믿지 않고 실제 배포 artifact와 원본 저장소의 라이선스를 릴리스마다 다시 확인한다.
 

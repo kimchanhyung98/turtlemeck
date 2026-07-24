@@ -62,7 +62,7 @@ y = (gridY × 16 + yOffset) / 513
 4. 각 관절 heatmap의 전역 최댓값 cell을 선택한다.
 5. 해당 cell의 x/y offset을 더해 513 입력 기준 정규화 좌표를 만든다.
 6. 17개 중 nose, eyes, ears, shoulders만 공통 `PoseLandmarks`에 전달한다.
-7. 머리 anchor, 양쪽 어깨 confidence, 어깨 폭·기울기 품질 조건을 통과하면 PoseNet 결과를 사용한다.
+7. 머리 anchor와 양쪽 어깨 추적 품질을 확인하고, 표준 어깨 기하 또는 명확한 머리 기준 측면 기하를 만들 수 있으면 PoseNet 결과를 사용한다.
 8. 조건을 통과하지 못하거나 모델 실행이 실패하면 Apple Vision 2D로 fallback한다.
 
 Apple 샘플이 설명하는 단일 인물 방식과 같은 핵심 원리지만, 샘플 전체 decoder를 그대로 사용한다고 간주하지 않는다. 특히 pose-level score, 다인 root 후보와 displacement 기반 조립은 현재 제품 경로에 없다.
@@ -89,7 +89,8 @@ TensorFlow PoseNet 자료는 관절별 score가 해당 keypoint의 confidence를
 - nose·eyes·ears 중 신뢰 가능한 머리 anchor가 하나 이상 존재
 - left/right shoulder가 모두 신뢰 가능
 - 어깨 폭이 최소값 이상
-- 어깨 기울기가 허용 범위 이내
+- 표준 입력은 어깨 기울기가 허용 범위 이내
+- 한쪽 귀만 보이는 측면·3/4 입력은 머리 아래의 평가 가능한 어깨가 명확함
 
 이 조건은 pose의 평가 가능성을 정한다. 자세가 바른지 여부를 정하지 않는다.
 
@@ -100,7 +101,7 @@ TensorFlow PoseNet 자료는 관절별 score가 해당 keypoint의 confidence를
 - 모델 파일을 찾거나 compile/load할 수 없음
 - 입력 이미지를 만들 수 없음
 - `heatmap` 또는 `offsets`가 없음
-- 머리·양쪽 어깨 품질 조건 미달
+- 머리·양쪽 어깨 추적 품질이 부족하거나 표준·측면 상체 기하를 모두 만들 수 없음
 
 fallback은 detector 교체이지 두 모델 관절의 혼합이 아니다. 한 프레임의 PoseNet 머리와 Vision 어깨를 합성하지 않는다. Vision도 후보를 내지 못하면 PoseNet의 부분 검출을 보존한다. 하류 분석은 신뢰할 수 있는 머리가 있으면 자세 기인 평가 불가 여부를 판단하고, 머리조차 없으면 `noEval`로 보낸다.
 

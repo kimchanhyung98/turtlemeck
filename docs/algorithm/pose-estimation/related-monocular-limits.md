@@ -30,7 +30,7 @@
 
 ## 3. 현재 대응
 
-- Vision 2D confidence로 평가 가능한 프레임만 선택한다.
+- PoseNet을 우선 사용하고 필요할 때 Vision 2D로 fallback하며, 선택된 detector의 confidence로 평가 가능한 프레임만 고른다.
 - pose anchor로 머리·몸통 ROI를 정하고 견고한 영역 통계를 사용한다.
 - 전역 scale·shift에 불변인 relative-depth feature를 검증한다.
 - 짧은 버스트의 대표값으로 단일 프레임 변동을 줄인다.

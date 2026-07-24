@@ -27,7 +27,7 @@ PoseNet을 우선 사용하고 상체 품질 게이트를 통과하지 못하면
 Apple 공식 샘플의 PoseNet은 17개 body keypoint를, Vision의 `VNDetectHumanBodyPoseRequest`는 최대 19개 body point를 정규화된 2D 좌표와 confidence로 반환한다. 현재 경로의 필수점은 nose·eyes·ears 중 신뢰 가능한 머리 anchor와 left/right shoulder다. neck은 Vision에서 제공될 때 진단 정보로 보존하지만 필수점은 아니다.
 
 - 머리 anchor: nose·eyes·ears 중 품질을 충족하는 점
-- 몸통 anchor: 양쪽 shoulder의 중점
+- 몸통 anchor: 표준 입력은 양쪽 shoulder의 중점, 명확한 측면·3/4 입력은 머리 중심 x와 머리 아래의 신뢰 어깨 y
 - 품질 확인: 필수점 confidence, 화면 경계 접촉, ROI 유효 면적
 
 face observation과 person instance mask도 조사했지만 확정 흐름에는 넣지 않는다. PoseNet과 Vision은 공통 `PoseLandmarks` 계약으로 합쳐지고, 모델별 자동 판정 분기는 만들지 않는다.
@@ -50,7 +50,7 @@ near/far 방향은 고정 fixture로 확인한다. reference ROI의 변동 범�
 4. 짧은 버스트의 대표값을 baseline과 비교한다.
 5. 한 번의 나쁜 값이 아니라 지속된 변화만 `bad`로 확정한다.
 
-분석 세션은 최소 20초 간격으로 실행하고 버스트는 3~5장으로 제한한다. 이 범위에서 사용할 프레임 수, 판정 임계와 상태 전이 지속 시간은 자체 데이터의 오경보·미탐·지연으로 결정한다.
+분석 세션은 최소 15초 간격으로 실행하고 버스트는 최대 5장으로 제한하며, 유효 프레임이 2장 이상일 때 판정한다. 이 범위에서 사용할 프레임 수, 판정 임계와 상태 전이 지속 시간은 자체 데이터의 오경보·미탐·지연으로 결정한다.
 
 ## 5. 실패 조건
 
@@ -62,13 +62,13 @@ near/far 방향은 고정 fixture로 확인한다. reference ROI의 변동 범�
 
 유효 프레임이 충분해도 버스트 내 feature 분산이 허용 범위를 넘으면 버스트 전체를 `noEval`로 반환한다.
 
-반면 신뢰할 수 있는 머리는 감지됐지만 어깨 가림·상체 잘림·큰 회전·머리 처짐 때문에 정상 자세를 확인할 수 없는 프레임이 과반이면 `noEval`이 아니라 비정상 증거로 처리한다.
+반면 신뢰할 수 있는 머리는 감지됐지만 어깨 가림·상체 잘림·측면 fallback으로도 해소되지 않는 큰 회전·머리 처짐 때문에 정상 자세를 확인할 수 없는 프레임이 과반이면 `noEval`이 아니라 비정상 증거로 처리한다.
 
 ## 6. 사용하지 않는 방식
 
 - Vision 3D: RGB에서 실행 가능하지만 hip-rooted 17-joint skeleton 추정이며 dense/measured depth가 아니다. 관절별 confidence도 없으므로 목표 판정 경로에서 제외한다.
 - MediaPipe·MoveNet·OpenPose·YOLO-Pose: 유효한 대안이지만 현재 역할을 PoseNet·Vision 조합이 충족하므로 추가 런타임과 모델을 넣지 않는다.
-- 시점별 알고리즘 라우팅: 정면·측면·3/4마다 별도 feature와 baseline을 운영하지 않는다.
+- 시점별 알고리즘 라우팅: 정면·측면·3/4마다 별도 feature와 baseline을 운영하지 않는다. 측면 fallback도 같은 relative-depth feature와 baseline을 사용한다.
 - 임상 CVA·절대 cm: C7/tragus와 측면 표준 촬영이 없고 DA-V2도 metric depth가 아니므로 출력하지 않는다.
 - 자동 baseline 적응: 나쁜 자세를 정상 기준에 흡수할 위험이 있어 사용하지 않는다.
 
@@ -78,7 +78,7 @@ near/far 방향은 고정 fixture로 확인한다. reference ROI의 변동 범�
 
 - PoseNet·Vision ROI의 반복성과 fallback 안정성
 - relative-depth feature의 정상·악화 자세 분리도
-- 3~5장 범위의 프레임 수와 품질 임계
+- 2~5장 범위의 유효 프레임 수와 품질 임계
 - baseline 대비 판정 임계와 지속 시간
 - 최종 오경보율·미탐률·coverage
 
