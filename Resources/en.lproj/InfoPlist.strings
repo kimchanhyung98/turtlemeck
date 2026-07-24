@@ -1,1 +1,1 @@
-"NSCameraUsageDescription" = "turtlemeck briefly uses the built-in camera to estimate posture on device. Frames are not sent and are saved locally only when you enable Debug Mode.";
+"NSCameraUsageDescription" = "turtlemeck briefly uses the built-in camera to estimate posture on device. Frames are not sent and are saved locally only when you explicitly enable debug or local analysis output.";

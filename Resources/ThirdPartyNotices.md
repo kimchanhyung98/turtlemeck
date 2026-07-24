@@ -9,7 +9,7 @@
 - URL: https://huggingface.co/apple/coreml-depth-anything-v2-small
 
 This app uses the Apple-published Core ML conversion of Depth Anything V2 Small
-for optional on-device relative depth estimation.
+to generate the on-device relative-depth feature used by the fixed posture pipeline.
 
 ## PoseNet MobileNet 0.75
 
