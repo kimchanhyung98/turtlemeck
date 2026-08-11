@@ -3,7 +3,7 @@ import Foundation
 import TurtleCore
 
 func registerProductTests() {
-    TestRegistry.test("settings enforce minimum 15 second sessions and round-trip") {
+    TestRegistry.test("settings enforce a minimum 15-second check interval and round-trip") {
         var settings = Settings.defaults
         settings.checkIntervalSeconds = 1
         settings.debugEnabled = true
@@ -22,7 +22,7 @@ func registerProductTests() {
     }
 
     TestRegistry.test("baselines from older feature definitions require recalibration") {
-        // featureVersion 필드가 없던 구 torso ROI 기하와 v2 어깨 중점 기하는 새 feature와 비교 불가하다.
+        // 버전이 없는 기존 관심 영역과 버전 2의 어깨 중점은 현재 특성값과 비교할 수 없다.
         let legacy = """
         {"storedCheckIntervalSeconds":60,"bannerNotificationsEnabled":false,"notificationSoundEnabled":false,"launchAtLogin":false,"baseline":{"center":-0.9,"dispersion":0.05,"burstCount":1,"createdAt":0,"captureConfiguration":{"cameraUniqueID":"cam","width":640,"height":480,"orientation":"up-unmirrored"}}}
         """
@@ -41,9 +41,9 @@ func registerProductTests() {
         try expectEqual(roundTrip.baseline, current.baseline, "current-version baseline must survive")
     }
 
-    TestRegistry.test("camera burst contract is warmup plus at most five frames") {
-        try expectEqual(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds - 0.01), nil, "warmup discarded")
-        try expectApprox(try unwrap(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds + 0.2), "collection time"), 0.2, "collection starts after warmup")
+    TestRegistry.test("camera burst contract includes a warm-up and at most five frames") {
+        try expectEqual(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds - 0.01), nil, "warm-up discarded")
+        try expectApprox(try unwrap(CameraBurstTiming.collectionTime(elapsed: CameraBurstTiming.warmupSeconds + 0.2), "collection time"), 0.2, "collection starts after warm-up")
         try expectEqual(CameraBurstTiming.maximumAnalysisFrames, 5, "maximum frame count")
         try expect(CameraBurstTiming.maximumAnalysisFrames >= Tuning.minimumValidFrames, "minimum valid frames must fit burst")
         try expectEqual(CameraBurstTiming.shouldSample(collectionTime: 0, after: nil), true, "first frame samples immediately")
@@ -101,11 +101,11 @@ func registerProductTests() {
     TestRegistry.test("camera quality rejects black exposure frames") {
         let black = CameraFrameQuality.isUsableSampleGrid(width: 640, height: 480) { _, _ in 0 }
         let visible = CameraFrameQuality.isUsableSampleGrid(width: 640, height: 480) { x, _ in x > 320 ? 80 : 20 }
-        try expect(!black, "black warmup frame must be excluded")
+        try expect(!black, "black warm-up frame must be excluded")
         try expect(visible, "visible frame must pass exposure gate")
     }
 
-    TestRegistry.test("camera authorization separates request start and block") {
+    TestRegistry.test("camera authorization chooses whether to start, request access, or block") {
         try expectEqual(CameraManager.authorizationAction(for: .authorized), .start, "authorized")
         try expectEqual(CameraManager.authorizationAction(for: .notDetermined), .requestAccess, "request")
         try expectEqual(CameraManager.authorizationAction(for: .denied), .blocked(.permissionDenied), "denied")
