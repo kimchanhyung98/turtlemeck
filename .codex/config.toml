@@ -68,7 +68,7 @@ model = "gpt-5.6-sol"
 
 # Reasoning effort: minimal | low | medium | high | xhigh | max | ultra (model-dependent)
 
-model_reasoning_effort = "xhigh"
+model_reasoning_effort = "high"
 
 # Optional plan-mode override: none | minimal | low | medium | high | xhigh | max | ultra (model-dependent)
 
@@ -134,7 +134,7 @@ model_reasoning_summary = "auto"
 
 # - { granular = { ... } }: allow or auto-reject selected prompt categories
 
-approval_policy = "never"
+approval_policy = "on-request"
 
 # Who reviews eligible approval prompts: user (default) | auto_review
 
@@ -179,7 +179,7 @@ allow_login_shell = false
 
 # Use a custom name such as "workspace" only when you also define [permissions.workspace].
 
-default_permissions = ":danger-full-access"
+default_permissions = "workspace"
 
 ################################################################################
 
@@ -722,8 +722,8 @@ fast_mode = true
 
 # Code mode namespaces. This feature is under development and off by default.
 
-code_mode_only = false
-code_mode_host = false
+# code_mode_only = false
+# code_mode_host = true
 
 [features.code_mode]
 
