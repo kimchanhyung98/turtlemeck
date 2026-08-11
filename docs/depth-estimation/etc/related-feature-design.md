@@ -1,10 +1,10 @@
-# 관련 연구 — relative depth feature 설계
+# Relative depth 자세 특성값 설계
 
 ## 문서 요약
 
 | 항목 | 내용 |
 |---|---|
-| 문서 유형 | depth feature·측정 방식 조사 |
+| 문서 유형 | 채택 자세 특성값 설계 |
 | 적용 상태 | 검증 필요 |
 | 다루는 범위 | 2D body-pose ROI, relative depth 집계, affine-invariant 표현 |
 | 제품 내 역할 | DA-V2 출력에서 자세 분석용 신호를 만드는 최소 설계 정의 |
@@ -12,15 +12,18 @@
 ## 입력과 역할
 
 - PoseNet·Vision 2D: 머리·어깨 landmark와 confidence
-- DA-V2 Small: relative inverse-depth map
+- DA-V2 Small: relative inverse depth 맵
 - 프로젝트 자세 분석기: ROI 집계, baseline 비교, 최종 판정
 
-depth map에는 신체 부위 라벨이 없고, Vision landmark에는 깊이가 없다. 따라서 두 출력을 같은 원본 이미지 좌표로 정렬해 사용한다.
+depth map에는 신체 부위 라벨이 없고, Vision landmark에는 깊이가 없다.
+따라서 두 출력을 같은 원본 이미지 좌표로 정렬해 사용한다.
 
 ## 최소 처리 흐름
 
 1. 2D body-pose 품질을 확인한다.
-2. landmark로 머리 ROI와 몸통 ROI를 정한다. 몸통 ROI는 어깨선 바로 아래의 얇은 상흉부 밴드다 — 어깨 아래 깊은 위치는 노트북 구도에서 화면 밖으로 나간다(2026-07-22 실측, [확정 워크플로우 §4](../../algorithm/posture-analysis-workflow.md) 참조).
+2. landmark로 머리 ROI와 몸통 ROI를 정한다.
+   몸통 ROI는 어깨선 바로 아래의 얇은 상흉부 밴드다.
+   어깨 아래 깊은 위치는 노트북 구도에서 화면 밖으로 나간다(2026-07-22 실측, [확정 워크플로우 §4](../../algorithm/posture-analysis-workflow.md) 참조).
 3. landmark 기반 reference ROI를 만들고 경계 픽셀을 제외한다.
 4. 각 ROI의 median depth를 계산한다.
 5. reference ROI의 IQR로 머리-몸통 차이를 정규화한다.
@@ -35,11 +38,14 @@ scale   = IQR(depth in landmark-based reference ROI)
 feature = direction * (head - torso) / scale
 ```
 
-`scale`이 최소 품질 조건을 충족할 때만 feature를 계산한다. `d' = a·d + b`, `a > 0`인 전역 affine 변환에서는 분자와 IQR이 같은 scale을 받으므로 feature가 보존된다. 단, 이것은 전역 scale·shift만 제거하며 국소 depth 왜곡과 ROI 오류는 제거하지 못한다.
+`scale`이 최소 품질 조건을 충족할 때만 feature를 계산한다.
+`d' = a·d + b`, `a > 0`인 전역 affine 변환에서는 분자와 IQR이 같은 scale을 받으므로 feature가 보존된다.
+단, 이것은 전역 scale·shift만 제거하며 국소 depth 왜곡과 ROI 오류는 제거하지 못한다.
 
 ## 품질 조건
 
-다음 기술적 조건을 만족하지 못한 프레임은 feature 계산에서 제외한다. 그 결과 유효 프레임이 부족하면 `noEval`이다.
+다음 기술적 조건을 만족하지 못한 프레임은 feature 계산에서 제외한다.
+그 결과 유효 프레임이 부족하면 `noEval`이다.
 
 - 신뢰할 수 있는 머리 landmark와 명확한 대상
 - 머리·몸통 ROI의 최소 유효 픽셀 수
@@ -47,9 +53,10 @@ feature = direction * (head - torso) / scale
 
 유효 프레임이 충분해도 버스트 내 feature 분산이 허용 범위를 넘으면 버스트 전체를 `noEval`로 처리한다.
 
-신뢰할 수 있는 머리는 있지만 어깨 가림·ROI가 화면 경계에 과도하게 닿는 상체 잘림·큰 회전·머리 처짐 때문에 feature를 만들 수 없는 경우는 기술적 실패와 분리한다. 이런 자세 기인 제외가 버스트의 과반이면 비정상 증거다.
+신뢰할 수 있는 머리는 있지만 어깨 가림·ROI가 화면 경계에 과도하게 닿는 상체 잘림·큰 회전·머리 처짐 때문에 feature를 만들 수 없는 경우는 기술적 실패와 분리한다.
+이런 자세 기인 제외가 버스트의 과반이면 악화 증거다.
 
-고정 pixel 크기, 최소 면적과 분산 임계는 제품 해상도와 데이터로 정한다.
+고정 픽셀 크기, 최소 면적과 분산 임곗값은 제품 해상도와 데이터로 정한다.
 
 ## 검증 항목
 
@@ -57,10 +64,11 @@ feature = direction * (head - torso) / scale
 - 같은 자세 반복 시 feature 분산
 - 중립·악화 자세의 개인 내 분리도
 - median과 IQR 기반 표현의 반복성
-- 3~5장 범위의 프레임 수에 따른 분산 감소와 지연
+- 유효 프레임 2~5장 범위에서 프레임 수에 따른 분산 감소와 지연
 - 전체 처리 지연·발열·배터리
 
-Sapiens, human matting, 별도 segmentation·depth 모델, 시점별 feature는 현재 설계에 추가하지 않는다. 먼저 위 최소 경로의 유효성을 확인한다.
+Sapiens, human matting, 별도 segmentation·depth 모델, 시점별 feature는 현재 설계에 추가하지 않는다.
+먼저 위 최소 경로의 유효성을 확인한다.
 
 ## 참고 자료
 
