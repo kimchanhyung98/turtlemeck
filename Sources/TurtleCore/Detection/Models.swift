@@ -146,7 +146,7 @@ public struct PoseLandmarks: Codable, Equatable, Sendable {
             .filter { $0.confidence >= Tuning.minimumHeadAnchorConfidence }
     }
 
-    /// 디버그 표기 순서를 포함한 전체 landmark 목록.
+    /// 디버그 출력 순서대로 모든 랜드마크를 반환한다.
     public var namedPoints: [(name: String, point: Point2D?)] {
         [
             ("nose", nose),
@@ -337,8 +337,8 @@ public enum FrameExclusionReason: String, Codable, Equatable, Hashable, Sendable
     case modelFailure
     case headDropped
 
-    /// 머리는 감지됐지만 자세 때문에 정상을 확인할 수 없는 사유. 사람이 없어서 판정 불가인 경우와 구분한다.
-    /// depth 품질·기하 실패(조명·모델 기인)는 자세 증거가 아니므로 포함하지 않는다.
+    /// 머리가 보이지만 자세 때문에 정상 여부를 확인할 수 없는 사유인지 나타낸다.
+    /// 깊이 품질이나 기하·모델 실패는 자세 증거에서 제외한다.
     public var isSubjectUnassessable: Bool {
         switch self {
         case .missingShoulder, .croppedUpperBody, .excessiveRotation, .headDropped:
@@ -421,7 +421,6 @@ public struct BurstSummary: Codable, Equatable, Sendable {
     public var medianFeature: Double?
     public var featureMAD: Double?
     public var exclusionCounts: [FrameExclusionReason: Int]
-    /// 유효 프레임의 어깨 기준 구도(중점 y·폭) 중앙값. 보정 시점과 구도가 달라졌는지 비교하는 데 쓴다.
     public var medianShoulderMidY: Double?
     public var medianShoulderWidth: Double?
 
@@ -472,9 +471,7 @@ public struct BurstVerdict: Codable, Equatable, Sendable {
 }
 
 public struct Baseline: Codable, Equatable, Sendable {
-    /// feature 정의(ROI 기하·정규화)가 바뀌면 올려서 이전 baseline을 재보정 대상으로 만든다.
-    /// v2: 2026-07-22 몸통 ROI를 어깨 아래 0.34sw에서 어깨선 밴드(0.05sw, 높이 0.20sw)로 이동.
-    /// v3: 2026-07-23 측면/3-4 입력은 안정된 머리와 인접 어깨를 ROI 기준으로 사용.
+    /// 특성값 정의가 바뀌면 올려 기존 기준값을 무효화한다.
     public static let currentFeatureVersion = 3
 
     public var center: Double
@@ -483,7 +480,6 @@ public struct Baseline: Codable, Equatable, Sendable {
     public var createdAt: Date
     public var captureConfiguration: CaptureConfiguration
     public var featureVersion: Int
-    /// 보정 시점의 어깨 기준 구도. 이후 점검 버스트가 여기서 크게 벗어나면 재보정을 안내한다.
     public var shoulderMidY: Double?
     public var shoulderWidth: Double?
 
@@ -514,7 +510,7 @@ public struct Baseline: Codable, Equatable, Sendable {
         burstCount = try container.decode(Int.self, forKey: .burstCount)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         captureConfiguration = try container.decode(CaptureConfiguration.self, forKey: .captureConfiguration)
-        // 버전 필드 이전에 저장된 baseline은 v1(구 torso ROI 기하)로 간주한다.
+        // 버전이 없는 이전 기준값은 구형 몸통 ROI를 쓰는 v1로 처리한다.
         featureVersion = try container.decodeIfPresent(Int.self, forKey: .featureVersion) ?? 1
         shoulderMidY = try container.decodeIfPresent(Double.self, forKey: .shoulderMidY)
         shoulderWidth = try container.decodeIfPresent(Double.self, forKey: .shoulderWidth)

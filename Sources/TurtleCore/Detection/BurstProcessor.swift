@@ -75,9 +75,9 @@ public struct BurstProcessor: Sendable {
             validatedBaseline = nil
         }
 
-        // 머리는 감지됐지만 정상 자세를 확인할 수 없는 프레임(턱 괴기·머리 처짐·어깨 미신뢰 등)이
-        // 버스트의 과반이면 판정 불가(noEval)가 아니라 비정상 자세 증거다. 사람 부재·기술적 실패는 noEval로 남긴다.
-        // 과반 조건은 사람 부재(noSubject) 프레임이 섞인 버스트가 소수 프레임만으로 비정상이 되는 것을 막는다.
+        // 머리는 보이지만 자세를 평가할 수 없는 프레임이 과반이면 악화 증거로 본다.
+        // 사람 부재나 기술 실패는 판정 불가로 남긴다.
+        // 사람 부재가 많은 버스트에서 소수 프레임만으로 악화 판정이 나지 않도록 과반을 요구한다.
         let unassessableCount = frames.filter { frame in
             guard let reason = frame.analysis.exclusionReason else { return false }
             return reason.isSubjectUnassessable && !frame.analysis.landmarks.reliableHeadAnchors.isEmpty
@@ -102,8 +102,8 @@ public struct BurstProcessor: Sendable {
             return BurstVerdict(evidence: .noEval, summary: summary, reason: "baseline required")
         }
 
-        // 카메라·해상도·방향이 같아도 리드 각도나 착석 거리(책상 배치)가 바뀌면 feature 규모가 달라진다.
-        // 보정 시점의 어깨 기준 구도에서 크게 벗어난 버스트는 판정하지 않고 재보정을 안내한다.
+        // 카메라 설정이 같아도 화면 각도나 착석 거리가 바뀌면 특성값 규모가 달라진다.
+        // 어깨 구도가 보정 시점과 크게 다르면 판정하지 않고 재보정을 안내한다.
         if let anchorMidY = baseline.shoulderMidY, let anchorWidth = baseline.shoulderWidth, anchorWidth > 0,
            let burstMidY = summary.medianShoulderMidY, let burstWidth = summary.medianShoulderWidth {
             let framingChanged = abs(burstMidY - anchorMidY) > Tuning.maximumShoulderAnchorShiftY

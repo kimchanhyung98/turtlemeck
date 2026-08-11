@@ -56,8 +56,7 @@ public struct Settings: Codable, Equatable, Sendable {
         notificationSoundEnabled = try container.decode(Bool.self, forKey: .notificationSoundEnabled)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         debugEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .debugEnabled)) ?? false
-        // 이전 다중 알고리즘 baseline은 현재 단일 relative-depth 계약과 호환되지 않으므로 재보정한다.
-        // feature 정의(ROI 기하)가 바뀐 구버전 baseline도 값이 비교 불가능하므로 재보정한다.
+        // 이전 특성 버전의 기준값은 현재 특성값과 비교할 수 없어 폐기한다.
         let decodedBaseline = (try? container.decodeIfPresent(Baseline.self, forKey: .baseline)) ?? nil
         baseline = decodedBaseline?.featureVersion == Baseline.currentFeatureVersion ? decodedBaseline : nil
     }

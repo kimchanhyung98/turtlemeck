@@ -1,8 +1,8 @@
 import Foundation
 
-/// 판정 경로 전반이 공유하는 순위 통계.
+/// 자세 판정에서 사용하는 순위 기반 통계를 제공한다.
 public enum Statistics {
-    /// BurstProcessor와 Calibrator가 추출 전부터 사용하던 짝수 중앙값 연산을 보존한다.
+    /// 기존 판정과 호환되도록 짝수 표본에서는 가운데 두 값의 평균을 반환한다.
     public static func median(_ values: [Double]) -> Double? {
         let sorted = values.sorted()
         guard !sorted.isEmpty else { return nil }

@@ -3,6 +3,7 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
+// 수명 주기 상태는 제어 큐에서 직렬화하고 프레임 분석과 파일 출력은 전용 큐에 넘긴다.
 public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoDataOutputSampleBufferDelegate {
     public var onVerdict: (@MainActor @Sendable (BurstVerdict) -> PostureState)?
     public var onNextCheckUpdate: (@Sendable (Int) -> Void)?
@@ -131,7 +132,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     public func runImmediateCheck(settings: Settings) {
         queue.async {
-            // 보정 중의 즉시 점검은 보정 버스트로 흡수되므로 보정이 끝날 때까지 받지 않는다.
+            // 보정 중에는 이미 프레임을 수집하므로 즉시 점검 요청을 무시한다.
             guard self.calibrationCompletion == nil else { return }
             self.settings = settings
             self.scheduledWorkItem?.cancel()
@@ -170,7 +171,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
     private func scheduleNextBurst(after seconds: Int) {
         scheduledWorkItem?.cancel()
         guard isRunning, !isScreenSleeping, !isSessionInterrupted else { return }
-        // 즉시 실행은 "다음 점검 0초 후" 안내가 무의미하므로 알리지 않는다.
+        // 0초 뒤 실행은 따로 안내할 의미가 없어 생략한다.
         if seconds > 0 { emitNextCheck(seconds) }
         let item = DispatchWorkItem { [weak self] in self?.performBurst() }
         scheduledWorkItem = item
@@ -354,7 +355,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 frames: completedFrames,
                 stageTimings: stageTimings
             )
-            // 보정 실패는 수동 보정 전까지 다음 점검을 예약하지 않는다.
+            // 보정 실패 후에는 사용자가 다시 보정할 때까지 점검을 예약하지 않는다.
             let afterOutput: @Sendable () -> Void
             if case .accepted = result {
                 afterOutput = {
@@ -397,7 +398,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
                 frames: completedFrames,
                 stageProcessingMilliseconds: stageTimings
             )
-            // 보정이 필요해져 점검이 중단되는 경우에는 다음 점검을 예약하지 않는다.
+            // 재보정이 필요하면 정기 점검을 중단한다.
             let afterOutput: @Sendable () -> Void
             if productState == .needsCalibration {
                 afterOutput = {}
@@ -510,7 +511,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
             case .rejected(let reason):
                 featureStart = Date()
                 analysis = FrameAnalysis(
-                    // 거부 사유 판단(머리 검출 여부)과 같은 후보를 기록해야 버스트 집계가 일관된다.
+                    // 거부 사유와 버스트 집계가 같은 후보를 쓰도록 머리가 검출된 후보를 기록한다.
                     landmarks: candidates.first(where: { !$0.reliableHeadAnchors.isEmpty }) ?? candidates.first ?? PoseLandmarks(),
                     depth: depthMap.map(DepthSummary.init),
                     exclusionReason: reason
@@ -563,7 +564,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
         output.setSampleBufferDelegate(self, queue: sampleBufferQueue)
         guard session.canAddOutput(output) else { throw CameraError.cannotAddOutput }
         session.addOutput(output)
-        // 기본 전달 포맷은 기기 의존적이라 CameraFrameQuality가 처리하는 포맷으로 고정한다.
+        // 기기마다 기본 픽셀 포맷이 달라 분석 가능한 포맷을 명시한다.
         let preferredPixelFormats: [OSType] = [
             kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
             kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
@@ -914,6 +915,7 @@ private struct CaptureSnapshot: Sendable {
     let debugSession: DebugCaptureSession?
 }
 
+// 캡처 뒤 읽기 전용인 샘플 버퍼를 하나의 분석 경로로만 넘긴다.
 private struct SampleBufferBox: @unchecked Sendable {
     let sampleBuffer: CMSampleBuffer
 }
@@ -933,7 +935,7 @@ private enum CameraError: Error {
     case cannotAddOutput
 }
 
-/// 점검이 진행될 수 없는 이유. rawValue는 디버그 아티팩트의 reason 문자열로도 쓰인다.
+/// 점검 차단 사유이며 `rawValue`는 디버그 결과의 `reason`에도 기록된다.
 public enum CameraBlockReason: String, Equatable, Sendable {
     case permissionDenied = "camera permission denied"
     case unavailable = "camera unavailable"

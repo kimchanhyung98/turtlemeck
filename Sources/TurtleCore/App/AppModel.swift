@@ -14,7 +14,7 @@ public final class AppModel: ObservableObject {
     @Published public var settings: Settings {
         didSet {
             var persisted = settings
-            // debug 출력은 명시적인 launch flag로만 켜고 UserDefaults에는 남기지 않는다.
+            // 실행 인자로 정한 `debugEnabled`만 UserDefaults에 저장하지 않는다.
             persisted.debugEnabled = false
             settingsStore.save(persisted)
             cameraManager.update(settings: settings)
@@ -72,7 +72,7 @@ public final class AppModel: ObservableObject {
                 } else if self.postureState == .calibrating {
                     self.setNextCheck("보정 분석 중")
                 } else if self.postureState == .needsCalibration || self.postureState == .blocked {
-                    // 재보정·카메라 확인 안내 문구를 유지한다.
+                    // 재보정·카메라 안내는 덮어쓰지 않는다.
                 } else {
                     self.setNextCheck("점검 분석 중")
                 }
@@ -166,7 +166,7 @@ public final class AppModel: ObservableObject {
         postureState = .calibrating
         statusText = "기준 자세 보정 중"
         setNextCheck("바른 자세를 유지해 주세요")
-        // 보정 실패로 점검이 중단된 상태에서도 재보정으로 정기 점검을 재개한다.
+        // 보정 실패로 멈춘 정기 점검도 재보정과 함께 다시 시작한다.
         cameraManager.start(settings: settings)
         cameraManager.runCalibration(settings: settings) { [weak self] result in
             self?.handleCalibration(result) ?? .noEval
