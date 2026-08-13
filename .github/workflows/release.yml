@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  # 태그별로 그룹을 나눠 서로 다른 릴리스가 대기 자리를 두고 서로를 취소하지 않게 한다.
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          # 태그 푸시는 현재 태그를, 수동 실행은 입력한 기존 태그를 체크아웃한다.
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="$INPUT_TAG"
+          [ -z "$TAG" ] && TAG="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Invalid release tag: $TAG" >&2
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$TAG" || {
+            echo "Tag does not exist in the checked-out repository: $TAG" >&2
+            exit 1
+          }
+          [ "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$TAG")" ] || {
+            echo "Checked-out commit does not match tag: $TAG" >&2
+            exit 1
+          }
+          VERSION="${TAG#v}"
+          BUILD="$(git rev-list --count HEAD)"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "build=$BUILD"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run tests and build checks
+        run: make check
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Resolve signing identity
+        run: |
+          IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          [ -n "$IDENTITY" ] || {
+            echo "No Developer ID Application identity found" >&2
+            exit 1
+          }
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build, sign, and notarize package
+        env:
+          TURTLEMECK_RELEASE: "1"
+          TURTLEMECK_VERSION: ${{ steps.meta.outputs.version }}
+          TURTLEMECK_BUILD: ${{ steps.meta.outputs.build }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./package.sh
+
+      - name: Validate release artifacts
+        env:
+          EXPECTED_VERSION: ${{ steps.meta.outputs.version }}
+          EXPECTED_BUILD: ${{ steps.meta.outputs.build }}
+        run: |
+          ARTIFACT_BASE=".build/turtlemeck-$EXPECTED_VERSION"
+          (
+            cd .build
+            shasum -a 256 -c SHA256SUMS
+          )
+          zip -T "$ARTIFACT_BASE.zip"
+          hdiutil verify "$ARTIFACT_BASE.dmg"
+          codesign --verify "$ARTIFACT_BASE.dmg"
+          codesign --verify --deep --strict .build/turtlemeck.app
+          codesign -d --entitlements - --xml .build/turtlemeck.app 2>/dev/null \
+            | plutil -convert json -o - - \
+            | grep -Eq '"com\.apple\.security\.device\.camera"[[:space:]]*:[[:space:]]*true'
+          xcrun stapler validate .build/turtlemeck.app
+          xcrun stapler validate "$ARTIFACT_BASE.dmg"
+          ARCHS="$(lipo -archs .build/turtlemeck.app/Contents/MacOS/turtlemeck)"
+          [[ " $ARCHS " == *" arm64 "* && " $ARCHS " == *" x86_64 "* ]]
+          INFO=.build/turtlemeck.app/Contents/Info.plist
+          [ "$(plutil -extract CFBundleShortVersionString raw "$INFO")" = "$EXPECTED_VERSION" ]
+          [ "$(plutil -extract CFBundleVersion raw "$INFO")" = "$EXPECTED_BUILD" ]
+          MOUNT_POINT="$(mktemp -d "$RUNNER_TEMP/turtlemeck-release.XXXXXX")"
+          cleanup_mount() {
+            hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true
+            rmdir "$MOUNT_POINT" >/dev/null 2>&1 || true
+          }
+          trap cleanup_mount EXIT
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_POINT" "$ARTIFACT_BASE.dmg" >/dev/null
+          test -d "$MOUNT_POINT/turtlemeck.app"
+          test -L "$MOUNT_POINT/Applications"
+          test "$(readlink "$MOUNT_POINT/Applications")" = "/Applications"
+          codesign --verify --deep --strict "$MOUNT_POINT/turtlemeck.app"
+          MOUNTED_INFO="$MOUNT_POINT/turtlemeck.app/Contents/Info.plist"
+          [ "$(plutil -extract CFBundleShortVersionString raw "$MOUNTED_INFO")" = "$EXPECTED_VERSION" ]
+          [ "$(plutil -extract CFBundleVersion raw "$MOUNTED_INFO")" = "$EXPECTED_BUILD" ]
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: turtlemeck ${{ steps.meta.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            .build/turtlemeck-${{ steps.meta.outputs.version }}.dmg
+            .build/turtlemeck-${{ steps.meta.outputs.version }}.zip
+            .build/SHA256SUMS
