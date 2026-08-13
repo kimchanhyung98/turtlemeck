@@ -132,7 +132,7 @@ public final class CameraManager: NSObject, @unchecked Sendable, AVCaptureVideoD
 
     public func runImmediateCheck(settings: Settings) {
         queue.async {
-            // 보정 중에는 이미 프레임을 수집하므로 즉시 점검 요청을 무시한다.
+            // 보정 중에는 즉시 점검 요청을 무시한다.
             guard self.calibrationCompletion == nil else { return }
             self.settings = settings
             self.scheduledWorkItem?.cancel()
