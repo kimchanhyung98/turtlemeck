@@ -42,7 +42,7 @@ See [Baseline calibration and posture checks](posture-checks.md) for decision ru
 | **보정 (Calibrate)** | Collects your current upright posture as a new baseline. If a baseline already exists, a successful calibration replaces it. | While paused or when calibration is already in progress |
 
 Checks started with **확인 (Check)** follow the same decision and state transition rules as scheduled checks.
-While recalibrating an existing baseline, **확인 (Check)** may appear enabled, but its request does not run until calibration finishes.
+While recalibrating an existing baseline, **확인 (Check)** may appear enabled, but the request is ignored while calibration is in progress.
 
 ## Today's Summary
 

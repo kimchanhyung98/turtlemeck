@@ -196,7 +196,7 @@ public struct PostureFrameAnalyzer: Sendable {
     }
 
     private func median(_ values: [Double]) -> Double? {
-        // 기존 ROI 백분위수 보간을 유지하므로 짝수 표본은 Statistics.median과 다를 수 있다.
+        // 기존 ROI 백분위수 보간을 유지하므로 짝수 표본에서 부동소수점 반올림만 Statistics.median과 다를 수 있다.
         Statistics.percentile(values, 0.5)
     }
 
