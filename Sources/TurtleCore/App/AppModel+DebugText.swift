@@ -1,6 +1,6 @@
 import Foundation
 
-/// 공통 분석 결과를 읽기만 하는 디버그 표시 문자열. 이 값은 판정 경로에 입력되지 않는다.
+/// 공통 분석 결과를 표시용 문자열로 만들며 판정에는 쓰지 않는다.
 extension AppModel {
     public var debugLines: [String] {
         Self.debugLines(diagnostic: latestDiagnostic, settings: settings)

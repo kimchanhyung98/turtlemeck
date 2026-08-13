@@ -17,7 +17,6 @@ public final class NotificationManager {
         completion: @escaping @Sendable (Bool) -> Void = { _ in }
     ) {
         guard bannerEnabled else {
-            // 배너 없이 소리만 켠 경우 시스템 경고음만 재생한다.
             guard soundEnabled else {
                 completion(false)
                 return

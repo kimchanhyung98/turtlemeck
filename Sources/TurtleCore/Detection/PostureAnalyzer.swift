@@ -1,6 +1,6 @@
 import Foundation
 
-/// 한 RGB 프레임의 2D pose landmark와 DA-V2 map을 하나의 정규화 feature로 변환한다.
+/// RGB 프레임의 2D 포즈 랜드마크와 DA-V2 깊이 맵을 정규화 특성값으로 변환한다.
 public struct PostureFrameAnalyzer: Sendable {
     public init() {}
 
@@ -28,13 +28,13 @@ public struct PostureFrameAnalyzer: Sendable {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .excessiveRotation)
         }
 
-        // 기준 어깨 신뢰도가 낮으면 정상 자세를 확인할 수 없다. 측면에서 반대쪽 점만 위의
-        // 의자·헤드레스트로 튄 경우에는 upperBodyGeometry가 신뢰 가능한 머리 아래 어깨를 고른다.
+        // 기준 어깨의 신뢰도가 낮으면 정상 자세로 판정할 수 없다.
+        // 측면 구도의 배경 오검출은 upperBodyGeometry가 머리 쪽 어깨를 선택해 걸러낸다.
         guard geometry.assessableShoulderConfidence >= Tuning.minimumAssessableShoulderConfidence else {
             return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .missingShoulder)
         }
 
-        // 머리(신뢰 anchor 중앙값)가 어깨선에 비정상적으로 가까우면 옆으로 기울거나 앞으로 숙인 자세다.
+        // 머리 기준점 중앙값과 어깨선의 간격이 좁으면 기울임이나 숙임으로 본다.
         if let headAnchorY = median(landmarks.reliableHeadAnchors.map(\.y)) {
             if (geometry.headShoulderY - headAnchorY) / shoulderWidth < Tuning.minimumHeadShoulderGapRatio {
                 return FrameAnalysis(landmarks: landmarks, depth: depth, exclusionReason: .headDropped)
@@ -162,9 +162,9 @@ public struct PostureFrameAnalyzer: Sendable {
             width: shoulderWidth * 0.54,
             height: shoulderWidth * 0.66
         ).inset(by: Tuning.roiErosionFraction)
-        // 몸통 ROI는 어깨선 바로 아래의 얇은 상흉부 밴드다. 노트북 내장캠의 전형 구도(어깨 y 0.86~0.93)에서
-        // 어깨 아래 0.34sw 배치는 프레임 하단을 항상 벗어났다(2026-07-21~22 debug 42프레임 전수 실측).
-        // 밴드(0.05sw, 높이 0.20sw)는 같은 데이터에서 45/45 프레임 화면 안 + 나쁜 자세 분리 유지가 검증됐다.
+        // 몸통 ROI는 어깨선 아래의 얇은 상흉부 영역을 사용한다.
+        // 기존 0.34sw 오프셋은 실측 42프레임에서 모두 화면을 벗어났다.
+        // 0.05sw 오프셋과 0.20sw 높이는 45프레임에서 화면 안에 머물며 나쁜 자세를 구분했다.
         let torso = centeredRect(
             x: shoulderX,
             y: shoulderY + shoulderWidth * 0.05,
@@ -196,7 +196,7 @@ public struct PostureFrameAnalyzer: Sendable {
     }
 
     private func median(_ values: [Double]) -> Double? {
-        // ROI 경로는 기존 percentile 보간 연산을 유지한다. 짝수 표본의 반올림은 Statistics.median과 다를 수 있다.
+        // 기존 ROI 백분위수 보간을 유지하므로 짝수 표본에서 부동소수점 반올림만 Statistics.median과 다를 수 있다.
         Statistics.percentile(values, 0.5)
     }
 

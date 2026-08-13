@@ -6,7 +6,7 @@
 |---|---|
 | 문서 유형 | Apple 공식 자료·모델 자료 목록 |
 | 적용 상태 | 근거 문서 |
-| 다루는 범위 | AVFoundation, Vision, Core ML, DA-V2, Depth Pro |
+| 다루는 범위 | AVFoundation, Vision, Core ML, DA-V2 |
 | 제품 내 역할 | [analysis.md](analysis.md)의 플랫폼 가용성·제약을 추적할 출처 제공 |
 
 ## 핵심 근거
@@ -24,20 +24,17 @@
 - AVDepthData (컨테이너, "compatible camera devices" 전제; macOS 10.13+이나 측정 아님): <https://developer.apple.com/documentation/avfoundation/avdepthdata>
 - builtInTrueDepthCamera ("two cameras, one Infrared and one YUV"; macOS 없음): <https://developer.apple.com/documentation/avfoundation/avcapturedevice/devicetype-swift.struct/builtintruedepthcamera>
 - Streaming depth data from the TrueDepth camera (TrueDepth 전제 샘플): <https://developer.apple.com/documentation/AVFoundation/streaming-depth-data-from-the-truedepth-camera>
-- ARKit (macOS 네이티브 없음, 하드웨어 센싱 전제): <https://developer.apple.com/documentation/arkit>
+- ARKit (macOS 네이티브 없음): <https://developer.apple.com/documentation/arkit>
 - VNGeneratePersonSegmentationRequest (macOS 12.0+): <https://developer.apple.com/documentation/vision/vngeneratepersonsegmentationrequest>
 - VNGeneratePersonInstanceMaskRequest (macOS 14.0+): <https://developer.apple.com/documentation/vision/vngeneratepersoninstancemaskrequest>
 - VNGenerateForegroundInstanceMaskRequest (macOS 14.0+): <https://developer.apple.com/documentation/vision/vngenerateforegroundinstancemaskrequest>
+- VNDetectHumanBodyPoseRequest (macOS 11.0+): <https://developer.apple.com/documentation/vision/vndetecthumanbodyposerequest>
 - VNDetectHumanBodyPose3DRequest (macOS 14+, RGB skeleton 추정): <https://developer.apple.com/documentation/vision/vndetecthumanbodypose3drequest>
 - WWDC23 Vision 3D body pose (`AVDepthData`, hip root, reference height): <https://developer.apple.com/videos/play/wwdc2023/111241/>
 - VNCoreMLRequest (Core ML 모델 실행, macOS 10.13+): <https://developer.apple.com/documentation/vision/vncoremlrequest>
 - Apple 공식 Core ML 변환본 Depth Anything V2 Small (49.8MB F16, M3 Max NE 24.58ms): <https://huggingface.co/apple/coreml-depth-anything-v2-small>
 - Hugging Face Core ML 예시 (DepthAnythingV2SmallF16.mlpackage Swift 데모): <https://github.com/huggingface/coreml-examples/blob/main/depth-anything-example/README.md>
 - Depth Anything V2 원논문 (affine-invariant/상대 깊이): <https://arxiv.org/html/2406.09414v2>
-- Apple Depth Pro (metric 단안, 공식 Core ML 패키지 확인되지 않음): <https://github.com/apple/ml-depth-pro>
-- Apple Depth Pro 저장소 LICENSE: <https://github.com/apple/ml-depth-pro/blob/main/LICENSE>
-- Apple CDN checkpoint 다운로드 스크립트: <https://github.com/apple/ml-depth-pro/blob/main/get_pretrained_models.sh>
-- Apple Depth Pro Hugging Face LICENSE (`apple-amlr`, research-only): <https://huggingface.co/apple/DepthPro/blob/main/LICENSE>
 - 단안 깊이 한계와 상대 변화 결론: [../../algorithm/pose-estimation/related-monocular-limits.md](../../algorithm/pose-estimation/related-monocular-limits.md)
 
 ## 추가·관련 자료
@@ -45,7 +42,6 @@
 - Apple Core ML 샘플 PoseNet 입력의 역할: [../../algorithm/apple-posenet/README.md](../../algorithm/apple-posenet/README.md)
 - Apple Vision 자세 입력의 역할: [../../algorithm/apple-body-pose/README.md](../../algorithm/apple-body-pose/README.md)
 - 현재 채택 depth 모델: [../depth-anything-v2/README.md](../depth-anything-v2/README.md)
-- 대형 metric 대안: [../apple-depth-pro/README.md](../apple-depth-pro/README.md)
 
 ## 직접 적용하지 않는 범위
 

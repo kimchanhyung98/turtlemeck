@@ -5,7 +5,7 @@ public enum SubjectSelection: Equatable, Sendable {
     case rejected(FrameExclusionReason)
 }
 
-/// 배열 순서가 아니라 상체 크기와 이전 프레임 위치로 한 버스트의 대상을 유지한다.
+/// 상체 크기와 이전 프레임 위치를 기준으로 버스트 안의 대상을 유지한다.
 public struct UpperBodySubjectSelector: Sendable {
     private var previousCenter: Point2D?
 
@@ -18,8 +18,8 @@ public struct UpperBodySubjectSelector: Sendable {
     public mutating func select(from candidates: [PoseLandmarks]) -> SubjectSelection {
         let scored = candidates.compactMap(score)
         guard !scored.isEmpty else {
-            // 머리는 신뢰 가능하게 보이는데 어깨가 없으면 '사람 없음'이 아니라 '평가 불가 자세'다.
-            // 단, 사용자 크기(눈 사이 거리)에 못 미치는 머리는 원거리 배경 인물이므로 사람 없음으로 남긴다.
+            // 사용자 크기의 머리가 보이면 어깨가 없어도 '사람 없음'이 아닌 '자세 평가 불가'다.
+            // 작은 머리는 먼 배경 인물로 보고 '사람 없음'을 유지한다.
             let headDetected = candidates.contains(where: isSubjectScaleHead)
             return .rejected(headDetected ? .missingShoulder : .noSubject)
         }
@@ -52,7 +52,6 @@ public struct UpperBodySubjectSelector: Sendable {
     private func score(_ landmarks: PoseLandmarks) -> Candidate? {
         guard
             let geometry = landmarks.upperBodyGeometry,
-            // 원거리 배경 인물은 대상 후보로 선택하지 않는다.
             geometry.shoulderWidth >= Tuning.minimumShoulderWidth
         else { return nil }
         let center = Point2D(

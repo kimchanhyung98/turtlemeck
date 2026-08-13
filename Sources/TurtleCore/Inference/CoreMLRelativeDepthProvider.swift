@@ -5,6 +5,7 @@ import CoreVideo
 import Foundation
 import Vision
 
+// 변경 가능한 모델 캐시는 `modelLock`으로 보호한다.
 public final class CoreMLRelativeDepthProvider: @unchecked Sendable {
     private let modelName: String
     private let direction: DepthDirection

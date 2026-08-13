@@ -37,7 +37,7 @@ func registerWorkflowTests() {
     }
 
     TestRegistry.test("torso band stays fully visible at typical laptop framing") {
-        // 실측 구도: 어깨 y≈0.85~0.88, 어깨폭 0.35~0.37 — 구 기하(어깨 아래 0.34sw)는 여기서 항상 하단을 벗어났다.
+        // 실측 구도(어깨 높이 0.85~0.88, 폭 0.35~0.37)에서는 이전 몸통 관심 영역이 항상 화면 밖으로 벗어났다.
         var landmarks = validLandmarks(shoulderWidth: 0.37)
         landmarks.nose?.y = 0.45
         landmarks.leftEye?.y = 0.42
@@ -57,7 +57,7 @@ func registerWorkflowTests() {
     }
 
     TestRegistry.test("close-camera framing keeps the torso band evaluable") {
-        // 실측 최악 구도(근접 착석, 어깨 y≈0.93)에서도 밴드는 화면 안에 남아야 한다.
+        // 가장 가까이 앉은 실측 구도(어깨 높이 약 0.93)에서도 몸통 영역이 화면 안에 남아야 한다.
         var landmarks = validLandmarks(shoulderWidth: 0.4)
         landmarks.nose?.y = 0.5
         landmarks.leftEye?.y = 0.47
@@ -74,8 +74,8 @@ func registerWorkflowTests() {
         try expectEqual(result.quality.roiBoundaryContactRatio, 0, "band must not touch the frame boundary even when seated close")
     }
 
-    TestRegistry.test("occluded shoulders mark the frame as unassessable posture") {
-        // 턱 괴기 실측: 팔이 어깨를 가리면 어깨 confidence가 0.14~0.31로 무너진다(정상 최소 0.51).
+    TestRegistry.test("occluded shoulders mark the frame as unassessable") {
+        // 턱을 괴어 팔이 어깨를 가리면 어깨 신뢰도가 정상 최솟값 0.51보다 낮은 0.14~0.31로 떨어진다.
         var chinProp = validLandmarks()
         chinProp.leftShoulder?.confidence = 0.31
         let analyzer = PostureFrameAnalyzer()
@@ -88,7 +88,7 @@ func registerWorkflowTests() {
         try expect(analyzer.analyze(landmarks: confident, depthMap: map).isValid, "measured normal-posture confidence must stay valid")
     }
 
-    TestRegistry.test("head dropped toward shoulders marks the frame as unassessable posture") {
+    TestRegistry.test("a head dropped toward the shoulders marks the frame as unassessable") {
         var dropped = validLandmarks()
         dropped.nose?.y = 0.64
         dropped.leftEye?.y = 0.62
@@ -99,7 +99,7 @@ func registerWorkflowTests() {
             landmarks: dropped,
             depthMap: depthMap { x, y in Double(y) + Double(x) * 0.2 }
         )
-        try expectEqual(result.exclusionReason, .headDropped, "tilted or slumped head must be excluded as abnormal")
+        try expectEqual(result.exclusionReason, .headDropped, "tilted or slumped head must be a posture-caused exclusion")
     }
 
     TestRegistry.test("single head-anchor outlier does not move the head ROI") {
@@ -410,7 +410,7 @@ func registerWorkflowTests() {
         }
     }
 
-    TestRegistry.test("posture judgment follows an abnormal user baseline in either direction") {
+    TestRegistry.test("posture judgment follows a worsened user baseline in either direction") {
         let reference = (0..<Tuning.requiredCalibrationBursts).map { _ in
             BurstSummary(
                 totalFrameCount: 5,
@@ -422,34 +422,34 @@ func registerWorkflowTests() {
                 medianShoulderWidth: 0.4
             )
         }
-        guard case .accepted(let abnormalBaseline) = Calibrator().capture(from: reference, captureConfiguration: testCaptureConfiguration) else {
+        guard case .accepted(let worsenedBaseline) = Calibrator().capture(from: reference, captureConfiguration: testCaptureConfiguration) else {
             throw testFailure("stable user reference must be accepted without an objective-posture override")
         }
         func anchoredBurst(feature: Double) -> [TimedFrame] {
             (1...5).map { anchoredFrame(index: $0, feature: feature, shoulderMidY: 0.84, shoulderWidth: 0.4) }
         }
 
-        let sameAbnormalPosture = BurstProcessor().process(
+        let sameWorsenedPosture = BurstProcessor().process(
             anchoredBurst(feature: 0.47),
-            baseline: abnormalBaseline,
+            baseline: worsenedBaseline,
             captureConfiguration: testCaptureConfiguration
         )
-        try expectEqual(sameAbnormalPosture.evidence, .normal, "the user reference itself must be normal evidence")
-        try expectEqual(sameAbnormalPosture.assessment, .good, "the user reference itself must be a good product assessment")
+        try expectEqual(sameWorsenedPosture.evidence, .normal, "the user reference itself must be normal evidence")
+        try expectEqual(sameWorsenedPosture.assessment, .good, "the user reference itself must be a good product assessment")
 
         let fartherPositive = BurstProcessor().process(
             anchoredBurst(feature: 0.84),
-            baseline: abnormalBaseline,
+            baseline: worsenedBaseline,
             captureConfiguration: testCaptureConfiguration
         )
-        try expectEqual(fartherPositive.evidence, .worsened, "a large positive deviation must be abnormal too")
+        try expectEqual(fartherPositive.evidence, .worsened, "a large positive deviation must yield worsened evidence too")
 
         let objectivelyNormal = anchoredBurst(feature: -1.21)
-        let verdict = BurstProcessor().process(objectivelyNormal, baseline: abnormalBaseline, captureConfiguration: testCaptureConfiguration)
+        let verdict = BurstProcessor().process(objectivelyNormal, baseline: worsenedBaseline, captureConfiguration: testCaptureConfiguration)
         try expectEqual(
             verdict.evidence,
             .worsened,
-            "a large deviation from the user baseline must be abnormal even when feature decreases"
+            "a large deviation from the user baseline must yield worsened evidence even when the feature decreases"
         )
         try expectEqual(verdict.assessment, .bad, "an objectively normal posture can be bad relative to the user reference")
         try expectApprox(try unwrap(verdict.baselineDelta, "signed baseline delta"), -1.68, "diagnostics preserve deviation direction")
@@ -457,7 +457,7 @@ func registerWorkflowTests() {
         let changedConfiguration = CaptureConfiguration(cameraUniqueID: "other-camera", width: 640, height: 480, orientation: "up-unmirrored")
         let missingConfiguration = BurstProcessor().process(
             anchoredBurst(feature: 0.47),
-            baseline: abnormalBaseline,
+            baseline: worsenedBaseline,
             captureConfiguration: nil
         )
         try expectEqual(missingConfiguration.evidence, .noEval, "missing capture metadata must fail closed")
@@ -471,7 +471,7 @@ func registerWorkflowTests() {
         for (name, frames) in configurationFailureCases {
             let verdict = BurstProcessor().process(
                 frames,
-                baseline: abnormalBaseline,
+                baseline: worsenedBaseline,
                 captureConfiguration: changedConfiguration
             )
             try expectEqual(verdict.evidence, .noEval, "\(name) must not hide a stale capture configuration")
@@ -484,10 +484,10 @@ func registerWorkflowTests() {
         }
         let framingError = BurstProcessor().process(
             movedFraming,
-            baseline: abnormalBaseline,
+            baseline: worsenedBaseline,
             captureConfiguration: testCaptureConfiguration
         )
-        try expectEqual(framingError.evidence, .noEval, "an abnormal baseline must not bypass framing validation")
+        try expectEqual(framingError.evidence, .noEval, "a user baseline must not bypass framing validation")
         try expect(framingError.requiresCalibration, "framing drift must still request recalibration")
     }
 
@@ -533,14 +533,14 @@ func registerWorkflowTests() {
         try expectEqual(verdict.evidence, .noEval, "stale feature data must not mask insufficient coverage")
     }
 
-    TestRegistry.test("head detected but unassessable posture is abnormal, absent subject stays no-eval") {
+    TestRegistry.test("a detected head with an unassessable posture yields worsened evidence; an absent subject yields no-eval evidence") {
         let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 1, captureConfiguration: testCaptureConfiguration)
         let chinProp = (1...5).map { excludedFrame(index: $0, reason: .missingShoulder, landmarks: validLandmarks()) }
         let chinPropVerdict = BurstProcessor().process(chinProp, baseline: baseline, captureConfiguration: testCaptureConfiguration)
-        try expectEqual(chinPropVerdict.evidence, .worsened, "chin-prop burst must count as abnormal posture")
-        try expectEqual(chinPropVerdict.reason, "posture unassessable", "abnormal reason")
+        try expectEqual(chinPropVerdict.evidence, .worsened, "chin-prop burst must yield worsened evidence")
+        try expectEqual(chinPropVerdict.reason, "posture unassessable", "posture-caused reason")
 
-        // 기준 자세가 없어도 '정상 판정 불가'는 비정상 증거다(baseline 비교가 필요 없는 판정).
+        // 자세로 인한 평가 불가는 기준값과 비교하지 않아도 악화 증거다.
         let withoutBaseline = BurstProcessor().process(chinProp, baseline: nil, captureConfiguration: testCaptureConfiguration)
         try expectEqual(withoutBaseline.evidence, .worsened, "unassessable posture does not need a baseline")
 
@@ -551,7 +551,6 @@ func registerWorkflowTests() {
             "absent subject must stay no-eval"
         )
 
-        // 유효 프레임이 더 많으면 feature 경로가 우선한다.
         let mixed = [
             excludedFrame(index: 1, reason: .missingShoulder, landmarks: validLandmarks()),
             timedFrame(index: 2, feature: 0.01),
@@ -566,9 +565,8 @@ func registerWorkflowTests() {
         )
     }
 
-    TestRegistry.test("abnormal escalation requires a majority of the captured frames") {
+    TestRegistry.test("worsened evidence requires a majority of the captured frames") {
         let baseline = Baseline(center: 0, dispersion: 0.01, burstCount: 1, captureConfiguration: testCaptureConfiguration)
-        // 사람 부재 프레임이 다수인 버스트는 소수의 평가 불가 프레임만으로 비정상이 되지 않는다.
         let mostlyAbsent = [
             excludedFrame(index: 1, reason: .missingShoulder, landmarks: validLandmarks()),
             excludedFrame(index: 2, reason: .missingShoulder, landmarks: validLandmarks()),
@@ -596,14 +594,14 @@ func registerWorkflowTests() {
         )
     }
 
-    TestRegistry.test("only posture-caused exclusions count as abnormal evidence") {
-        let abnormal: [FrameExclusionReason] = [.missingShoulder, .croppedUpperBody, .excessiveRotation, .headDropped]
+    TestRegistry.test("among exclusions, only posture-caused reasons yield worsened evidence") {
+        let postureCaused: [FrameExclusionReason] = [.missingShoulder, .croppedUpperBody, .excessiveRotation, .headDropped]
         let technical: [FrameExclusionReason] = [
             .unstableCapture, .noSubject, .ambiguousSubject, .missingHeadAnchor, .modelFailure,
             .invalidROIGeometry, .insufficientDepthPixels, .insufficientDepthRange
         ]
-        for reason in abnormal {
-            try expect(reason.isSubjectUnassessable, "\(reason.rawValue) must be abnormal evidence")
+        for reason in postureCaused {
+            try expect(reason.isSubjectUnassessable, "\(reason.rawValue) must yield worsened evidence")
         }
         for reason in technical {
             try expect(!reason.isSubjectUnassessable, "\(reason.rawValue) must stay no-eval (not posture-caused)")
@@ -611,15 +609,15 @@ func registerWorkflowTests() {
 
         let baselines = [
             ("normal", Baseline(center: -1.21, dispersion: 0.04, burstCount: 1, captureConfiguration: testCaptureConfiguration)),
-            ("abnormal", Baseline(center: 0.47, dispersion: 0.04, burstCount: 1, captureConfiguration: testCaptureConfiguration))
+            ("worsened", Baseline(center: 0.47, dispersion: 0.04, burstCount: 1, captureConfiguration: testCaptureConfiguration))
         ]
         for (baselineName, baseline) in baselines {
-            for reason in abnormal {
+            for reason in postureCaused {
                 let frames = (1...5).map { excludedFrame(index: $0, reason: reason, landmarks: validLandmarks()) }
                 try expectEqual(
                     BurstProcessor().process(frames, baseline: baseline, captureConfiguration: testCaptureConfiguration).evidence,
                     .worsened,
-                    "\(baselineName) baseline: \(reason.rawValue) must be abnormal"
+                    "\(baselineName) baseline: \(reason.rawValue) must yield worsened evidence"
                 )
             }
             for reason in technical {
@@ -644,14 +642,14 @@ func registerWorkflowTests() {
         try expect(analyzer.analyze(landmarks: atThreshold, depthMap: map).isValid, "shoulder confidence at the threshold must pass")
 
         var nearGapLimit = validLandmarks()
-        // anchor 중앙값 gap ≈ 0.92 (> 0.90) — 임계 바로 위는 통과해야 한다.
+        // 기준점 간격은 약 0.92로 임계값 0.90을 막 넘는다.
         for keyPath in [\PoseLandmarks.nose, \PoseLandmarks.leftEye, \PoseLandmarks.rightEye, \PoseLandmarks.leftEar, \PoseLandmarks.rightEar] {
             nearGapLimit[keyPath: keyPath]?.y = 0.472
         }
         try expect(analyzer.analyze(landmarks: nearGapLimit, depthMap: map).isValid, "gap just above the limit must pass")
 
         var belowGapLimit = nearGapLimit
-        // anchor 중앙값 gap ≈ 0.88 (< 0.90) — 임계 바로 아래는 headDropped다.
+        // 기준점 간격은 약 0.88로 임계값 0.90에 못 미친다.
         for keyPath in [\PoseLandmarks.nose, \PoseLandmarks.leftEye, \PoseLandmarks.rightEye, \PoseLandmarks.leftEar, \PoseLandmarks.rightEar] {
             belowGapLimit[keyPath: keyPath]?.y = 0.488
         }
@@ -674,7 +672,6 @@ func registerWorkflowTests() {
     }
 
     TestRegistry.test("framing change since calibration requires recalibration instead of judgment") {
-        // 사용자 구도(리드 각도·착석 거리)가 바뀌면 판정은 무의미하다 — 당연히 재보정으로 안내한다.
         let baseline = Baseline(
             center: 0,
             dispersion: 0.02,
@@ -697,7 +694,7 @@ func registerWorkflowTests() {
         let movedSeat = BurstProcessor().process(burst(midY: 0.88, width: 0.32), baseline: baseline, captureConfiguration: testCaptureConfiguration)
         try expectEqual(movedSeat.reason, "framing changed", "shoulder width shift beyond tolerance means the seat or lid moved")
 
-        // 구도 anchor가 없는 baseline(보정 표본에 landmark 정보가 없던 경우)은 기존 비교를 유지한다.
+        // 관절점 정보가 없는 기존 기준값은 구도 검사를 건너뛴다.
         let anchorless = Baseline(center: 0, dispersion: 0.02, burstCount: 1, captureConfiguration: testCaptureConfiguration)
         try expectEqual(
             BurstProcessor().process(burst(midY: 0.81, width: 0.32), baseline: anchorless, captureConfiguration: testCaptureConfiguration).evidence,
@@ -947,7 +944,7 @@ func registerWorkflowTests() {
     }
 }
 
-// 실측 비율 기반 fixture: (어깨midY − 신뢰 head anchor 중앙값 y)/어깨폭 ≈ 1.05 — 정상 실측(최소 0.945) 범위.
+// 머리-어깨 간격 비율이 약 1.05인 정상 실측 기반 테스트 데이터다(정상 최솟값 0.945).
 private func validLandmarks(centerX: Double = 0.5, shoulderWidth: Double = 0.4) -> PoseLandmarks {
     func point(_ x: Double, _ y: Double) -> Point2D { Point2D(x: x, y: y, confidence: 0.95) }
     return PoseLandmarks(

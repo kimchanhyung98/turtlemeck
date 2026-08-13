@@ -6,8 +6,8 @@
 |---|---|
 | 문서 유형 | 공식 자료·1차 연구 목록 |
 | 적용 상태 | 근거 문서 |
-| 다루는 범위 | Apple Core ML 샘플 PoseNet, Apple Vision, 대안 pose 모델, CVA, 단안 3D pose, FHP 인접 연구 |
-| 제품 내 역할 | [analysis.md](analysis.md)의 주장과 한계를 추적할 출처 제공 |
+| 다루는 범위 | Apple Core ML 샘플 PoseNet, Vision 2D, 모델 선정, CVA와 단안 한계 |
+| 제품 내 역할 | [analysis.md](analysis.md)의 채택 판단과 구현 경계를 추적할 출처 제공 |
 
 ## 핵심 근거
 
@@ -42,13 +42,14 @@
 ## 추가·관련 자료
 
 - Apple Core ML 샘플 PoseNet 분석: [`../apple-posenet/`](../apple-posenet/)
-- Apple Vision 2D·3D 분석: [`../apple-body-pose/`](../apple-body-pose/)
+- Apple Vision 2D 분석: [`../apple-body-pose/`](../apple-body-pose/)
 - MediaPipe Pose Landmarker guide (33 3D landmarks, GHUM): <https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker>
 - 사진 CVA와 방사선 정렬 비교(R²≈0.30, 한계 근거): <https://pmc.ncbi.nlm.nih.gov/articles/PMC11012400/>
-- CVA 정의 및 FHP 임계 논의 (tragus–C7, <50–53°): <https://pmc.ncbi.nlm.nih.gov/articles/PMC7559098/>
+- CVA 정의와 FHP 판정에 50~53° 미만 기준을 사용한 사례: <https://pmc.ncbi.nlm.nih.gov/articles/PMC7559098/>
 - 정면 평면 sternum-tragi 각 ↔ 3D CVA 상관 (frontal proxy 한계): <https://journals.sagepub.com/doi/abs/10.3233/WOR-213451>
-- 단안 3D pose의 깊이 모호성(ill-posed) 서베이: <https://pmc.ncbi.nlm.nih.gov/articles/PMC12031093/>, <https://arxiv.org/html/2411.13026v1>
-- 1€ filter (속도적응 스무딩): <https://gery.casiez.net/1euro/>
+- 단안 3D pose의 깊이 모호성 서베이: <https://pmc.ncbi.nlm.nih.gov/articles/PMC12031093/>
+- 단안 3D pose 방법 연구: <https://arxiv.org/html/2411.13026v1>
+- 1€ filter (속도 적응형 스무딩): <https://gery.casiez.net/1euro/>
 
 ## 직접 적용하지 않는 범위
 

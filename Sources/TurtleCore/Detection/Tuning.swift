@@ -1,26 +1,25 @@
 import Foundation
 
-/// 제품 데이터 검증 전의 잠정 품질·판정 값이다. 모델이나 도메인 흐름을 선택하는 설정이 아니다.
+/// 제품 데이터로 확정하기 전의 임시 품질·판정 임계값이다.
 public enum Tuning {
     public static let minimumLandmarkConfidence = 0.15
     public static let minimumHeadAnchorConfidence = 0.5
     public static let minimumShoulderWidth = 0.08
     public static let maximumShoulderSlope = 0.18
-    // 턱 괴기·기울기처럼 팔이나 자세가 어깨를 가리면 어깨 confidence가 무너진다(비정상 실측 0.14~0.31,
-    // 정상 실측 최소 0.51). 이 아래면 '머리는 있으나 정상 판정 불가'로 비정상 증거 처리한다.
-    // PoseNet 손목 채널은 배경 고정점 오검출(유령 손목)로 판정 근거에서 제외했다 — 2026-07-22 실측.
+    // 악화 자세의 어깨 신뢰도는 0.14~0.31, 정상 자세의 최솟값은 0.51이었다.
+    // 0.35 미만은 머리가 보여도 정상 판정 불가로 처리한다.
     public static let minimumAssessableShoulderConfidence = 0.35
-    // 반대쪽 어깨 confidence가 낮을 때, 머리 인접 어깨보다 이만큼 위로 튄 점만
-    // 의자·헤드레스트 오검출로 허용한다(정상 측면 실측 차이 0.125~0.225).
+    // 측면 구도에서 반대쪽 어깨가 머리 쪽 어깨보다 이 값 이상 위로 튀면 배경 오검출로 본다.
+    // 정상 측면 구도의 실측 차이는 0.125~0.225였다.
     public static let minimumSideShoulderVerticalSeparation = 0.08
-    // (어깨midY − 신뢰 head anchor 중앙값 y)/어깨폭. anchor 중앙값 기준 실측: 정상 최소 0.945,
-    // 옆 기움 0.70, 턱괴기+숙임 0.81. 임계는 정상 최소값 아래 여유(≥0.045)를 두고 잡는다.
+    // (어깨 기준 y - 머리 기준점 중앙값 y) / 어깨너비 비율의 하한이다.
+    // 실측값은 정상 ≥0.945, 옆 기울임 0.70, 턱 괴고 숙임 0.81이며 0.90으로 여유를 둔다.
     public static let minimumHeadShoulderGapRatio = 0.90
-    // 어깨 없이 머리만 잡힌 후보가 사용자인지 원거리 배경 인물인지 가르는 눈 사이 거리 하한.
-    // 착석 사용자 실측 0.05~0.10, 수 미터 밖 인물은 그 수분의 일 수준이다.
+    // 어깨가 없는 후보에서 사용자인지 먼 배경 인물인지 가르는 눈 사이 거리 하한이다.
+    // 착석 사용자는 0.05~0.10, 먼 배경 인물은 그보다 훨씬 작았다.
     public static let minimumSubjectEyeDistance = 0.03
-    // 보정 시점 대비 구도(어깨 기준 위치·폭) 변화 허용치. 이탈 시 판정 대신 재보정을 안내한다.
-    // 실측: 같은 구도의 버스트 간 변동은 midY ≤0.016 / 폭 ≤5%, 실제 구도 변경은 midY 0.072 / 폭 11~17%.
+    // 보정 시점의 어깨 위치와 너비에서 벗어나면 판정하지 않고 재보정한다.
+    // 같은 구도의 변동은 y ≤ 0.016·너비 ≤ 5%, 실제 구도 변화는 y = 0.072·너비 = 11~17%였다.
     public static let maximumShoulderAnchorShiftY = 0.05
     public static let maximumShoulderAnchorWidthRatio = 0.10
     public static let frameBoundaryMargin = 0.015

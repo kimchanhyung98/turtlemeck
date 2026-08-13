@@ -277,7 +277,6 @@ struct MenuView: View {
         .controlSize(.small)
     }
 
-    /// baseline이 없거나 보정이 필요한 동안은 점검·일시정지를 쓸 수 없다.
     private var checksUnavailable: Bool {
         model.settings.baseline == nil || model.postureState == .needsCalibration
     }
@@ -368,7 +367,7 @@ struct MenuView: View {
     }
 }
 
-/// 아이콘 폭 차이와 무관하게 텍스트 시작 위치를 고정하는 설정 행 전용 스타일.
+// 아이콘 너비와 관계없이 설정 행의 텍스트 시작점을 맞춘다.
 private struct SettingsRowLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 8) {

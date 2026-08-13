@@ -20,7 +20,7 @@ struct LocalAIAnalysisConfiguration: Sendable {
     }
 }
 
-/// 선택적인 local AI 출력 어댑터. 공통 분석 결과를 읽을 뿐 verdict를 반환하지 않는다.
+/// 선택적 로컬 AI 출력 어댑터이며 공통 분석 결과를 읽기만 하고 판정은 반환하지 않는다.
 public final class LocalAIAnalysisRunner: @unchecked Sendable {
     private let configuration: LocalAIAnalysisConfiguration?
 
@@ -86,8 +86,11 @@ public final class LocalAIAnalysisRunner: @unchecked Sendable {
         # Local posture analysis request
 
         Analyze each RGB capture together with the depth image having the same frame number.
-        The depth PNG is a visualization of relative inverse depth. It is not centimeters, absolute distance, clinical CVA, or a medical diagnosis.
-        Do not modify the input directory. Return only a concise wellness-oriented analysis; the caller writes it to:
+        The depth PNG visualizes relative inverse depth.
+        It does not provide distance in centimeters or any other absolute unit.
+        It is not a clinical CVA measurement or a medical diagnosis.
+        Do not modify the input directory.
+        Return only a concise wellness-oriented analysis; the caller writes it to:
         \(localURL.appendingPathComponent("analysis.md").path)
 
         ## RGB captures

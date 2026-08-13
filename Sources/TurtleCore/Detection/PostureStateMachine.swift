@@ -65,7 +65,7 @@ public struct PostureStateMachine: Sendable {
             if recoveryStreak >= requiredRecoveryBursts {
                 recoveryStreak = 0
                 currentState = .good
-                // 회복 이벤트는 통계용이며, 알림 여부는 NotificationPolicy가 별도로 거른다.
+                // 회복 이벤트는 통계용이며 알림 여부는 NotificationPolicy가 결정한다.
                 return PostureTransition(state: .good, alert: .recovered)
             }
             return PostureTransition(state: .bad, alert: nil)

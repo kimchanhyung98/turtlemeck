@@ -34,8 +34,7 @@ public final class PoseDetector {
         return merged(fallback: try perform(handler: handler), poseNet: poseNetCandidates)
     }
 
-    /// Vision도 후보를 못 내면 PoseNet 부분 검출을 보존한다.
-    /// 하류에서 '사람 없음'과 '머리는 있으나 어깨 미신뢰'를 구분하는 데 필요하다.
+    // Vision 후보가 없으면 PoseNet 부분 검출을 보존해 사람 부재와 어깨 미검출을 구분한다.
     private func merged(fallback: [PoseLandmarks], poseNet: [PoseLandmarks]) -> [PoseLandmarks] {
         fallback.isEmpty ? poseNet : fallback
     }
@@ -72,7 +71,7 @@ public final class PoseDetector {
 
     private func point(_ joint: VNHumanBodyPoseObservation.JointName, in observation: VNHumanBodyPoseObservation) -> Point2D? {
         guard let recognized = try? observation.recognizedPoint(joint) else { return nil }
-        // Vision 좌하단 원점을 분석 도메인의 좌상단 원점으로 명시적으로 변환한다.
+        // Vision의 좌하단 원점을 분석 도메인의 좌상단 원점으로 변환한다.
         return Point2D(
             x: recognized.location.x,
             y: 1 - recognized.location.y,
