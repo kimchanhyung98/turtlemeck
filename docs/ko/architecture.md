@@ -20,14 +20,15 @@ Swift Package에는 외부 패키지 의존성이 없고 다음 제품과 실행
 
 ## 구성 루트
 
-`Sources/turtlemeck/main.swift`가 `runTurtleMeckApp()`을 호출하고 `AppDelegate`를 설치한다.
+`Sources/turtlemeck/main.swift`가 `runTurtleMeckApp()`을 호출한다.
+`Sources/TurtleCore/App/Entry.swift`에 정의된 이 함수가 `AppDelegate`를 생성·유지하고 설치한다.
 `AppDelegate`는 하나의 `AppModel`을 만들고 실행 모드에 따라 `StatusItemController` 또는 디버그 `NSWindow`에 연결한다.
 
 `AppModel`은 화면 상태를 소유하며 다음 구성 요소의 수명 주기를 조율한다.
 
 - `CameraManager` — 카메라 예약, 캡처, 추론·판정 파이프라인 실행
 - `SettingsStore`, `StatsStore` — 기준 자세·설정과 날짜별 통계 저장
-- `PostureStateMachine` — 여러 점검 결과를 제품 상태와 이벤트로 변환
+- `PostureStateMachine` — 자세 증거에 지속성 규칙을 적용해 `good`·`bad`·`noEval` 전이와 이벤트 생성. 나머지 수명 주기 상태는 `AppModel`이 소유
 - `NotificationPolicy`, `NotificationManager` — 반복 제한, 스누즈, 배너·소리 출력
 
 카메라 계층의 콜백은 판정, 다음 점검 시각, 카메라 차단, 진단, 캡처 활성 상태를 `AppModel`에 전달한다.
@@ -40,9 +41,9 @@ Swift Package에는 외부 패키지 의존성이 없고 다음 제품과 실행
 1. `CameraManager`가 내장 카메라를 640×480으로 열고 워밍업 뒤 최대 5프레임을 고른다.
 2. `PoseDetector`가 PoseNet을 우선 사용하고 사용할 수 있는 상체 후보가 없으면 Apple Vision 2D를 사용한다.
 3. `CoreMLRelativeDepthProvider`가 Depth Anything V2 Small로 상대 깊이 맵을 만든다.
-4. `PostureFrameAnalyzer`가 한 사람의 머리·몸통·참조 ROI에서 기준과 비교할 특성값을 만든다.
+4. `UpperBodySubjectSelector`가 한 명의 후보를 고르고, `PostureFrameAnalyzer`가 그 사람의 머리·몸통·참조 ROI에서 기준과 비교할 특성값을 만든다.
 5. `BurstProcessor`가 프레임 중앙값과 품질을 집계하고 저장된 기준 자세와 비교한다.
-6. `PostureStateMachine`이 연속된 정상·악화·판정 불가 증거를 제품 상태와 통계 이벤트로 바꾼다.
+6. `PostureStateMachine`이 정상·악화·판정 불가 증거에 지속성 규칙을 적용해 `good`·`bad`·`noEval` 전이와 통계 이벤트를 만든다.
 7. `AppModel`이 화면과 통계를 갱신하고 `NotificationPolicy`가 허용한 주의 이벤트만 알린다.
 
 디버그·로컬 출력은 제품 상태가 결정된 뒤 별도 출력 큐에서 기록한다.
@@ -55,12 +56,13 @@ Swift Package에는 외부 패키지 의존성이 없고 다음 제품과 실행
 |---|---|
 | `Sources/TurtleCore/App/` | 앱 수명 주기, 실행 모드, 화면 상태 조율 |
 | `Sources/TurtleCore/Camera/` | 권한, 캡처 세션, 버스트 예약, 프레임 품질 게이트 |
-| `Sources/TurtleCore/Inference/` | PoseNet·Vision 2D와 Depth Anything V2 Core ML 어댑터 |
+| `Sources/TurtleCore/Inference/` | PoseNet·Depth Anything V2 Core ML 어댑터와 Apple Vision 2D 폴백 |
 | `Sources/TurtleCore/Detection/` | 대상 선택, ROI·특성값, 보정, 버스트 판정, 상태 전이, 튜닝값 |
 | `Sources/TurtleCore/MenuBar/` | `NSStatusItem`, `NSPopover`, 공용 SwiftUI `MenuView` |
 | `Sources/TurtleCore/Notifications/` | 알림 반복 정책과 macOS 배너·소리 출력 |
 | `Sources/TurtleCore/Storage/` | UserDefaults 설정·기준 자세와 JSON 일일 통계 |
 | `Sources/TurtleCore/Output/` | 판정에 영향을 주지 않는 디버그·로컬 산출물 |
+| `Sources/TurtleCore/Launch/` | `SMAppService` 로그인 항목 상태 조회·등록·해제 |
 
 ## 상태와 영속성
 
@@ -80,7 +82,8 @@ Swift Package에는 외부 패키지 의존성이 없고 다음 제품과 실행
 팝오버 밖의 로컬·전역 마우스 입력을 감시해 화면을 닫지만 앱의 점검은 멈추지 않는다.
 
 디버그 모드에서는 `NSWindow` 안의 `NSHostingController`가 같은 `MenuView`를 `ScrollView`로 감싼다.
-실행 모드는 UI 컨테이너만 바꾸므로 자세 판정, 설정, 통계 경로는 일반 모드와 같다.
+디버그 실행 플래그는 별도로 `MenuView`, `AppModel`, `CameraManager`를 통해 진단 패널과 파일 출력도 활성화한다.
+자세 판정, 설정, 통계 경로는 일반 모드와 같다.
 
 ## 플랫폼과 패키징
 

@@ -20,14 +20,15 @@ The Swift package has no external package dependencies and defines the following
 
 ## Composition root
 
-`Sources/turtlemeck/main.swift` calls `runTurtleMeckApp()` and installs `AppDelegate`.
+`Sources/turtlemeck/main.swift` calls `runTurtleMeckApp()`.
+That function, defined in `Sources/TurtleCore/App/Entry.swift`, creates, retains, and installs `AppDelegate`.
 `AppDelegate` creates one `AppModel` and connects it to either `StatusItemController` or a debug `NSWindow`, depending on the launch mode.
 
 `AppModel` owns the UI state and coordinates the lifecycles of the following components.
 
 - `CameraManager` — reserves the camera, captures frames, and runs the inference and evaluation pipeline
 - `SettingsStore`, `StatsStore` — store the baseline posture, settings, and daily statistics
-- `PostureStateMachine` — converts a sequence of check results into product states and events
+- `PostureStateMachine` — applies persistence rules to posture evidence and produces `good`, `bad`, and `noEval` transitions and events; `AppModel` owns the remaining lifecycle states
 - `NotificationPolicy`, `NotificationManager` — handle repeat limits, snoozing, and banner and sound delivery
 
 Callbacks from the camera layer pass evaluation results, the next check time, camera blocking, diagnostics, and capture activity to `AppModel`.
@@ -40,9 +41,9 @@ Each posture check follows this sequence.
 1. `CameraManager` opens the built-in camera at 640×480 and selects up to 5 frames after a warm-up period.
 2. `PoseDetector` prefers PoseNet and falls back to Apple Vision 2D when PoseNet does not provide a usable upper-body candidate.
 3. `CoreMLRelativeDepthProvider` uses Depth Anything V2 Small to create a relative depth map.
-4. `PostureFrameAnalyzer` derives features for comparison with the baseline from the head, torso, and reference ROIs of one person.
+4. `UpperBodySubjectSelector` selects one subject candidate, and `PostureFrameAnalyzer` derives features for comparison with the baseline from that subject's head, torso, and reference ROIs.
 5. `BurstProcessor` aggregates frame medians and quality, then compares them with the stored baseline posture.
-6. `PostureStateMachine` converts consecutive normal, degraded, and indeterminate evidence into product states and statistics events.
+6. `PostureStateMachine` applies persistence to normal, degraded, and indeterminate evidence and produces `good`, `bad`, or `noEval` transitions and statistics events.
 7. `AppModel` updates the UI and statistics, and sends only poor-state events permitted by `NotificationPolicy`.
 
 Debug and local output is written on a separate output queue after the product state has been determined.
@@ -55,12 +56,13 @@ For the detailed evaluation contract, see the [posture analysis workflow (Korean
 |---|---|
 | `Sources/TurtleCore/App/` | App lifecycle, launch modes, and UI state coordination |
 | `Sources/TurtleCore/Camera/` | Permissions, capture session, burst scheduling, and frame-quality gates |
-| `Sources/TurtleCore/Inference/` | PoseNet, Vision 2D, and Depth Anything V2 Core ML adapters |
+| `Sources/TurtleCore/Inference/` | PoseNet and Depth Anything V2 Core ML adapters, plus the Apple Vision 2D fallback |
 | `Sources/TurtleCore/Detection/` | Subject selection, ROIs and features, calibration, burst evaluation, state transitions, and tuning values |
 | `Sources/TurtleCore/MenuBar/` | `NSStatusItem`, `NSPopover`, and the shared SwiftUI `MenuView` |
 | `Sources/TurtleCore/Notifications/` | Notification repetition policy and macOS banner and sound delivery |
 | `Sources/TurtleCore/Storage/` | UserDefaults settings and baseline posture, plus JSON daily statistics |
 | `Sources/TurtleCore/Output/` | Debug and local artifacts that do not affect evaluation |
+| `Sources/TurtleCore/Launch/` | `SMAppService` login-item status lookup, registration, and removal |
 
 ## State and persistence
 
@@ -80,7 +82,8 @@ In normal mode, `StatusItemController` owns an `NSStatusItem` and a transient `N
 It closes the popover in response to local or global mouse input outside the popover, while posture checks continue running.
 
 In debug mode, an `NSHostingController` inside an `NSWindow` wraps the same `MenuView` in a `ScrollView`.
-Because the launch mode changes only the UI container, posture evaluation, settings, and statistics follow the same paths as normal mode.
+The debug launch flag also enables diagnostic panels and file output through `MenuView`, `AppModel`, and `CameraManager`.
+Posture evaluation, settings, and statistics still follow the same paths as normal mode.
 
 ## Platform and packaging
 

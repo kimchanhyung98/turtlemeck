@@ -73,7 +73,7 @@ Vision의 사람 분석 API는 깊이를 추정하지 않는다.
 | `VNGeneratePersonSegmentationRequest` | 프레임의 모든 사람을 합친 단일 semantic matte | macOS 12.0+ | 미채택 보조 후보 |
 | `VNGeneratePersonInstanceMaskRequest` | 개인별 instance mask | macOS 14.0+ | 미채택 보조 후보 |
 | `VNGenerateForegroundInstanceMaskRequest` | 두드러진 전경 객체 instance mask | macOS 14.0+ | 미채택 보조 후보 |
-| `VNDetectHumanBodyPoseRequest` | 2D 관절 keypoint + confidence | iOS 14 / macOS 11+ | 머리·목·어깨 ROI anchor |
+| `VNDetectHumanBodyPoseRequest` | 2D 관절 keypoint + confidence | iOS 14 / macOS 11+ | 머리·어깨 ROI anchor (`neck`은 진단 정보로만 보존) |
 
 (위 가용성은 모두 Apple 공식 문서로 확인.)
 
@@ -105,7 +105,8 @@ Apple이 Hugging Face `apple/` 조직에서 직접 Core ML 변환본을 배포�
 - 온디바이스 성능(Apple 측정): F16 모델이 MacBook Pro M1 Max에서 32.80ms, M3 Max에서 24.58ms였고 dominant compute unit은 Neural Engine이었다.
   이 수치는 해당 기기·OS의 단일 모델 벤치이며 전체 pose+depth 파이프라인 지연을 뜻하지 않는다.
 - 평가 입력: Apple 모델 카드는 4:3에 가까운 COCO 이미지 512장을 518×396으로 늘려 PyTorch F32 출력과의 변환 오차를 평가했다.
-  이는 근거리 상반신 자세 feature에 해상도가 충분하다는 검증이 아니다.
+  현재 번들 모델의 고정 입·출력은 518×392다. 공개된 평가 전처리 코드가 없어 모델 카드의 518×396이 오기인지 추가 전처리 크기인지는 확정할 수 없다.
+  어느 쪽이든 이 평가는 근거리 상반신 자세 feature에 해상도가 충분하다는 검증이 아니다.
 - 아키텍처: DPT + DINOv2 백본.
 - 변환 도구: Apple `coremltools`로 변환·압축(Apple ML이 공식 지원).
 

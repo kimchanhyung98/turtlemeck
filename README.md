@@ -89,15 +89,16 @@ make package
 
 핵심 로직은 `Sources/TurtleCore` 아래에서 역할별로 나뉜다.
 
-| 모듈 | 책임 |
+| 역할 디렉터리 | 책임 |
 |---|---|
 | `App/` | 앱 수명 주기와 상태 조율(`AppModel`) |
 | `Camera/` | 카메라 세션, 연속 촬영 타이밍, 프레임 품질 게이트 |
-| `Inference/` | Core ML 추론 어댑터(PoseNet, Vision 2D, Depth Anything V2) |
+| `Inference/` | PoseNet·Depth Anything V2 Core ML 및 Apple Vision 2D 추론 어댑터 |
 | `Detection/` | 프레임 분석, 여러 프레임 집계, 보정, 상태 전이, 상체 기하 |
 | `MenuBar/` | 메뉴 막대와 창 모드 UI |
 | `Notifications/` | 알림 시점과 반복 제한 정책 |
 | `Output/` | 판정에 사용하지 않는 디버그·로컬 산출물 기록 |
 | `Storage/` | 설정, 기준 자세, 일일 통계 저장 |
+| `Launch/` | `SMAppService` 로그인 항목 상태 조회·등록·해제 |
 
 각 모듈의 역할과 구현 경계는 [자세 분석 구현 결정](docs/posture-analysis/README.md)에 정리돼 있다.
