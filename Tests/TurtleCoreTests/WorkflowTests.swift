@@ -830,6 +830,16 @@ func registerWorkflowTests() {
         try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .bad, "single no-eval preserves bad state")
         try expectEqual(machine.apply(simpleVerdict(.insufficient)).state, .bad, "second unavailable burst preserves bad state")
         try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .noEval, "bad state also expires after unavailable evidence")
+
+        machine.reset(to: .blocked)
+        try expectEqual(machine.apply(simpleVerdict(.worsened)).state, .noEval, "a successful camera check clears stale blocked UI state")
+        try expectEqual(machine.apply(simpleVerdict(.worsened)).state, .bad, "bad persistence still requires two checks after recovery")
+        machine.reset(to: .blocked)
+        try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .noEval, "unavailable posture evidence is not a camera block")
+        machine.reset(to: .blocked)
+        try expectEqual(machine.apply(simpleVerdict(.insufficient)).state, .noEval, "insufficient posture evidence is not a camera block")
+        machine.reset(to: .blocked)
+        try expectEqual(machine.apply(simpleVerdict(.normal)).state, .good, "normal evidence clears a recovered camera block")
     }
 
     TestRegistry.test("debug artifacts use timestamp session and unpadded frame names") {
