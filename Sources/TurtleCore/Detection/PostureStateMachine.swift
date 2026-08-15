@@ -37,6 +37,11 @@ public struct PostureStateMachine: Sendable {
     }
 
     public mutating func apply(_ verdict: BurstVerdict) -> PostureTransition {
+        // A verdict means the camera produced a processable burst, so a prior
+        // camera-only blocked state must not leak into posture persistence.
+        if currentState == .blocked {
+            currentState = .noEval
+        }
         switch verdict.evidence {
         case .worsened:
             noEvalStreak = 0

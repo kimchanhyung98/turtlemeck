@@ -69,6 +69,76 @@ public struct DailyPostureStats: Codable, Equatable, Sendable {
     }
 }
 
+public struct DailyStatsDurationSegment: Equatable, Sendable {
+    public var day: String
+    public var seconds: Int
+
+    public init(day: String, seconds: Int) {
+        self.day = day
+        self.seconds = seconds
+    }
+}
+
+public enum DailyStatsTimeline {
+    public static func localGregorianCalendar(timeZone: TimeZone = .current) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
+    }
+
+    public static func dayKey(for date: Date) -> String {
+        dayKey(for: date, calendar: localGregorianCalendar())
+    }
+
+    public static func dayKey(for date: Date, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = localGregorianCalendar(timeZone: calendar.timeZone)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    public static func segments(from start: Date, to end: Date) -> [DailyStatsDurationSegment] {
+        segments(from: start, to: end, calendar: localGregorianCalendar())
+    }
+
+    public static func segments(
+        from start: Date,
+        to end: Date,
+        calendar: Calendar
+    ) -> [DailyStatsDurationSegment] {
+        let totalSeconds = Int(end.timeIntervalSince(start))
+        guard totalSeconds > 0 else {
+            return []
+        }
+
+        var segments: [DailyStatsDurationSegment] = []
+        var cursor = start
+        var allocatedSeconds = 0
+        while cursor < end {
+            let startOfDay = calendar.startOfDay(for: cursor)
+            guard
+                let nextMidnight = calendar.date(byAdding: .day, value: 1, to: startOfDay),
+                nextMidnight > cursor
+            else {
+                return []
+            }
+            let segmentEnd = min(end, nextMidnight)
+            let elapsedThroughSegment = Int(segmentEnd.timeIntervalSince(start))
+            let seconds = segmentEnd == end
+                ? totalSeconds - allocatedSeconds
+                : max(0, elapsedThroughSegment - allocatedSeconds)
+            if seconds > 0 {
+                segments.append(DailyStatsDurationSegment(day: dayKey(for: cursor, calendar: calendar), seconds: seconds))
+                allocatedSeconds += seconds
+            }
+            cursor = segmentEnd
+        }
+        return segments
+    }
+}
+
 public final class StatsStore {
     private let fileURL: URL
 
