@@ -341,7 +341,7 @@ public final class AppModel: ObservableObject {
         let center = NotificationCenter.default
         for name in [Notification.Name.NSSystemTimeZoneDidChange, Notification.Name.NSSystemClockDidChange] {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in
+                MainActor.assumeIsolated {
                     guard let self, self.isRunning else {
                         return
                     }
