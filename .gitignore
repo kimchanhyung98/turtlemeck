@@ -215,4 +215,5 @@ agent-os/
 .docs
 .omx/
 .omp/
-.remember/
+.remember
+.serena
