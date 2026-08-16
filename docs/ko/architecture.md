@@ -43,7 +43,7 @@ Swift Package에는 외부 패키지 의존성이 없고 다음 제품과 실행
 3. `CoreMLRelativeDepthProvider`가 Depth Anything V2 Small로 상대 깊이 맵을 만든다.
 4. `UpperBodySubjectSelector`가 한 명의 후보를 고르고, `PostureFrameAnalyzer`가 그 사람의 머리·몸통·참조 ROI에서 기준과 비교할 특성값을 만든다.
 5. `BurstProcessor`가 프레임 중앙값과 품질을 집계하고 저장된 기준 자세와 비교한다.
-6. `PostureStateMachine`이 정상·악화·판정 불가 증거에 지속성 규칙을 적용해 `good`·`bad`·`noEval` 전이와 통계 이벤트를 만든다.
+6. `PostureStateMachine`이 정상·악화·판정 불가 증거에 지속성 규칙을 적용해 `good`·`bad`·`noEval` 전이와 주의·회복 이벤트를 만든다.
 7. `AppModel`이 화면과 통계를 갱신하고 `NotificationPolicy`가 허용한 주의 이벤트만 알린다.
 
 디버그·로컬 출력은 제품 상태가 결정된 뒤 별도 출력 큐에서 기록한다.

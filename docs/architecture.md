@@ -43,7 +43,7 @@ Each posture check follows this sequence.
 3. `CoreMLRelativeDepthProvider` uses Depth Anything V2 Small to create a relative depth map.
 4. `UpperBodySubjectSelector` selects one subject candidate, and `PostureFrameAnalyzer` derives features for comparison with the baseline from that subject's head, torso, and reference ROIs.
 5. `BurstProcessor` aggregates frame medians and quality, then compares them with the stored baseline posture.
-6. `PostureStateMachine` applies persistence to normal, degraded, and indeterminate evidence and produces `good`, `bad`, or `noEval` transitions and statistics events.
+6. `PostureStateMachine` applies persistence to normal, degraded, and indeterminate evidence and produces `good`, `bad`, or `noEval` transitions and caution or recovery events.
 7. `AppModel` updates the UI and statistics, and sends only poor-state events permitted by `NotificationPolicy`.
 
 Debug and local output is written on a separate output queue after the product state has been determined.
