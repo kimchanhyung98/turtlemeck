@@ -298,7 +298,9 @@ public final class AppModel: ObservableObject {
         guard !segments.isEmpty else {
             return
         }
-        lastStatsTimestamp = now
+        // 적립한 정수 초만큼만 전진시켜 1초 미만 잔여분을 다음 기록으로 이월한다.
+        let allocatedSeconds = segments.reduce(0) { $0 + $1.seconds }
+        lastStatsTimestamp = lastStatsTimestamp.addingTimeInterval(TimeInterval(allocatedSeconds))
     }
 
     private func switchStats(to day: String) {
