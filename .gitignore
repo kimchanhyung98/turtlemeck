@@ -212,5 +212,8 @@ agent-os/
 
 # etc
 .cmux/
+.docs
 .omx/
+.omp/
 .remember
+.serena

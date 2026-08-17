@@ -123,6 +123,7 @@ jobs:
           test -L "$MOUNT_POINT/Applications"
           test "$(readlink "$MOUNT_POINT/Applications")" = "/Applications"
           codesign --verify --deep --strict "$MOUNT_POINT/turtlemeck.app"
+          xcrun stapler validate "$MOUNT_POINT/turtlemeck.app"
           MOUNTED_INFO="$MOUNT_POINT/turtlemeck.app/Contents/Info.plist"
           [ "$(plutil -extract CFBundleShortVersionString raw "$MOUNTED_INFO")" = "$EXPECTED_VERSION" ]
           [ "$(plutil -extract CFBundleVersion raw "$MOUNTED_INFO")" = "$EXPECTED_BUILD" ]

@@ -830,6 +830,26 @@ func registerWorkflowTests() {
         try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .bad, "single no-eval preserves bad state")
         try expectEqual(machine.apply(simpleVerdict(.insufficient)).state, .bad, "second unavailable burst preserves bad state")
         try expectEqual(machine.apply(simpleVerdict(.noEval)).state, .noEval, "bad state also expires after unavailable evidence")
+
+        machine.reset(to: .blocked)
+        let firstWorsenedAfterRecovery = machine.apply(simpleVerdict(.worsened))
+        try expectEqual(firstWorsenedAfterRecovery.state, .noEval, "a successful camera check clears stale blocked UI state")
+        try expectEqual(firstWorsenedAfterRecovery.alert, nil, "the first bad check after recovery must not alert")
+        let confirmedWorsenedAfterRecovery = machine.apply(simpleVerdict(.worsened))
+        try expectEqual(confirmedWorsenedAfterRecovery.state, .bad, "bad persistence still requires two checks after recovery")
+        try expectEqual(confirmedWorsenedAfterRecovery.alert, .cautionStarted, "confirmed bad posture after recovery must alert")
+        machine.reset(to: .blocked)
+        let noEvalAfterRecovery = machine.apply(simpleVerdict(.noEval))
+        try expectEqual(noEvalAfterRecovery.state, .noEval, "unavailable posture evidence is not a camera block")
+        try expectEqual(noEvalAfterRecovery.alert, nil, "unavailable posture evidence must not alert")
+        machine.reset(to: .blocked)
+        let insufficientAfterRecovery = machine.apply(simpleVerdict(.insufficient))
+        try expectEqual(insufficientAfterRecovery.state, .noEval, "insufficient posture evidence is not a camera block")
+        try expectEqual(insufficientAfterRecovery.alert, nil, "insufficient posture evidence must not alert")
+        machine.reset(to: .blocked)
+        let normalAfterRecovery = machine.apply(simpleVerdict(.normal))
+        try expectEqual(normalAfterRecovery.state, .good, "normal evidence clears a recovered camera block")
+        try expectEqual(normalAfterRecovery.alert, nil, "normal evidence after recovery must not alert")
     }
 
     TestRegistry.test("debug artifacts use timestamp session and unpadded frame names") {

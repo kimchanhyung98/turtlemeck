@@ -179,6 +179,61 @@ func registerProductTests() {
         }
         try expect(rejectedCorruptHistory, "corrupt history must stop the update")
         try expectEqual(try Data(contentsOf: url), corruptData, "corrupt history must not be overwritten")
+
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = try unwrap(TimeZone(secondsFromGMT: 0), "UTC time zone")
+        let beforeMidnight = try unwrap(
+            utcCalendar.date(from: DateComponents(year: 2026, month: 8, day: 15, hour: 23, minute: 59, second: 30)),
+            "before midnight"
+        )
+        let afterMidnight = try unwrap(
+            utcCalendar.date(from: DateComponents(year: 2026, month: 8, day: 16, hour: 0, minute: 0, second: 30)),
+            "after midnight"
+        )
+        try expectEqual(
+            DailyStatsTimeline.segments(from: beforeMidnight, to: afterMidnight, calendar: utcCalendar),
+            [
+                DailyStatsDurationSegment(day: "2026-08-15", seconds: 30),
+                DailyStatsDurationSegment(day: "2026-08-16", seconds: 30),
+            ],
+            "elapsed posture time must be split at local midnight"
+        )
+        var buddhistCalendar = Calendar(identifier: .buddhist)
+        buddhistCalendar.timeZone = utcCalendar.timeZone
+        try expectEqual(
+            DailyStatsTimeline.dayKey(for: beforeMidnight, calendar: buddhistCalendar),
+            "2026-08-15",
+            "stats keys must stay Gregorian regardless of the user's calendar"
+        )
+
+        var pacificCalendar = Calendar(identifier: .gregorian)
+        pacificCalendar.timeZone = try unwrap(TimeZone(identifier: "America/Los_Angeles"), "Pacific time zone")
+        let springStart = try unwrap(
+            pacificCalendar.date(from: DateComponents(year: 2026, month: 3, day: 8)),
+            "spring DST start"
+        )
+        let springEnd = try unwrap(
+            pacificCalendar.date(from: DateComponents(year: 2026, month: 3, day: 9)),
+            "spring DST end"
+        )
+        let fallStart = try unwrap(
+            pacificCalendar.date(from: DateComponents(year: 2026, month: 11, day: 1)),
+            "fall DST start"
+        )
+        let fallEnd = try unwrap(
+            pacificCalendar.date(from: DateComponents(year: 2026, month: 11, day: 2)),
+            "fall DST end"
+        )
+        try expectEqual(
+            DailyStatsTimeline.segments(from: springStart, to: springEnd, calendar: pacificCalendar),
+            [DailyStatsDurationSegment(day: "2026-03-08", seconds: 23 * 60 * 60)],
+            "spring DST day must use the calendar boundary"
+        )
+        try expectEqual(
+            DailyStatsTimeline.segments(from: fallStart, to: fallEnd, calendar: pacificCalendar),
+            [DailyStatsDurationSegment(day: "2026-11-01", seconds: 25 * 60 * 60)],
+            "fall DST day must use the calendar boundary"
+        )
     }
 
     TestRegistry.test("missing Core ML model fails closed") {

@@ -29,7 +29,11 @@ public final class AppModel: ObservableObject {
     private let notificationManager = NotificationManager()
     private var lastStatsTimestamp = Date()
     private var countdownTimer: Timer?
+    private var statsRolloverTimer: Timer?
+    private var statsClockObservers: [NSObjectProtocol] = []
+    private var statsCalendar = DailyStatsTimeline.localGregorianCalendar()
     private var nextCheckDate: Date?
+    private var isRunning = false
 
     public init() {
         var loadedSettings = settingsStore.load()
@@ -84,6 +88,9 @@ public final class AppModel: ObservableObject {
         guard !isPaused else {
             return
         }
+        isRunning = true
+        startStatsClockObservation()
+        scheduleStatsRollover()
         cameraManager.start(settings: settings)
         if settings.baseline == nil {
             beginCalibration()
@@ -95,6 +102,10 @@ public final class AppModel: ObservableObject {
     public func stop() {
         recordElapsedStats()
         saveStats()
+        isRunning = false
+        statsRolloverTimer?.invalidate()
+        statsRolloverTimer = nil
+        stopStatsClockObservation()
         cameraManager.stop()
     }
 
@@ -274,24 +285,88 @@ public final class AppModel: ObservableObject {
     }
 
     private func recordElapsedStats(now: Date = Date()) {
-        rotateStatsIfNeeded(now: now)
-        let seconds = Int(now.timeIntervalSince(lastStatsTimestamp))
-        guard seconds > 0 else {
+        if now < lastStatsTimestamp {
+            lastStatsTimestamp = now
+        }
+        let calendar = statsCalendar
+        let segments = DailyStatsTimeline.segments(from: lastStatsTimestamp, to: now, calendar: calendar)
+        for segment in segments {
+            switchStats(to: segment.day)
+            todayStats.recordDuration(state: postureState, seconds: segment.seconds)
+        }
+        switchStats(to: DailyStatsTimeline.dayKey(for: now, calendar: calendar))
+        guard !segments.isEmpty else {
             return
         }
-        todayStats.recordDuration(state: postureState, seconds: seconds)
-        lastStatsTimestamp = now
+        // 적립한 정수 초만큼만 전진시켜 1초 미만 잔여분을 다음 기록으로 이월한다.
+        let allocatedSeconds = segments.reduce(0) { $0 + $1.seconds }
+        lastStatsTimestamp = lastStatsTimestamp.addingTimeInterval(TimeInterval(allocatedSeconds))
     }
 
-    private func rotateStatsIfNeeded(now: Date) {
-        let day = Self.dayKey(for: now)
+    private func switchStats(to day: String) {
         guard todayStats.day != day else {
             return
         }
 
         saveStats()
         todayStats = (try? statsStore.load().first { $0.day == day }) ?? DailyPostureStats(day: day)
-        lastStatsTimestamp = now
+    }
+
+    private func scheduleStatsRollover(now: Date = Date()) {
+        guard isRunning else {
+            return
+        }
+        statsRolloverTimer?.invalidate()
+        let calendar = statsCalendar
+        let startOfDay = calendar.startOfDay(for: now)
+        guard let nextMidnight = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+            statsRolloverTimer = nil
+            return
+        }
+        let timer = Timer(timeInterval: max(0.1, nextMidnight.timeIntervalSince(now)), repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isRunning else {
+                    return
+                }
+                self.recordElapsedStats()
+                self.scheduleStatsRollover()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statsRolloverTimer = timer
+    }
+
+    private func startStatsClockObservation() {
+        guard statsClockObservers.isEmpty else {
+            return
+        }
+        let center = NotificationCenter.default
+        for name in [Notification.Name.NSSystemTimeZoneDidChange, Notification.Name.NSSystemClockDidChange] {
+            let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.isRunning else {
+                        return
+                    }
+                    let now = Date()
+                    if name == Notification.Name.NSSystemTimeZoneDidChange {
+                        self.recordElapsedStats(now: now)
+                    }
+                    self.lastStatsTimestamp = now
+                    self.statsCalendar = DailyStatsTimeline.localGregorianCalendar()
+                    self.switchStats(to: DailyStatsTimeline.dayKey(for: now, calendar: self.statsCalendar))
+                    self.scheduleStatsRollover(now: now)
+                }
+            }
+            statsClockObservers.append(observer)
+        }
+    }
+
+    private func stopStatsClockObservation() {
+        let center = NotificationCenter.default
+        for observer in statsClockObservers {
+            center.removeObserver(observer)
+        }
+        statsClockObservers.removeAll()
     }
 
     private func recordNotificationSent() {
@@ -402,10 +477,6 @@ public final class AppModel: ObservableObject {
     }
 
     private static func dayKey(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        DailyStatsTimeline.dayKey(for: date)
     }
 }
