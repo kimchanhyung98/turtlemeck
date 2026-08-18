@@ -167,6 +167,9 @@ $RECYCLE.BIN/
 .devin/*
 .goose/*
 .kilocode/*
+.kimi-code/*
+.kiro/*
+.omp/*
 .opencode/*
 .qwen/*
 .roo/*
@@ -175,6 +178,7 @@ $RECYCLE.BIN/
 # Claude
 **/CLAUDE.md
 !/CLAUDE.md
+**/CLAUDE.local.md
 .claude/*
 !.claude/settings.json
 !.claude/hookify.*.md
@@ -192,6 +196,7 @@ $RECYCLE.BIN/
 .gemini/*
 !.gemini/GEMINI.md
 !.gemini/settings.json
+.gemini-clipboard/
 
 # GitHub
 .github/agents/*
@@ -207,13 +212,11 @@ agent-os/
 .browser/
 .chrome/
 .next-browser/
-.playwright/
-.playwright-mcp/
+.playwright*
 
 # etc
 .cmux/
 .docs
 .omx/
-.omp/
 .remember
 .serena
