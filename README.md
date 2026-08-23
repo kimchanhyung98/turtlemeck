@@ -27,7 +27,7 @@
 
 ### 문서 구분
 
-- [목바로 제품 문서](docs/ko/README.md) / [turtlemeck product documentation](docs/README.md): 메뉴 막대 화면, 보정과 점검, 설정, 알림, 개인정보, 아키텍처, 디버깅
+- [목바로 제품 문서](docs/README.md): 메뉴 막대 화면, 보정과 점검, 설정, 알림, 개인정보, 아키텍처, 디버깅
 - [채택 기술 문서](docs/workflow.md): 현재 코드가 따르는 자세 분석 흐름과 `algorithm/`, `depth-estimation/`의 채택 근거
 - [한국어 리서치 보관소](docs/research/): 조사했지만 현재 코드에 채택하지 않은 자료와 과거 검토 기록
 

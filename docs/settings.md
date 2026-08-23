@@ -1,41 +1,41 @@
-# Settings
+# 설정
 
-turtlemeck displays its settings in the **설정 (Settings)** card of the [menu bar popover](menu-bar.md), not in a separate window.
-Changes take effect immediately and persist across launches.
+목바로의 설정은 별도 창이 아니라 [메뉴 막대 팝오버](menu-bar.md)의 **설정** 카드에 표시된다.
+변경 사항은 즉시 적용되며 앱을 다시 실행해도 유지된다.
 
-## Checks
+## 점검
 
-| Setting | Options | Behavior |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| 점검 주기 (Check interval) | 15 / 30 / 60 / 120 / 180 seconds | Sets the interval between the start of routine camera sessions. The default is 60 seconds. When the value changes, the app schedules the next check with the new interval if no capture is in progress. The minimum 15-second gap between session starts also applies to immediate checks requested with **확인 (Check)**. |
+| 점검 주기 | 15초 / 30초 / 60초 / 120초 / 180초 | 정기 카메라 세션의 시작 간격. 기본값 60초. 진행 중인 캡처가 없을 때 값을 바꾸면 새 주기로 다음 점검 예약. **확인**으로 요청한 즉시 점검에도 세션 시작 간 최소 15초 제한 적용 |
 
-There are no user-selectable settings for sensitivity, the decision algorithm, the camera, or resolution.
-Every posture decision uses the same relative-depth pipeline and the baseline posture saved by the user.
+민감도, 판정 알고리즘, 카메라, 해상도를 사용자가 고르는 설정은 없다.
+모든 자세 판정은 같은 상대 깊이 파이프라인과 사용자가 저장한 기준 자세를 사용한다.
 
-## Notifications
+## 알림
 
-| Setting | Options | Behavior |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| 배너 알림 (Banner notifications) | On / Off | Off by default. Turning this on requests macOS notification permission and registers a Notification Center banner when the poor state is newly confirmed. macOS decides whether to show a permission prompt. |
-| 알림 소리 (Notification sound) | On / Off | Off by default. This works independently of banners. If sound is on without banners, the app plays the system alert sound without using Notification Center. |
-| 알림 쉬기 (Pause notifications) | 20분 스누즈 (Twenty-Minute Snooze) | Suppresses banners and sounds for 20 minutes. The button is unavailable when both notification settings are off. Snooze resets when the app relaunches. |
+| 배너 알림 | 켜기 / 끄기 | 기본값 끄기. 켜면 macOS 알림 권한을 요청하고 주의 상태가 새로 확정됐을 때 알림 센터 배너 등록. 권한 대화상자 표시 여부는 macOS가 결정 |
+| 알림 소리 | 켜기 / 끄기 | 기본값 끄기. 배너와 독립적으로 동작하며 배너 없이 소리만 켜면 알림 센터를 사용하지 않고 시스템 경고음 재생 |
+| 알림 쉬기 | 20분 스누즈 | 배너와 소리를 20분 동안 억제. 두 알림 설정이 모두 꺼져 있으면 버튼 비활성화. 앱을 다시 실행하면 스누즈 초기화 |
 
-See [Notifications](notifications.md) for details about duplicate limits and banner-and-sound combinations.
+중복 제한과 배너·소리 조합은 [알림](notifications.md)에서 설명한다.
 
-## General
+## 일반
 
-| Setting | Options | Behavior |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| 로그인 시 자동 실행 (Launch at login) | On / Off | Off by default. Registers or unregisters the current app as a macOS login item. On launch, the app shows the actual macOS registration state instead of the saved value. If registration or removal fails, the status card shows `자동 실행 설정 실패` (`Failed to update launch at login`). |
+| 로그인 시 자동 실행 | 켜기 / 끄기 | 기본값 끄기. macOS 로그인 항목에 현재 앱을 등록하거나 해제. 앱 시작 때 저장된 값보다 macOS의 실제 등록 상태 표시. 등록이나 해제에 실패하면 상태 카드에 `자동 실행 설정 실패` 표시 |
 
-## Storage and Reset
+## 저장과 초기화
 
-Settings and the baseline posture are stored together under the `com.go.turtlemeck.settings` key in the `com.go.turtlemeck` UserDefaults domain, not in a separate editable file.
-An incompatible or invalid baseline, a changed camera configuration, or shoulder framing beyond the stored position or width thresholds is not used and triggers a recalibration request.
+설정과 기준 자세는 별도 편집용 파일이 아니라 `com.go.turtlemeck` UserDefaults 도메인의 `com.go.turtlemeck.settings` 키에 함께 저장한다.
+호환되지 않거나 유효하지 않은 기준 자세, 변경된 카메라 구성, 저장된 위치·폭 임계를 벗어난 어깨 구도는 사용하지 않고 재보정을 요청한다.
 
-The development commands `make run-fresh` and `make run-debug` delete this UserDefaults domain, returning check and notification settings and the baseline posture to their defaults.
-They do not remove the macOS login item registration or camera and notification permissions, and daily statistics and existing `debug/` artifacts remain.
-See [Debugging](debugging.md#fresh-state-and-debug-runs) for detailed launch behavior.
+개발 명령인 `make run-fresh`와 `make run-debug`는 이 UserDefaults 도메인을 지워 점검·알림 설정과 기준 자세를 기본 상태로 되돌린다.
+macOS의 로그인 항목 등록과 카메라·알림 권한은 지우지 않으며 일일 통계와 기존 `debug/` 산출물도 남긴다.
+자세한 실행 동작은 [디버깅](debugging.md#초기-상태와-디버그-실행)에서 확인한다.
 
-`--debug` and its related environment variables are not user settings and are not saved.
-Developer-facing configuration is documented separately in [Debugging](debugging.md#environment-variables-and-launch-flags).
+`--debug`와 관련 환경 변수는 사용자 설정이 아니며 저장하지 않는다.
+개발자용 구성은 [디버깅](debugging.md#환경-변수와-실행-플래그)에 정리돼 있다.

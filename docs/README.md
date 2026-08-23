@@ -1,39 +1,39 @@
-# turtlemeck Documentation
+# 목바로 문서
 
-This directory documents turtlemeck's current features and behavior.
-The product guides describe the app as implemented, and the adopted technical documents record the design and research used by the current code.
-Any difference between the app and these documents is a bug.
+이 디렉터리는 목바로의 현재 기능과 동작을 설명한다.
+제품 안내는 구현된 앱 동작을 다루고, 채택 기술 문서는 현재 코드에 반영된 설계와 리서치를 기록한다.
+앱과 문서의 설명이 다르면 버그로 본다.
 
-The Korean product name is 목바로.
-The technical identifier `turtlemeck` remains in repository paths, the app bundle, executable names, and system-facing identifiers.
+한국어 제품명은 목바로다.
+저장소 경로, 앱 번들, 실행 파일 이름, 시스템용 식별자에는 기술 식별자 `turtlemeck`을 유지한다.
 
-## Current Product Documentation
+## 현재 제품 문서
 
-### App
+### 앱
 
-- [Menu bar](menu-bar.md) — Status icon, popover, quick actions, and today's summary
-- [Baseline calibration and posture checks](posture-checks.md) — First launch, calibration, scheduled and immediate checks, and state transitions
-- [Settings](settings.md) — Every user setting and the behavior it changes
-- [Notifications](notifications.md) — Banners and sounds, repeat limits, and the 20-minute snooze
-- [Privacy and local data](privacy.md) — Camera and notification permissions, stored data, and debug and local-mode exceptions
+- [메뉴 막대](menu-bar.md) — 상태 아이콘, 팝오버, 빠른 동작, 오늘 요약
+- [기준 자세 보정과 점검](posture-checks.md) — 첫 실행, 보정, 정기·즉시 점검, 상태 전환
+- [설정](settings.md) — 모든 사용자 설정과 각 설정이 바꾸는 동작
+- [알림](notifications.md) — 배너와 소리, 반복 제한, 20분 스누즈
+- [개인정보와 로컬 데이터](privacy.md) — 카메라·알림 권한, 저장 데이터, 디버그·로컬 모드 예외
 
-### For Developers
+### 개발자용
 
-- [Architecture](architecture.md) — App structure, composition root, analysis flow, stores, and platform integrations
-- [Debugging](debugging.md) — Local builds and runs, the debug window, environment variables, and build artifacts
+- [아키텍처](architecture.md) — 앱 형태, 구성 루트, 분석 흐름, 저장소, 플랫폼 연동
+- [디버깅](debugging.md) — 로컬 빌드와 실행, 디버그 창, 환경 변수, 산출물
 
-## Adopted Technical Documentation
+## 채택 기술 문서
 
-- [Posture analysis workflow](workflow.md) — Korean specification for the product flow and decision rules implemented by the current code
-- [Posture analysis implementation decisions](posture-analysis/README.md) — Korean record of module boundaries, tuning values, and device validation reflected in the implementation
-- [Adopted algorithm research](algorithm/README.md) — Korean analysis supporting the selected PoseNet, Vision 2D, ROI, and baseline approach
-- [Adopted depth-estimation research](depth-estimation/README.md) — Korean analysis supporting Depth Anything V2 and the relative-depth feature
+- [자세 분석 워크플로우](workflow.md) — 현재 코드가 구현한 제품 흐름과 판정 규범
+- [자세 분석 구현 결정](posture-analysis/README.md) — 구현에 반영된 모듈 경계, 조정값, 장치 검증 기록
+- [채택 알고리즘 연구](algorithm/README.md) — PoseNet, Vision 2D, ROI, 기준 자세 방식의 채택 근거
+- [채택 깊이 추정 연구](depth-estimation/README.md) — Depth Anything V2와 상대 깊이 특성값의 채택 근거
 
-These documents describe the adopted path or its supporting evidence.
-When detailed research and the workflow disagree, the workflow specification takes precedence.
+이 문서들은 채택한 경로 또는 그 근거를 설명한다.
+상세 리서치와 워크플로우가 충돌하면 워크플로우 규범을 우선한다.
 
-## Research Archive (Korean Only)
+## 연구 보관소
 
-- [Research archive](research/) — Investigations, unselected alternatives, and historical reviews that are not part of the current product contract
+- [연구 보관소](research/) — 현재 제품 계약에 포함되지 않은 조사, 미채택 대안, 과거 검토 기록
 
-Archived research can explain why an alternative was considered or rejected, but it does not define current behavior.
+보관한 연구 자료는 대안을 검토하거나 제외한 이유를 설명하지만 현재 동작을 정의하지 않는다.

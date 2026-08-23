@@ -1,54 +1,54 @@
-# Notifications
+# 알림
 
-turtlemeck notifies you with a macOS banner or system alert sound when poor posture is confirmed across consecutive checks.
-Notifications continue to work while the app is running even when the menu bar popover is closed.
+목바로는 흐트러진 자세가 연속 점검에서 확정되면 macOS 배너나 시스템 경고음으로 알린다.
+메뉴 막대 팝오버가 닫혀 있어도 앱이 실행 중이면 동작한다.
 
-## When Notifications Are Triggered
+## 알림이 생기는 때
 
-A notification becomes eligible only when two consecutive [check results](posture-checks.md#result-of-a-single-check) are poor and the app first enters the poor state.
-No new notification is sent while the poor state continues or when posture recovers to good.
-After recovery, the app returns the product state and menu bar icon to good and increments **회복 횟수 (Recoveries)** in today's summary, but it does not create a recovery notification.
+[점검 결과](posture-checks.md#한-번의-점검-결과)에서 악화가 두 번 연속 확인돼 주의 상태로 처음 전환될 때만 알림 후보가 생긴다.
+주의 상태가 계속되거나 정상으로 회복될 때는 새 알림을 보내지 않는다.
+회복하면 제품 상태와 메뉴 막대 아이콘을 정상으로 바꾸고 오늘 요약의 **회복 횟수**에 기록하지만 회복 알림은 만들지 않는다.
 
-After one poor-posture notification attempt in an app session, at least 25 minutes must pass before another attempt can be made.
-The 25-minute limit applies even if banner registration fails.
-This limit and the snooze expiration time are kept only in memory and reset when the app relaunches.
+같은 앱 실행 중에는 주의 알림 발송을 한 번 시도한 뒤 최소 25분이 지나야 다음 알림을 시도할 수 있다.
+배너 등록에 실패해도 25분 제한을 적용한다.
+이 제한과 스누즈 종료 시각은 메모리에만 유지하며 앱을 다시 실행하면 초기화한다.
 
-## Banners and Sounds
+## 배너와 소리
 
-| Banner notifications | Notification sound | Behavior |
+| 배너 알림 | 알림 소리 | 동작 |
 |---|---|---|
-| Off | Off | Does not send any notification. |
-| On | Off | Registers a passive macOS banner without sound. |
-| Off | On | Plays the system alert sound without using Notification Center. |
-| On | On | Registers a passive macOS banner with the default notification sound. |
+| 끄기 | 끄기 | 알림 없음 |
+| 켜기 | 끄기 | 소리 없는 수동형 macOS 배너 등록 |
+| 끄기 | 켜기 | 알림 센터를 사용하지 않고 시스템 경고음 재생 |
+| 켜기 | 켜기 | 기본 알림 소리가 있는 수동형 macOS 배너 등록 |
 
-Both settings are off by default.
-Each time you turn on **배너 알림 (Banner notifications)**, the app requests macOS notification authorization for alerts and sounds.
-macOS decides whether to display a permission prompt.
-If notifications are not allowed in System Settings, a banner may not appear even when the app requests one.
-Sound-only mode does not use notification authorization.
+두 설정의 기본값은 끄기다.
+**배너 알림**을 켤 때마다 앱이 알림과 소리에 대한 macOS 알림 권한을 요청한다.
+권한 대화상자를 실제로 표시할지는 macOS가 결정한다.
+시스템 설정에서 알림을 허용하지 않으면 앱이 배너를 요청해도 화면에 나타나지 않을 수 있다.
+소리만 켠 모드는 알림 권한을 사용하지 않는다.
 
-The notification title currently displays the technical identifier `turtlemeck`.
-The body cycles through these messages.
+현재 알림 제목에는 기술 식별자 `turtlemeck`이 표시된다.
+본문은 다음 안내를 순환해 표시한다.
 
-- 자세를 한 번 펴볼까요 (How about straightening your posture?)
-- 턱을 살짝 당기고 화면을 바라볼까요 (How about gently tucking your chin while looking at the screen?)
-- 어깨를 펴고 목을 편하게 세워볼까요 (How about opening your shoulders and keeping your neck comfortably upright?)
-- 고개가 앞으로 나왔어요. 등을 펴볼까요 (Your head has moved forward. How about straightening your back?)
-- 지금 자세를 한 번 점검해볼 타이밍이에요 (This is a good time to check your posture.)
+- 자세를 한 번 펴볼까요
+- 턱을 살짝 당기고 화면을 바라볼까요
+- 어깨를 펴고 목을 편하게 세워볼까요
+- 고개가 앞으로 나왔어요. 등을 펴볼까요
+- 지금 자세를 한 번 점검해볼 타이밍이에요
 
-## 20-Minute Snooze
+## 20분 스누즈
 
-Selecting **20분 스누즈 (Twenty-Minute Snooze)** in the popover suppresses both banners and sounds for 20 minutes.
-Posture checks, state transitions, and today's summary statistics continue during the snooze.
-The button is unavailable when both banners and sounds are off.
+팝오버에서 **20분 스누즈**를 누르면 배너와 소리를 모두 20분 동안 보내지 않는다.
+스누즈 중에도 점검, 상태 전환, 오늘 요약 통계는 계속된다.
+배너와 소리가 모두 꺼져 있으면 버튼을 사용할 수 없다.
 
-If the 25-minute repeat limit is still active when the snooze ends, that limit also applies.
-Pausing the app stops posture checks themselves, so no notification candidate is created.
-A notification skipped because of the snooze or repeat limit is not sent later automatically.
-Another qualifying transition into the poor state is required for a new attempt.
+스누즈가 끝나도 25분 반복 제한이 남아 있으면 그 제한을 함께 적용한다.
+앱을 중지하면 점검 자체가 멈추므로 알림 후보도 만들지 않는다.
+스누즈나 반복 제한으로 보내지 않은 알림은 나중에 자동으로 다시 보내지 않는다.
+조건을 충족한 새로운 주의 전환이 생겨야 다시 시도한다.
 
-## Sent Notification Count
+## 보낸 알림 수
 
-**보낸 알림 (Notifications sent)** counts the times the app either registers a banner request with macOS without an error or plays the system alert sound.
-This may differ from the number of banners you actually see because of notification authorization or Focus mode.
+**보낸 알림**은 macOS에 배너 요청을 오류 없이 등록했거나 시스템 경고음을 재생한 횟수다.
+권한이나 집중 모드 때문에 사용자에게 실제로 보인 배너 수와 다를 수 있다.

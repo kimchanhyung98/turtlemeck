@@ -1,74 +1,74 @@
-# Menu Bar
+# 메뉴 막대
 
-turtlemeck's main interface is the popover that opens when you click its menu bar icon.
-The app has no separate settings window or Dock icon, and posture checks continue after the popover closes.
+목바로의 기본 화면은 메뉴 막대 아이콘을 눌렀을 때 열리는 팝오버다.
+별도 설정 창이나 Dock 아이콘은 없으며 팝오버를 닫아도 자세 점검은 계속된다.
 
-## Opening and Closing
+## 열기와 닫기
 
-Clicking the menu bar icon with either mouse button opens the same popover.
-There is no separate right-click menu.
-Click the icon again or click outside the popover to close it.
+메뉴 막대 아이콘은 마우스 왼쪽이나 오른쪽 버튼으로 클릭해도 같은 팝오버가 열린다.
+우클릭 전용 메뉴는 없다.
+아이콘을 다시 누르거나 팝오버 밖을 누르면 닫힌다.
 
-## Status Icon
+## 상태 아이콘
 
-The menu bar icon shows the product's current state.
+메뉴 막대 아이콘은 현재 제품 상태를 나타낸다.
 
-| State | Icon | Meaning |
+| 상태 | 아이콘 | 의미 |
 |---|---|---|
-| Good | 🙂 | Your posture is within the saved baseline range. |
-| Poor | 😢 | Poor posture has continued long enough to trigger the poor state. The icon flashes unless Reduce Motion is enabled in macOS. |
-| Calibrating | Crosshair | The app is collecting your baseline posture. |
-| Waiting or unavailable | 🐢 | The app does not yet have enough posture signals to make a decision. This does not mean your posture is good. |
-| Paused | 🫥 | Checks and notifications are paused. |
-| Camera needs attention | Slashed camera | The app does not have camera permission or cannot use the camera. |
-| Calibration required | Crosshair | No baseline exists, or the saved baseline cannot be used with the current camera and framing, so a new calibration is required. |
+| 정상 | 🙂 | 저장된 기준 자세 범위에 있음 |
+| 주의 | 😢 | 흐트러진 자세가 주의 상태로 전환될 만큼 이어짐. 아이콘은 점멸하며 macOS에서 동작 줄이기를 사용하면 점멸하지 않음 |
+| 보정 중 | 조준경 | 기준 자세를 수집하는 중 |
+| 판정 대기·불가 | 🐢 | 아직 충분한 자세 신호가 없으며 정상 판정을 뜻하지 않음 |
+| 중지 | 🫥 | 점검과 알림을 멈춘 상태 |
+| 카메라 확인 필요 | 빗금 친 카메라 | 카메라 권한이 없거나 카메라를 사용할 수 없음 |
+| 보정 필요 | 조준경 | 기준 자세가 없거나 저장된 기준을 현재 카메라·구도에 사용할 수 없어 새 보정 필요 |
 
-When your posture recovers from poor to good, the accessibility label changes to `자세: 회복` (`Posture: Recovered`) for 2 seconds.
+주의 상태에서 정상으로 회복하면 접근성 레이블이 2초 동안 `자세: 회복`으로 바뀐다.
 
-## Current Status
+## 현재 상태
 
-The first card in the popover shows the current state, check progress or the time until the next check, and what you need to do.
-While waiting for a scheduled check, the message reads `다음 점검 N초 후` (`Next check in N seconds`); it changes to `카메라로 점검 중` (`Checking with camera`) while the camera is active and `점검 분석 중` (`Analyzing check`) during analysis.
+팝오버 첫 카드는 현재 상태 제목, 점검 진행 또는 다음 점검까지 남은 시간, 사용자가 해야 할 일을 차례로 표시한다.
+정기 점검을 기다릴 때는 `다음 점검 N초 후`, 카메라를 사용하는 동안에는 `카메라로 점검 중`, 분석 중에는 `점검 분석 중`으로 바뀐다.
 
-If calibration or a camera problem prevents checks from continuing, the same card shows the reason and the next action.
-See [Baseline calibration and posture checks](posture-checks.md) for decision rules and recovery steps for each state.
+보정이나 카메라 문제로 점검을 계속할 수 없으면 같은 카드에 실패 이유와 다음 동작이 표시된다.
+상태별 판정 규칙과 복구 방법은 [기준 자세 보정과 점검](posture-checks.md)에서 확인한다.
 
-## Quick Actions
+## 빠른 동작
 
-| Action | What it does | When unavailable |
+| 동작 | 하는 일 | 사용할 수 없는 경우 |
 |---|---|---|
-| **확인 (Check)** | Requests a check without waiting for the scheduled time. If fewer than 15 seconds have passed since the previous camera session began, the check runs after the remaining time. | While paused, when no baseline exists, or when recalibration is required |
-| **중지 (Pause)** / **시작 (Resume)** | Pauses or resumes camera checks and posture notifications. | When no baseline exists or recalibration is required |
-| **보정 (Calibrate)** | Collects your current upright posture as a new baseline. If a baseline already exists, a successful calibration replaces it. | While paused or when calibration is already in progress |
+| **확인** | 예약된 시각을 기다리지 않고 점검 요청. 이전 카메라 세션을 시작한 뒤 15초가 지나지 않았다면 남은 시간 뒤에 실행 | 중지 상태, 기준 자세 없음, 보정 필요 |
+| **중지** / **시작** | 카메라 점검과 자세 알림을 중지하거나 재개 | 기준 자세 없음, 보정 필요 |
+| **보정** | 현재 바른 자세를 새 기준으로 수집. 기존 기준 자세가 있으면 성공한 기준으로 교체 | 중지 상태, 보정 진행 중 |
 
-Checks started with **확인 (Check)** follow the same decision and state transition rules as scheduled checks.
-While recalibrating an existing baseline, **확인 (Check)** may appear enabled, but the request is ignored while calibration is in progress.
+**확인**으로 실행한 점검도 정기 점검과 같은 판정·상태 전환 규칙을 따른다.
+기존 기준 자세를 다시 보정하는 동안에는 **확인**이 활성 상태로 보일 수 있지만 보정 중에는 요청을 무시한다.
 
-## Today's Summary
+## 오늘 요약
 
-The popover shows these values for the current date.
+팝오버는 오늘 날짜의 다음 값을 표시한다.
 
-- **바른 자세 시간 (Good posture time)** — Time spent in the good state
-- **주의 자세 시간 (Poor posture time)** — Time spent in the poor state
-- **주의 전환 (Poor transitions)** — Number of times the poor state was newly confirmed
-- **회복 횟수 (Recoveries)** — Number of transitions from the poor state to the good state
-- **보낸 알림 (Notifications sent)** — Number of times the app registered a banner or played the system alert sound
+- **바른 자세 시간** — 정상 상태로 유지된 시간
+- **주의 자세 시간** — 주의 상태로 유지된 시간
+- **주의 전환** — 주의 상태로 새로 확정된 횟수
+- **회복 횟수** — 주의 상태에서 정상 상태로 회복한 횟수
+- **보낸 알림** — 배너를 등록하거나 시스템 경고음을 재생한 횟수
 
-Durations below 1 hour are shown as `N분` (`N minutes`), while durations of 1 hour or more are shown as `N시간 M분` (`N hours M minutes`).
-Time spent calibrating, waiting for a decision, paused, or blocked by the camera is excluded from both the good and poor totals.
-Statistics are stored locally by date.
-See [Privacy and local data](privacy.md#data-stored-on-this-mac) for the storage location and retention behavior.
+1시간 미만은 `N분`, 1시간 이상은 `N시간 M분`으로 표시한다.
+보정·판정 대기·중지·카메라 차단 시간은 바른 자세와 주의 자세 시간에 포함하지 않는다.
+통계는 날짜별로 로컬에 저장한다.
+저장 위치와 보존 방식은 [개인정보와 로컬 데이터](privacy.md#이-mac에-저장되는-데이터)에서 확인한다.
 
-## Settings and Footer Actions
+## 설정과 하단 동작
 
-All settings appear in the same popover rather than in a separate window.
-See [Settings](settings.md) for each option.
+모든 설정은 별도 창이 아니라 같은 팝오버 안에 있다.
+각 항목은 [설정](settings.md)에서 설명한다.
 
-The following actions appear at the bottom of the popover.
+팝오버 아래에는 다음 동작이 있다.
 
-- **카메라 권한 설정 (Camera Permission Settings)** — Opens the Camera privacy pane in macOS System Settings.
-- **개인정보 · 비의료 안내 (Privacy · Not Medical Advice)** — Expands or collapses the wellness and privacy guidance in the current popover.
-- **종료 (Quit)** — Quits turtlemeck.
+- **카메라 권한 설정** — macOS 시스템 설정의 카메라 개인정보 보호 화면 열기
+- **개인정보 · 비의료 안내** — 현재 팝오버 안에 웰니스·개인정보 안내 펼치기 또는 접기
+- **종료** — 목바로 종료
 
-Closing the popover is different from choosing **중지 (Pause)** or **종료 (Quit)**.
-The app continues running in the menu bar, and scheduled checks and enabled notifications remain active.
+팝오버를 닫는 것은 **중지**나 **종료**와 다르다.
+앱은 메뉴 막대에서 계속 실행되며 예약된 점검과 켜 둔 알림도 계속 동작한다.
