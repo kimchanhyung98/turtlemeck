@@ -1,7 +1,8 @@
 # 목바로 문서
 
 이 디렉터리는 목바로의 현재 기능과 동작을 설명한다.
-제품 안내는 구현된 앱 동작을 다루고, 채택 기술 문서는 현재 코드에 반영된 설계와 리서치를 기록한다.
+최상위 Markdown 문서는 앱 구현·정책·화면을 다루고, `posture-analysis/`는 현재 채택한 자세 분석 알고리즘과 AI 모델의 동작 계약을 기록한다.
+조사 여부나 채택 여부와 관계없이 리서치 과정에서 만든 자료는 `.research/`에 보존한다.
 앱과 문서의 설명이 다르면 버그로 본다.
 
 한국어 제품명은 목바로다.
@@ -22,12 +23,12 @@
 - [아키텍처](architecture.md) — 앱 형태, 구성 루트, 분석 흐름, 저장소, 플랫폼 연동
 - [디버깅](debugging.md) — 로컬 빌드와 실행, 디버그 창, 환경 변수, 산출물
 
-## 채택 기술 문서
+## 자세 분석
 
-- [자세 분석 워크플로우](workflow.md) — 현재 코드가 구현한 제품 흐름과 판정 규범
 - [자세 분석 구현 결정](posture-analysis/README.md) — 구현에 반영된 모듈 경계, 조정값, 장치 검증 기록
-- [채택 알고리즘 연구](algorithm/README.md) — PoseNet, Vision 2D, ROI, 기준 자세 방식의 채택 근거
-- [채택 깊이 추정 연구](depth-estimation/README.md) — Depth Anything V2와 상대 깊이 특성값의 채택 근거
+- [자세 분석 워크플로우](posture-analysis/workflow.md) — 현재 코드가 구현한 제품 흐름과 판정 규범
+- [상세 판정 알고리즘](posture-analysis/algorithm.md) — 캡처, 특성값, 기준 자세 비교, 상태 전이 계약
+- [PoseNet과 Vision 2D](posture-analysis/posenet.md) — 상체 랜드마크 우선 모델과 운영체제 대체 경로
+- [Depth Anything V2 Small](posture-analysis/depth-anything-v2.md) — 상대 깊이 모델과 제품 사용 범위
 
-이 문서들은 채택한 경로 또는 그 근거를 설명한다.
-상세 리서치와 워크플로우가 충돌하면 워크플로우 규범을 우선한다.
+구현과 문서가 다르면 코드를 확인한 뒤 문서를 함께 갱신한다.

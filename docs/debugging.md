@@ -17,7 +17,7 @@
 make check
 ```
 
-이 명령은 앱 아이콘 무결성 검사, `workflow-tests` 실행형 테스트, Swift 빌드를 차례로 실행한다.
+이 명령은 `workflow-tests` 실행형 테스트와 Swift 빌드를 차례로 실행한다.
 별도 lint 명령은 없다.
 
 일반 메뉴 막대 앱은 다음 순서로 패키징하고 실행한다.
