@@ -1,75 +1,77 @@
-# Baseline Calibration and Posture Checks
+# 기준 자세 보정과 점검
 
-turtlemeck does not measure clinically defined angles.
-It is a wellness tool that compares current upper-body signals with a baseline posture saved by the user and helps them notice posture habits.
+목바로는 임상적으로 정해진 각도를 측정하지 않는다.
+사용자가 저장한 기준 자세와 현재 상체 신호의 차이를 비교해 자세 습관을 알려 주는 웰니스 도구다.
 
-## First Launch
+## 첫 실행
 
-If no baseline posture is saved, the app starts calibration automatically.
-If camera access has not yet been decided, macOS asks for access when this calibration first needs the camera.
-After granting access, maintain good posture in your usual working position.
+저장된 기준 자세가 없으면 앱이 보정을 자동으로 시작한다.
+카메라 권한 상태가 미결정이면 첫 보정에서 카메라가 필요할 때 macOS가 권한을 요청한다.
+권한을 허용한 뒤 평소 작업할 위치에서 바른 자세를 유지한다.
 
-If you denied access, use **카메라 권한 설정 (Camera Permission Settings)** in the popover to open System Settings.
-Grant access, then select **보정 (Calibrate)** again.
-turtlemeck does not provide a camera selector and uses the first available built-in wide-angle camera.
+권한을 거절했다면 팝오버의 **카메라 권한 설정**으로 시스템 설정을 연다.
+권한을 허용한 뒤 **보정**을 다시 누른다.
+목바로에는 카메라 선택 설정이 없으며 사용할 수 있는 첫 번째 내장 광각 카메라를 사용한다.
 
-## Calibration
+## 보정
 
-Calibration saves the current posture's relative depth features and variation, camera configuration, and upper-body composition as a single baseline.
-Follow these steps to obtain a stable baseline.
+보정은 현재 자세의 상대 깊이 특성값과 변동, 카메라 구성, 화면 안의 상체 구도를 하나의 기준으로 저장한다.
+다음 순서에 따라 안정적인 기준 자세를 저장한다.
 
-1. Settle on your actual working position and screen angle.
-2. Sit so your head and both shoulders are visible to the camera.
-3. Maintain good posture and remain still. For a manual recalibration, select **보정 (Calibrate)** first.
-4. Wait until `기준 자세 저장됨` (`Baseline posture saved`) appears.
+1. 실제로 작업할 자리와 화면 각도를 정한다.
+2. 머리와 양쪽 어깨가 카메라 화면에 들어오도록 앉는다.
+3. 바른 자세를 유지하고 움직이지 않는다. 직접 다시 보정하려면 먼저 **보정**을 누른다.
+4. `기준 자세 저장됨`이 표시될 때까지 기다린다.
 
-Each camera session first uses about 0.8 seconds as a warm-up period.
-It then collects up to 5 frames over 2.4 seconds and allows up to 2 additional seconds for in-flight analysis to finish before aggregation.
-If the captured burst does not meet the quality and stability conditions, another burst starts 10 seconds after completion, with up to three bursts per calibration.
-If the camera does not provide any frames, calibration fails immediately with `카메라 사용 불가` (`Camera unavailable`) without another attempt.
+한 번의 카메라 세션은 먼저 약 0.8초를 워밍업 구간으로 사용한다.
+이후 최대 5프레임을 2.4초에 걸쳐 수집하고 집계 전에 진행 중인 분석이 끝나도록 최대 2초의 처리 여유를 둔다.
+연속 촬영한 이미지가 품질·안정성 조건을 통과하지 못하면 촬영이 끝난 10초 뒤 다시 시도하며 한 번의 보정에서 최대 세 차례 촬영한다.
+카메라에서 프레임을 하나도 받지 못하면 재시도하지 않고 `카메라 사용 불가`로 실패한다.
 
-> **Caution:** If you save poor posture as the baseline, even objectively good posture may be classified as poor because it differs from that baseline.
-> Routine posture checks never change the baseline automatically; it is replaced only when the user selects **보정 (Calibrate)**.
+> **주의:** 잘못된 자세를 기준으로 저장하면 객관적으로 바른 자세도 저장된 기준과 다르다는 이유로 주의 상태가 될 수 있다.
+> 일상 점검 결과는 기준을 자동으로 바꾸지 않으며 사용자가 **보정**을 실행할 때만 교체한다.
 
-## Calibration Failures
+## 보정 실패
 
-When calibration fails, routine checks stop until the user selects **보정 (Calibrate)** again.
+보정에 실패하면 사용자가 **보정**을 다시 누를 때까지 정기 점검을 멈춘다.
 
-| Screen status | Meaning | Next step |
+| 화면 상태 | 의미 | 다음 동작 |
 |---|---|---|
-| 보정 실패: 자세 신호 부족 (Calibration failed: insufficient posture signal) | The app could not obtain stable person, upper-body, or depth signals. | Check the lighting and camera composition, and make sure your head and shoulders are visible. |
-| 보정 실패: 자세를 확인할 수 없음 (Calibration failed: posture cannot be assessed) | The head is visible, but tilt, slouching, occlusion, or a similar issue prevents the app from confirming normal posture. | Sit upright again, then recalibrate. |
-| 카메라 권한 필요 (Camera permission required) | macOS camera access has not been granted. | Grant access in **카메라 권한 설정 (Camera Permission Settings)**, then recalibrate. |
-| 카메라 사용 불가 (Camera unavailable) | The built-in camera could not be opened or did not provide any frames. | Check whether another app is using the camera and whether the device is available, then recalibrate. |
+| 보정 실패: 자세 신호 부족 | 사람·상체·깊이 신호가 안정적이지 않음 | 조명과 카메라 구도, 머리와 어깨가 보이는지 확인 |
+| 보정 실패: 자세를 확인할 수 없음 | 머리는 보이지만 기울기, 숙임, 가림 등으로 정상 자세를 확인하기 어려움 | 바른 자세로 다시 앉은 뒤 보정 |
+| 카메라 권한 필요 | macOS 카메라 권한 없음 | **카메라 권한 설정**에서 허용한 뒤 다시 보정 |
+| 카메라 사용 불가 | 내장 카메라를 열 수 없거나 프레임이 들어오지 않음 | 다른 앱의 카메라 사용과 장치 상태를 확인한 뒤 다시 보정 |
 
-The existing baseline is also not used if the saved camera configuration changes or if shoulder framing moves beyond the stored position or width thresholds.
-A sufficient change in camera angle or sitting distance can cause this.
-In this case, `보정 필요` (`Calibration required`) appears and routine checks stop until the user recalibrates while maintaining good posture.
+저장된 카메라 구성이 달라지거나 어깨 구도가 저장된 위치·폭 임계를 벗어나도 기존 기준을 사용하지 않는다.
+카메라 각도나 착석 거리가 충분히 달라진 경우가 여기에 해당한다.
+이때 `보정 필요`를 표시하고 사용자가 바른 자세에서 다시 보정할 때까지 정기 점검을 멈춘다.
 
-## Routine Checks
+## 정기 점검
 
-After calibration, camera sessions start according to the selected [check interval](settings.md#checks).
-The interval is measured from the start time of the previous camera session, and each session captures up to 5 frames in the same way as calibration.
-The camera does not remain on between checks.
+보정이 끝나면 선택한 [점검 주기](settings.md#점검)에 맞춰 카메라 세션을 시작한다.
+주기는 이전 카메라 세션의 시작 시각을 기준으로 계산하며 각 세션은 보정과 같은 방식으로 최대 5프레임을 수집한다.
+점검 사이에는 카메라를 계속 켜 두지 않는다.
 
-If the display sleeps or macOS interrupts a camera session, any active capture and scheduled check stop.
-When the display wakes or the interruption ends, the app schedules the pending calibration, immediate check, or routine check again as appropriate.
+화면이 잠들거나 macOS가 카메라 세션을 중단하면 진행 중인 캡처와 예약을 멈춘다.
+화면이 깨어나거나 중단이 끝나면 보정·즉시 점검·정기 점검 중 기다리던 작업에 맞춰 다시 예약한다.
 
-## Result of a Single Check
+## 한 번의 점검 결과
 
-| Result | Meaning |
+| 결과 | 의미 |
 |---|---|
-| Good | Reliable signals are within the saved baseline posture range. |
-| Poor | The posture differs enough from the baseline, or most frames show the head but cannot confirm good posture because of the current pose. |
-| Unable to evaluate | The app cannot decide because no person is present or the frame, upper-body, depth, or stability signals are insufficient. This result is not treated as good. |
+| 정상 | 신뢰할 수 있는 신호가 저장된 기준 자세 범위 안에 있음 |
+| 악화 | 기준 자세에서 충분히 벗어났거나 머리는 보이지만 현재 자세 때문에 정상인지 확인할 수 없는 프레임이 우세함 |
+| 판정 불가 | 사람이 없거나 프레임·상체·깊이·안정성 신호가 부족해 판단할 수 없으며 정상으로 간주하지 않음 |
 
-turtlemeck does not enter the poor state after a single poor result.
+경계 결과는 기준 자세의 정상 복귀 경계와 악화 진입 경계 사이에 있어 정상이나 악화로 확정할 수 없는 결과다.
 
-- From the pending state, one good result changes the status to `자세: 정상` (`Posture: Good`).
-- Two consecutive poor results change the status to `자세: 주의` (`Posture: Poor`) and create a notification candidate.
-- From the poor state, two consecutive good results restore the status to `자세: 정상` (`Posture: Good`).
-- Three consecutive results that combine unable-to-evaluate and borderline outcomes change the status to the pending state, shown as `자세 점검 중` (`Checking posture`).
-- An unable-to-evaluate result resets both the poor and recovery streaks and counts toward neither.
+목바로는 한 번의 악화 결과만으로 바로 주의 상태로 바꾸지 않는다.
 
-See [Notifications](notifications.md) for the conditions that turn a notification candidate into an actual banner or sound.
-The technical rationale for the decision sequence and thresholds is documented in the [Posture Analysis Workflow (Korean only)](workflow.md).
+- 판정 대기 상태에서는 정상 결과 한 번으로 `자세: 정상` 전환
+- 악화 결과가 두 번 연속이면 `자세: 주의`로 전환하고 알림 후보 생성
+- 주의 상태에서 정상 결과가 두 번 연속이면 `자세: 정상`으로 회복
+- 판정 불가와 경계 결과를 합쳐 세 번 연속이면 `자세 점검 중`인 판정 대기 상태로 전환
+- 판정 불가 결과는 악화와 회복 연속 횟수를 초기화하며 어느 쪽에도 포함하지 않음
+
+알림 후보가 실제 배너나 소리가 되는 조건은 [알림](notifications.md)에서 확인한다.
+판정 순서와 임계값의 기술적 근거는 [자세 분석 워크플로우](posture-analysis/workflow.md)에 정리돼 있다.

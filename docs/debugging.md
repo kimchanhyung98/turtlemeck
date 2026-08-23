@@ -1,26 +1,26 @@
-# Debugging
+# 디버깅
 
-This guide explains how to run a local `turtlemeck` build and inspect the UI state, burst-level posture evaluation, and per-frame intermediate values.
-Use it to reproduce camera, calibration, and evaluation issues.
+목바로의 로컬 빌드를 실행하고 화면 상태, 버스트 단위 자세 판정, 프레임별 중간값을 확인하는 방법이다.
+카메라·보정·판정 문제를 재현할 때 사용한다.
 
-## Requirements
+## 요구 사항
 
-- The app requires macOS 15 or later, and macOS Tahoe 26 or later is recommended.
-- Swift tools 6.0 or later are required, and Swift 6.3 or later from Command Line Tools is recommended for development. A full Xcode installation is not required.
-- Building the app does not require npm. `package.json` is used only to install Husky Git hooks.
+- 앱은 macOS 15 이상에서 실행하며 macOS Tahoe 26 이상을 권장한다.
+- 최소 도구 버전은 Swift 6.0이다. 개발에는 Command Line Tools의 Swift 6.3 이상을 권장하며 Xcode 전체 설치는 필요하지 않다.
+- 앱을 빌드할 때 npm은 필요하지 않다. `package.json`은 Husky Git 훅 설치에만 사용한다.
 
-## Checks and local runs
+## 검사와 로컬 실행
 
-Run all checks from the repository root.
+저장소 루트에서 전체 검사를 실행한다.
 
 ```sh
 make check
 ```
 
-This command verifies the app icon, runs the `workflow-tests` executable tests, and builds the Swift package in sequence.
-There is no separate lint command.
+이 명령은 앱 아이콘 무결성을 검증한 뒤 `workflow-tests` 실행형 테스트와 Swift 빌드를 차례로 실행한다.
+별도 lint 명령은 없다.
 
-To package and run the standard menu bar app:
+일반 메뉴 막대 앱은 다음 순서로 패키징하고 실행한다.
 
 ```sh
 make stop
@@ -28,62 +28,62 @@ make package
 make run
 ```
 
-`make package` creates `.build/turtlemeck.app`, a ZIP, a DMG, and `SHA256SUMS`.
-`make run` packages the app automatically only when the app bundle does not exist.
-An already running process does not pick up a new bundle, so use the **stop → package → run** sequence to ensure source changes take effect.
+`make package`는 `.build/turtlemeck.app`, ZIP, DMG, `SHA256SUMS`를 만든다.
+`make run`은 앱 번들이 없을 때만 자동으로 패키징한다.
+이미 실행 중인 프로세스에는 새 번들이 반영되지 않으므로 소스 변경을 적용하려면 **종료 → 패키징 → 실행** 순서를 사용한다.
 
-Stop the running app with the following command.
+실행 중인 앱은 다음 명령으로 종료한다.
 
 ```sh
 make stop
 ```
 
-## Fresh state and debug runs
+## 초기 상태와 디버그 실행
 
-Run the menu bar app with its first-launch state:
+메뉴 막대 모드에서 첫 실행 상태를 확인하려면 다음 명령을 실행한다.
 
 ```sh
 make run-fresh
 ```
 
-Run the app in debug-window mode:
+디버그 창 모드로 실행하려면 다음 명령을 실행한다.
 
 ```sh
 make run-debug
 ```
 
-> **Data reset:** Both commands stop the running app and delete the `com.go.turtlemeck` UserDefaults domain, removing check and notification settings and the baseline posture.
-> They do not remove the macOS login item registration, camera and notification permissions, daily statistics, or existing `debug/` artifacts.
+> **데이터 초기화:** 두 명령은 실행 중인 앱을 종료하고 `com.go.turtlemeck` UserDefaults 도메인을 삭제해 점검·알림 설정과 기준 자세를 초기화한다.
+> macOS의 로그인 항목 등록, 카메라·알림 권한, 일일 통계, 기존 `debug/` 산출물은 지우지 않는다.
 
-To keep the settings and baseline posture while opening only the debug window, package the app first and pass the flag directly.
+설정과 기준 자세를 유지한 채 디버그 창만 열려면 먼저 패키징한 뒤 플래그를 직접 전달한다.
 
 ```sh
 make package
 open -n .build/turtlemeck.app --args --debug
 ```
 
-Debug mode opens a 600×680 standard window titled `turtlemeck` instead of the menu bar icon, and adds the **분석 (Analysis)** and **디버그 (Debug)** panels to the shared interface.
-The window is resizable and its content scrolls.
+디버그 모드는 메뉴 막대 아이콘 대신 `turtlemeck` 제목의 600×680 일반 창을 열고 공용 화면에 **분석**과 **디버그** 패널을 추가한다.
+창 크기를 조절할 수 있고 내용은 스크롤된다.
 
-## Debug interface
+## 디버그 화면
 
-Before the first measurement, the interface displays `아직 측정 데이터 없음 (점검 대기)` (“No measurement data yet (waiting for check)”).
-After a check, it adds the following information.
+측정 전에는 `아직 측정 데이터 없음 (점검 대기)`가 표시된다.
+점검 뒤에는 다음 정보가 추가된다.
 
-- The result of one burst and the product state after persistence is applied
-- Total and valid frame counts, feature medians and MADs, baseline centers, and differences
-- Counts by exclusion reason, plus per-frame features or exclusion reasons
-- Landmarks, head, torso, and reference ROIs, relative depth, and quality values
-- Processing times for PoseNet, Depth Anything V2, feature extraction, burst aggregation, and state transitions
-- Current baseline posture summary, check interval, and debug output path
+- 한 번의 버스트 판정과 지속성 적용 뒤의 제품 상태
+- 전체·유효 프레임 수, 특성값 중앙값과 MAD, 기준 중심과 차이
+- 제외 사유별 횟수와 프레임별 특성값 또는 제외 사유
+- 랜드마크, 머리·몸통·참조 ROI, 상대 깊이, 품질값
+- PoseNet·Depth Anything V2·특성값 추출·버스트 집계·상태 전이의 처리 시간
+- 현재 기준 자세 요약, 점검 주기, 디버그 출력 경로
 
-When an artifact path is available, **디버그 폴더 열기 (Open Debug Folder)** opens that session directory in Finder.
-Some internal evidence and failure reasons appear as their raw English values from the code.
+산출물 경로가 생기면 **디버그 폴더 열기**가 Finder에서 해당 세션 디렉터리를 연다.
+일부 내부 판정 근거와 실패 사유는 코드에 정의된 영문 원시 값으로 표시된다.
 
-## Debug artifacts
+## 디버그 산출물
 
-The default output root is `debug/`, created after locating the project root from the source, app bundle, executable, or current directory.
-Each camera session uses the following structure.
+기본 출력 루트는 소스·번들·실행 파일·현재 디렉터리에서 프로젝트 루트를 찾아 만든 `debug/`다.
+한 카메라 세션마다 다음 구조를 사용한다.
 
 ```text
 debug/<yyyyMMdd-HHmmss>/
@@ -94,24 +94,24 @@ debug/<yyyyMMdd-HHmmss>/
 └── session.json
 ```
 
-`capture` is the RGB frame, `overlay` shows landmarks and ROIs, and `depth` is the relative-depth visualization.
-The frame JSON contains features, quality values, and exclusion reasons, while `session.json` contains the raw burst result, product state, baseline posture, and processing times.
-Some frames may omit images after a quality failure.
+`capture`는 RGB 프레임, `overlay`는 랜드마크와 ROI, `depth`는 표시용 상대 깊이다.
+프레임 JSON에는 특성값·품질·제외 사유가 들어가고 `session.json`에는 원시 버스트 결과·제품 상태·기준 자세·처리 시간이 들어간다.
+품질 실패에 따라 일부 이미지가 없는 프레임도 있다.
 
-These files can contain the user's image and are not deleted automatically.
-For details about the privacy boundary, see [Privacy and local data](privacy.md#debug-and-local-modes).
+이 파일에는 사용자의 모습이 포함될 수 있고 자동으로 삭제되지 않는다.
+자세한 개인정보 경계는 [개인정보와 로컬 데이터](privacy.md#디버그와-로컬-모드)에서 확인한다.
 
-## Environment variables and launch flags
+## 환경 변수와 실행 플래그
 
-| Item | Activation | Behavior |
+| 항목 | 활성 조건 | 동작 |
 |---|---|---|
-| `--debug` | Included in launch arguments | Enables window mode, the debug interface, and file output. |
-| `TURTLEMECK_DEBUG` | Value is exactly `1` | Behaves like `--debug`. The value is not persisted. |
-| `TURTLEMECK_DEBUG_ROOT` | Absolute path beginning with `/` | Writes output to this path instead of the automatically discovered project `debug/` directory. Relative paths are ignored. |
-| `TURTLEMECK_LOCAL_AI_EXECUTABLE` | Absolute executable path beginning with `/` | Creates the shared RGB and depth artifacts, then passes matching image pairs to a local process. Images are saved even without the debug flag. |
-| `TURTLEMECK_LOCAL_AI_ARGUMENTS_JSON` | JSON string array | Provides arguments for the local executable. A missing or invalid value uses an empty array. |
+| `--debug` | 실행 인자에 포함 | 창 모드와 디버그 화면·파일 출력 활성화 |
+| `TURTLEMECK_DEBUG` | 값이 정확히 `1` | `--debug`와 같은 동작이며 값은 저장하지 않음 |
+| `TURTLEMECK_DEBUG_ROOT` | `/`로 시작하는 절대 경로 | 자동 탐색한 프로젝트 `debug/` 대신 지정 경로에 출력하며 상대 경로는 무시 |
+| `TURTLEMECK_LOCAL_AI_EXECUTABLE` | `/`로 시작하는 절대 실행 파일 경로 | 공통 RGB·깊이 산출물을 만든 뒤 번호가 같은 이미지 쌍을 로컬 프로세스에 전달하며 디버그 플래그가 없어도 이미지 저장 |
+| `TURTLEMECK_LOCAL_AI_ARGUMENTS_JSON` | JSON 문자열 배열 | 로컬 실행 파일에 전달할 인자이며 누락되거나 잘못된 값은 빈 배열로 처리 |
 
-To ensure the environment variables are passed through, run the packaged executable directly from the terminal.
+환경 변수를 확실히 전달하려면 패키징한 실행 파일을 터미널에서 직접 실행한다.
 
 ```sh
 TURTLEMECK_DEBUG=1 \
@@ -119,38 +119,39 @@ TURTLEMECK_DEBUG_ROOT=/absolute/path/to/debug \
 .build/turtlemeck.app/Contents/MacOS/turtlemeck
 ```
 
-The repository does not load `.env` files automatically.
+저장소는 `.env` 파일을 자동으로 읽지 않는다.
 
-When local AI is enabled and at least one matching RGB and depth image pair exists, the app creates the following files next to the shared session.
+로컬 AI가 활성화되고 번호가 같은 RGB·깊이 이미지 쌍이 하나 이상 있으면 공통 세션 옆에 다음 파일을 만든다.
 
 ```text
-debug/<yyyyMMdd-HHmmss>-local/
+<debug-root>/<yyyyMMdd-HHmmss>-local/
 ├── request.md
 └── analysis.md
 ```
 
-`request.md` contains the absolute paths of matching RGB and depth files.
-The local process receives the prompt through standard input and writes both stdout and stderr to `analysis.md`.
-Execution failures and output content do not affect `turtlemeck`'s posture evaluation.
+`<debug-root>`는 `TURTLEMECK_DEBUG_ROOT`로 지정한 경로이며, 환경 변수가 없으면 자동 탐색한 프로젝트의 `debug/`가 기본값이다.
+`request.md`에는 번호가 같은 RGB·깊이 파일의 절대 경로가 들어간다.
+로컬 프로세스는 요청문을 표준 입력으로 받고 stdout과 stderr를 모두 `analysis.md`에 쓴다.
+실행 실패와 출력 내용은 목바로의 자세 판정에 영향을 주지 않는다.
 
-## Analyzing saved images
+## 저장 이미지 분석
 
-Use the following tool to analyze saved images without running the camera lifecycle.
+카메라 수명 주기를 실행하지 않고 저장된 이미지만 분석하려면 다음 명령을 사용한다.
 
 ```sh
 swift run --disable-sandbox analyze-image <image-path> [image-path ...]
 ```
 
-The tool writes each image's validity, features, exclusion reason, and landmark geometry to standard output.
-It does not modify the input files.
+도구는 각 이미지의 유효 여부, 특성값, 제외 사유, 랜드마크 기하 정보를 표준 출력에 기록한다.
+입력 파일은 수정하지 않는다.
 
-## Troubleshooting
+## 문제 해결
 
-- **Source changes do not appear in the app.** Run `make stop && make package && make run` to replace the running process as well as the bundle.
-- **Camera permission is required.** Allow access from **카메라 권한 설정 (Camera Permission Settings)** in the popover, then recalibrate while sitting upright.
-- **Calibration keeps failing.** Check that the head and both shoulders are visible, verify the lighting and camera framing, and remain still during calibration.
-- **No debug files are created.** Check the debug flag. If the app is installed where the project root cannot be discovered automatically, set `TURTLEMECK_DEBUG_ROOT` to an absolute path.
-- **Notifications do not repeat.** Check whether this is a new transition into the poor state and whether the 20-minute snooze or 25-minute minimum interval is still active.
+- **소스 변경이 앱에 보이지 않음.** `make stop && make package && make run` 순서로 실행 중인 프로세스까지 교체
+- **카메라 권한 필요.** 팝오버의 **카메라 권한 설정**에서 허용한 뒤 바른 자세로 다시 보정
+- **보정 실패가 반복됨.** 머리와 양쪽 어깨가 화면에 보이는지 확인하고 조명과 카메라 구도를 점검하며 보정 중에는 움직이지 않음
+- **디버그 파일이 생기지 않음.** 디버그 플래그를 확인하고 프로젝트 루트를 자동으로 찾을 수 없는 설치 위치에서는 `TURTLEMECK_DEBUG_ROOT`에 절대 경로 지정
+- **알림이 반복되지 않음.** 주의 상태의 새 전환인지, 20분 스누즈나 25분 최소 간격이 남았는지 확인
 
-`turtlemeck` does not currently create rotating text log files.
-Use the debug interface and frame and session JSON files to investigate evaluation issues.
+목바로는 텍스트 로그를 순환 저장하지 않는다.
+판정 문제는 디버그 화면과 프레임·세션 JSON으로 확인한다.

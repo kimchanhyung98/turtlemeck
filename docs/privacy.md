@@ -1,56 +1,56 @@
-# Privacy and Local Data
+# 개인정보와 로컬 데이터
 
-During normal use, turtlemeck processes camera frames and performs posture analysis on the device.
-The app itself does not make network requests, and during normal use it does not save camera images to files or transmit them externally.
+목바로는 일반 실행에서 카메라 프레임과 자세 분석을 사용자의 Mac 안에서 처리한다.
+앱 자체는 네트워크 요청을 하지 않으며 일반 실행에서는 카메라 이미지를 파일로 저장하거나 외부로 전송하지 않는다.
 
-## Permissions
+## 권한
 
-| Permission or system feature | When requested | Purpose |
+| 권한·시스템 기능 | 요청 시점 | 사용 목적 |
 |---|---|---|
-| Camera | When a calibration or check first needs the camera while authorization is not determined | Estimates upper-body posture from a short burst of images from the built-in camera. Required for posture checks. |
-| Notifications | When the user turns on **배너 알림 (Banner notifications)** | Shows a newly entered poor state as a macOS banner and, depending on settings, plays the default notification sound. Optional. |
-| Login item | When the user turns on **로그인 시 자동 실행 (Launch at login)** | Starts the app automatically after the user logs in to macOS. Optional. |
+| 카메라 | 권한 상태가 미결정인 상태에서 보정이나 점검에 처음 카메라가 필요할 때 | 내장 카메라로 짧게 연속 촬영한 이미지에서 상체 자세를 추정. 자세 점검에 필수 |
+| 알림 | 사용자가 **배너 알림**을 켤 때 | 새 주의 상태를 macOS 배너로 표시하고 설정에 따라 기본 알림 소리 재생. 선택 사항 |
+| 로그인 항목 | 사용자가 **로그인 시 자동 실행**을 켤 때 | macOS 로그인 뒤 앱 자동 시작. 선택 사항 |
 
-The app does not request microphone access.
-Use **카메라 권한 설정 (Camera Permission Settings)** in the popover to change camera access.
+마이크 권한은 요청하지 않는다.
+카메라 권한을 바꾸려면 팝오버의 **카메라 권한 설정**을 사용한다.
 
-## Data Stored on This Mac
+## 이 Mac에 저장되는 데이터
 
-| Data | Contents | Location |
+| 데이터 | 내용 | 위치 |
 |---|---|---|
-| Settings and baseline posture | Check interval, notification settings, launch-at-login state, calibration features, and camera and composition information | UserDefaults domain `com.go.turtlemeck` |
-| Daily statistics | Date, time in good and poor states, poor transitions, recoveries, and notifications sent | `~/Library/Application Support/turtlemeck/stats.json` |
-| Debug artifacts | RGB captures, relative depth images for display, landmark and ROI overlays, and frame and session JSON | `<project-root>/debug/<yyyyMMdd-HHmmss>/` by default |
-| Local AI artifacts | Request text and stdout and stderr output from the local process | `<debug-root>/<yyyyMMdd-HHmmss>-local/` |
+| 설정과 기준 자세 | 점검 주기, 알림 설정, 로그인 시 실행 상태, 보정 특성값과 카메라·구도 정보 | UserDefaults 도메인 `com.go.turtlemeck` |
+| 일일 통계 | 날짜, 정상·주의 시간, 주의 전환, 회복, 보낸 알림 횟수 | `~/Library/Application Support/turtlemeck/stats.json` |
+| 디버그 산출물 | RGB 캡처, 표시용 상대 깊이, 랜드마크·ROI 오버레이, 프레임·세션 JSON | 기본 `<프로젝트 루트>/debug/<yyyyMMdd-HHmmss>/` |
+| 로컬 AI 산출물 | 로컬 프로세스 요청문과 stdout·stderr 결과 | `<debug-root>/<yyyyMMdd-HHmmss>-local/` |
 
-Daily statistics do not contain images, joint coordinates, depth values, or notification body text.
-Daily records and debug sessions have no set retention period and are not deleted automatically.
+일일 통계에는 이미지, 관절 좌표, 깊이 값, 알림 본문이 들어가지 않는다.
+날짜별 기록과 디버그 세션에는 별도 보존 기한이 없으며 자동으로 삭제하지 않는다.
 
-## Data Not Stored or Transmitted During Normal Use
+## 일반 실행에서 저장·전송하지 않는 것
 
-- Camera RGB frames or video
-- Relative depth images
-- Joint positions or per-frame decision diagnostics
-- External accounts, credentials, or web browsing history
+- 카메라 RGB 프레임과 영상
+- 상대 깊이 이미지
+- 관절 위치와 프레임별 판정 진단
+- 외부 계정, 인증 정보, 웹 사용 기록
 
-The popover's **개인정보 · 비의료 안내 (Privacy · Not Medical Advice)** section explains this scope and notes that turtlemeck is not a medical device and may detect posture inaccurately.
-Consult a medical professional about health concerns or pain.
+팝오버의 **개인정보 · 비의료 안내**는 이 범위와 함께 목바로가 의료기기가 아니며 감지가 부정확할 수 있다는 점을 설명한다.
+건강 문제나 통증이 있으면 의료 전문가 상담을 권장한다.
 
-## Debug and Local Modes
+## 디버그와 로컬 모드
 
-When launched with `--debug` or `TURTLEMECK_DEBUG=1`, the app stores camera RGB images and derived images in the local `debug/` directory for validation.
-Setting `TURTLEMECK_LOCAL_AI_EXECUTABLE` also stores the same capture artifacts to create input files for the local process.
-Developers must enable these two modes explicitly, and the normal-use statement that images are not stored does not apply to them.
+`--debug` 또는 `TURTLEMECK_DEBUG=1`로 실행하면 검증을 위해 카메라 RGB 이미지와 파생 이미지를 로컬 `debug/` 디렉터리에 저장한다.
+`TURTLEMECK_LOCAL_AI_EXECUTABLE`을 설정한 경우에도 로컬 프로세스 입력 파일을 만들기 위해 같은 캡처 산출물을 저장한다.
+두 모드는 개발자가 명시적으로 켜는 기능이며 일반 실행에서 이미지를 저장하지 않는다는 설명은 적용하지 않는다.
 
-The local AI feature sends a request containing RGB and depth image paths to an external executable selected by the user.
-turtlemeck does not restrict that process's network connections or access to additional files.
-Review the privacy practices of the tool you plan to use separately.
-Local AI results and failures are not fed back into turtlemeck's posture decisions.
+로컬 AI 기능은 사용자가 지정한 외부 실행 파일에 RGB·깊이 이미지 경로가 담긴 요청문을 전달한다.
+목바로는 해당 프로세스의 네트워크 연결이나 추가 파일 접근을 제한하지 않는다.
+사용할 도구의 개인정보 처리 방식을 별도로 확인한다.
+로컬 AI 결과와 실패는 목바로의 자세 판정에 다시 입력하지 않는다.
 
-See [Debugging](debugging.md#debug-artifacts) for the environment variables and exact file list.
+환경 변수와 정확한 파일 목록은 [디버깅](debugging.md#디버그-산출물)에서 확인한다.
 
-## Development Resets
+## 개발 중 초기화
 
-`make run-fresh` and `make run-debug` reset only the `com.go.turtlemeck` UserDefaults domain that contains settings and the baseline posture.
-The macOS login item registration, camera and notification permissions, `stats.json`, and existing `debug/` artifacts remain.
-Debug images that contain private information require manual cleanup when they are no longer needed.
+`make run-fresh`와 `make run-debug`는 설정과 기준 자세가 들어 있는 `com.go.turtlemeck` UserDefaults 도메인만 초기화한다.
+macOS의 로그인 항목 등록, 카메라·알림 권한, `stats.json`, 기존 `debug/` 산출물은 남는다.
+개인정보가 담긴 디버그 이미지는 필요가 끝나면 직접 정리한다.
