@@ -5,7 +5,7 @@
 > 2026-07-21 제품 카메라 검증에서 Vision 단독 landmark 검출 실패가 확인되어, 같은 2D landmark 역할을 PoseNet 우선·Vision fallback으로 구현한다.
 > 나머지 처리 순서는 바꾸지 않는다.
 
-상위 개론은 [`../workflow.md`](../workflow.md)에서 관리한다.
+사용자에게 보이는 보정·점검 흐름은 [기준 자세 보정과 점검](../posture-checks.md)에서 설명한다.
 이 문서는 이미지 캡처부터 feature 생성, 기준 자세 비교, 상태 전이와 알림까지의 상세 로직을 정의한다.
 
 수치 임계와 상태 전이 지속 시간은 제품 데이터 검증 전에는 확정하지 않는다.
@@ -14,7 +14,7 @@
 유효 프레임이 2개 이상이고 버스트 품질 조건을 충족할 때 판정한다.
 정규화 feature의 기준 ROI와 견고한 통계도 검증 대상이지만, 이 때문에 모델이나 전체 처리 경로를 다시 선택하지는 않는다.
 
-prod와 debug의 출력 차이, 로컬 AI CLI 추가 경로는 [상위 개론의 실행 환경과 출력 구분](../workflow.md#실행-환경과-출력-구분)에서 다룬다.
+debug 화면과 파일 출력, 로컬 AI CLI 실행 방법은 [디버깅](../debugging.md)에서 설명한다.
 prod와 debug는 이 문서의 자세 분석 정보 전체를 동일하게 수집하고 같은 판정 조건을 사용한다.
 debug 설정은 화면과 파일의 출력 범위만 바꾸며 판정에 관여하지 않는다.
 로컬 환경에서는 같은 원본 이미지와 Depth V2 결과를 로컬 AI CLI에도 전달하지만, 응답은 이 문서의 판정에 반영하지 않는다.
@@ -230,7 +230,7 @@ ROI 일부가 화면 밖이면 unit square로 clipping한 뒤 경계 접촉률�
 보이지 않는 landmark를 고정 좌표나 임의의 대칭점으로 만들지 않는다.
 
 2D 관절 자체를 `good` 또는 `bad` 판정으로 해석하지 않는다.
-채택 근거는 [자세 모델 비교](pose-estimation/comparison.md), PoseNet의 모델·decoder 계약은 [Apple Core ML 샘플 PoseNet](apple-posenet/analysis.md), Vision 대체 경로 계약은 [Apple Vision 2D](apple-body-pose/analysis.md)에서 관리한다.
+현재 구현은 `Sources/TurtleCore/Inference/PoseNetDetector.swift`와 `PoseDetector.swift`에서 관리한다.
 
 ## 5. Depth Anything V2 Small
 
@@ -247,7 +247,7 @@ Depth Anything V2 Small은 한 장의 RGB 이미지에서 픽셀별 relative inv
 자세 분석기는 2D pose landmark로 만든 ROI를 depth map에 정렬한 뒤 머리와 몸통 영역의 상대값만 읽는다.
 raw depth 숫자를 절대 임계와 직접 비교하지 않는다.
 
-모델의 출력과 해석 경계는 [Depth Anything V2 로직 분석](../depth-estimation/depth-anything-v2/analysis.md)에서 관리한다.
+현재 모델 실행과 출력 변환은 `Sources/TurtleCore/Inference/CoreMLRelativeDepthProvider.swift`에서 관리한다.
 
 ## 6. 프레임별 relative depth feature
 
@@ -293,7 +293,7 @@ flowchart LR
 
 이 정규화는 출력 전체의 scale·shift 변화만 완화한다.
 머리카락 경계, 의복, 가림과 잘못된 ROI 같은 국소 오류는 해결하지 못한다.
-후보 식과 대안 통계는 [relative depth feature 설계](../depth-estimation/etc/related-feature-design.md)에서 관리한다.
+특성값 정의와 품질 조건은 `Sources/TurtleCore/Detection/PostureAnalyzer.swift`에서 관리한다.
 
 ## 7. 버스트 대표값
 
@@ -344,7 +344,7 @@ flowchart TD
 12. 이 경우 자동 재보정을 시작하지 않는다.
 
 원본 이미지는 기준 자세에 저장하지 않는다.
-상세 보정 원칙은 [개인 기준 자세 보정](pose-estimation/related-baseline-calibration.md)에서 관리한다.
+보정 규칙은 `Sources/TurtleCore/Detection/Calibrator.swift`에서 관리한다.
 
 ## 9. 기준 자세 대비 증거 생성
 
@@ -480,14 +480,15 @@ depth 품질·기하 실패는 자세 기인이 아니므로 악화 증거로 �
 최종 평가는 정확도 하나만 보지 않는다.
 오경보율, 미탐률, `noEval` 비율, 판정 지연과 사용자별 편차를 함께 기록한다.
 
-## 관련 문서
+## 구현 대응
 
-- 개론: [`../workflow.md`](../workflow.md)
-- 2D pose 모델 비교: [pose-estimation/comparison.md](pose-estimation/comparison.md)
-- Apple Core ML 샘플 PoseNet: [apple-posenet/analysis.md](apple-posenet/analysis.md)
-- Apple Vision 2D: [apple-body-pose/analysis.md](apple-body-pose/analysis.md)
-- 자세 분석 원리: [pose-estimation/analysis.md](pose-estimation/analysis.md)
-- Depth Anything V2: [../depth-estimation/depth-anything-v2/analysis.md](../depth-estimation/depth-anything-v2/analysis.md)
-- relative depth feature: [../depth-estimation/etc/related-feature-design.md](../depth-estimation/etc/related-feature-design.md)
-- 개인 기준 자세: [pose-estimation/related-baseline-calibration.md](pose-estimation/related-baseline-calibration.md)
-- 자세 적용 타당성: [../depth-estimation/etc/related-posture-feasibility.md](../depth-estimation/etc/related-posture-feasibility.md)
+- 사용자 보정·점검 흐름: [기준 자세 보정과 점검](../posture-checks.md)
+- 캡처 조율: [`../../Sources/TurtleCore/Camera/CameraManager.swift`](../../Sources/TurtleCore/Camera/CameraManager.swift)
+- 2D 자세 추론: [`../../Sources/TurtleCore/Inference/PoseDetector.swift`](../../Sources/TurtleCore/Inference/PoseDetector.swift)
+- 상대 깊이 추론: [`../../Sources/TurtleCore/Inference/CoreMLRelativeDepthProvider.swift`](../../Sources/TurtleCore/Inference/CoreMLRelativeDepthProvider.swift)
+- 프레임 분석: [`../../Sources/TurtleCore/Detection/PostureAnalyzer.swift`](../../Sources/TurtleCore/Detection/PostureAnalyzer.swift)
+- 버스트 판정: [`../../Sources/TurtleCore/Detection/BurstProcessor.swift`](../../Sources/TurtleCore/Detection/BurstProcessor.swift)
+- 상태 전이: [`../../Sources/TurtleCore/Detection/PostureStateMachine.swift`](../../Sources/TurtleCore/Detection/PostureStateMachine.swift)
+- 구현 결정과 장치 검증: [README.md](README.md)
+- 상체 랜드마크 모델: [PoseNet과 Vision 2D](posenet.md)
+- 상대 깊이 모델: [Depth Anything V2 Small](depth-anything-v2.md)

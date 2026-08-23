@@ -2,10 +2,18 @@
 
 ## 범위
 
-이 문서는 최신 규범인 [`../workflow.md`](../workflow.md)와 그 상세 판단 순서인 [`../algorithm/posture-analysis-workflow.md`](../algorithm/posture-analysis-workflow.md)를 코드에 반영하면서 정한 구현 경계와 아직 제품 데이터가 필요한 항목을 기록한다.
+이 문서는 사용자 흐름인 [기준 자세 보정과 점검](../posture-checks.md)과 기술 규범인 [상세 판단 순서](algorithm.md)를 코드에 반영하면서 정한 구현 경계와 아직 제품 데이터가 필요한 항목을 기록한다.
 이 문서는 두 규범을 변경하지 않는다.
 
-PoseNet의 모델·decoder 계약은 [`../algorithm/apple-posenet/`](../algorithm/apple-posenet/), 운영체제 Vision 대체 경로 계약은 [`../algorithm/apple-body-pose/analysis.md`](../algorithm/apple-body-pose/analysis.md)에서 분리해 관리한다.
+PoseNet의 모델·디코더는 [`PoseNetDetector.swift`](../../Sources/TurtleCore/Inference/PoseNetDetector.swift), 운영체제 Vision 대체 경로는 [`PoseDetector.swift`](../../Sources/TurtleCore/Inference/PoseDetector.swift)에서 관리한다.
+
+## 문서 구성
+
+- [제품 수준 워크플로우](workflow.md)
+- [상세 판정 알고리즘](algorithm.md)
+- [PoseNet과 Vision 2D](posenet.md)
+- [Depth Anything V2 Small](depth-anything-v2.md)
+
 
 ## 도메인 경계
 
