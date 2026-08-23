@@ -484,7 +484,7 @@ depth 품질·기하 실패는 자세 기인이 아니므로 악화 증거로 �
 
 - 사용자 보정·점검 흐름: [기준 자세 보정과 점검](../posture-checks.md)
 - 캡처 조율: [`../../Sources/TurtleCore/Camera/CameraManager.swift`](../../Sources/TurtleCore/Camera/CameraManager.swift)
-- 2D 자세 추론: [`../../Sources/TurtleCore/Inference/PoseDetector.swift`](../../Sources/TurtleCore/Inference/PoseDetector.swift)
+- 2D 자세 추론: [`PoseNetDetector.swift`](../../Sources/TurtleCore/Inference/PoseNetDetector.swift), [`PoseDetector.swift`](../../Sources/TurtleCore/Inference/PoseDetector.swift)
 - 상대 깊이 추론: [`../../Sources/TurtleCore/Inference/CoreMLRelativeDepthProvider.swift`](../../Sources/TurtleCore/Inference/CoreMLRelativeDepthProvider.swift)
 - 프레임 분석: [`../../Sources/TurtleCore/Detection/PostureAnalyzer.swift`](../../Sources/TurtleCore/Detection/PostureAnalyzer.swift)
 - 버스트 판정: [`../../Sources/TurtleCore/Detection/BurstProcessor.swift`](../../Sources/TurtleCore/Detection/BurstProcessor.swift)

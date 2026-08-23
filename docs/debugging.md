@@ -124,11 +124,12 @@ TURTLEMECK_DEBUG_ROOT=/absolute/path/to/debug \
 로컬 AI가 활성화되고 번호가 같은 RGB·깊이 이미지 쌍이 하나 이상 있으면 공통 세션 옆에 다음 파일을 만든다.
 
 ```text
-debug/<yyyyMMdd-HHmmss>-local/
+<debug-root>/<yyyyMMdd-HHmmss>-local/
 ├── request.md
 └── analysis.md
 ```
 
+`<debug-root>`는 `TURTLEMECK_DEBUG_ROOT`로 지정한 경로이며, 환경 변수가 없으면 자동 탐색한 프로젝트의 `debug/`가 기본값이다.
 `request.md`에는 번호가 같은 RGB·깊이 파일의 절대 경로가 들어간다.
 로컬 프로세스는 요청문을 표준 입력으로 받고 stdout과 stderr를 모두 `analysis.md`에 쓴다.
 실행 실패와 출력 내용은 목바로의 자세 판정에 영향을 주지 않는다.
