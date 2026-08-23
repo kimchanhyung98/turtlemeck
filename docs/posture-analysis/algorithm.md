@@ -230,7 +230,7 @@ ROI 일부가 화면 밖이면 unit square로 clipping한 뒤 경계 접촉률�
 보이지 않는 landmark를 고정 좌표나 임의의 대칭점으로 만들지 않는다.
 
 2D 관절 자체를 `good` 또는 `bad` 판정으로 해석하지 않는다.
-현재 구현은 `Sources/TurtleCore/Inference/PoseNetDetector.swift`와 `PoseDetector.swift`에서 관리한다.
+현재 구현은 `Sources/TurtleCore/Inference/PoseNetDetector.swift`와 `Sources/TurtleCore/Inference/PoseDetector.swift`에서 관리한다.
 
 ## 5. Depth Anything V2 Small
 
