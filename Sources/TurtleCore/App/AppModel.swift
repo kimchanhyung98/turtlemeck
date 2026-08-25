@@ -11,6 +11,9 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var diagnosticText = "측정 대기"
     @Published public private(set) var latestDiagnostic: PostureDiagnostic?
     @Published public private(set) var todayStats = DailyPostureStats(day: AppModel.todayKey())
+    /// 디버그 모드에서 노치 표시만 강제하는 미리보기 상태다.
+    /// 자세 판정, 통계, 알림에는 관여하지 않으며 운영 모드에서는 무시된다.
+    @Published public var notchPreviewState: PostureState?
     @Published public var settings: Settings {
         didSet {
             var persisted = settings
