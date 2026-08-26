@@ -72,6 +72,32 @@ public enum NotchIndicatorPreview {
     }
 }
 
+/// 오버레이별 비동기 애니메이션 완료가 여전히 최신 전환에 속하는지 판별한다.
+@_spi(Testing)
+public struct NotchIndicatorTransitionGenerations {
+    private var nextGeneration: UInt = 0
+    private var currentByOverlay: [ObjectIdentifier: UInt] = [:]
+
+    public init() {}
+
+    /// 새 전환을 시작하고 해당 오버레이의 이전 완료를 모두 무효화한다.
+    public mutating func begin(for overlayID: ObjectIdentifier) -> UInt {
+        nextGeneration &+= 1
+        currentByOverlay[overlayID] = nextGeneration
+        return nextGeneration
+    }
+
+    /// 완료가 해당 오버레이에서 가장 최근에 시작한 전환에 속하는지 반환한다.
+    public func isCurrent(_ generation: UInt, for overlayID: ObjectIdentifier) -> Bool {
+        currentByOverlay[overlayID] == generation
+    }
+
+    /// 화면 재구성 전에 기존 오버레이의 모든 완료를 무효화한다.
+    public mutating func invalidateAll() {
+        currentByOverlay.removeAll(keepingCapacity: true)
+    }
+}
+
 /// 실제 `NSScreen` 없이 합성 기하를 테스트할 수 있도록 화면 정보를 담는 값 타입이다.
 public struct NotchScreenGeometry: Equatable, Sendable {
     public var frame: CGRect
@@ -260,6 +286,7 @@ final class NotchIndicatorController {
     private let model: AppModel
     private var overlays: [NotchOverlay] = []
     private var appearance: NotchIndicatorAppearance?
+    private var transitionGenerations = NotchIndicatorTransitionGenerations()
     private var cancellables: Set<AnyCancellable> = []
     private var screenParametersObserver: NSObjectProtocol?
     private var accessibilityObserver: NSObjectProtocol?
@@ -322,6 +349,7 @@ final class NotchIndicatorController {
         for overlay in overlays {
             overlay.panel.orderOut(nil)
         }
+        transitionGenerations.invalidateAll()
         overlays = NSScreen.screens.compactMap { screen in
             let geometry = NotchScreenGeometry(
                 frame: screen.frame,
@@ -411,9 +439,7 @@ final class NotchIndicatorController {
         // 그 외의 같은 결과는 다시 적용하지 않아 진행 중인 전환을 유지한다.
         guard next != appearance else {
             if next == nil, accessibility.reduceMotion {
-                for overlay in overlays {
-                    collapse(overlay)
-                }
+                applyAppearance()
             }
             return
         }
@@ -425,11 +451,15 @@ final class NotchIndicatorController {
         guard let appearance, let image = symbolImage(for: appearance.kind) else {
             // 상태가 숨김이거나 SF Symbol을 얻지 못하면 빈 검은 상자를 남기지 않고 접어 넣는다.
             for overlay in overlays {
-                collapse(overlay)
+                let overlayID = ObjectIdentifier(overlay.panel)
+                let generation = transitionGenerations.begin(for: overlayID)
+                collapse(overlay, generation: generation)
             }
             return
         }
         for overlay in overlays {
+            let overlayID = ObjectIdentifier(overlay.panel)
+            let generation = transitionGenerations.begin(for: overlayID)
             guard let rect = NotchIndicatorLayout.badgeFrame(for: overlay.geometry, width: Self.badgeWidth) else {
                 overlay.panel.orderOut(nil)
                 continue
@@ -489,11 +519,10 @@ final class NotchIndicatorController {
             // 밀려 나온 뒤 끝에서 천천히 멎는 감속 곡선이다.
             reveal.timingFunction = CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1)
 
-            let overlayID = ObjectIdentifier(overlay.panel)
             CATransaction.begin()
             CATransaction.setCompletionBlock { [weak self] in
                 Task { @MainActor [weak self] in
-                    self?.finishReveal(for: overlayID)
+                    self?.finishReveal(for: overlayID, generation: generation)
                 }
             }
             shape?.add(reveal, forKey: "notchReveal")
@@ -501,11 +530,11 @@ final class NotchIndicatorController {
         }
     }
 
-    private func finishReveal(for overlayID: ObjectIdentifier) {
+    private func finishReveal(for overlayID: ObjectIdentifier, generation: UInt) {
         // 펼침이 취소돼도(접힘 전환, 즉시 적용) 완료 블록은 호출된다.
-        // 여전히 표시 중이고 아이콘이 아직 숨겨져 있을 때만 등장을 재생한다.
-        guard appearance != nil,
-              let overlay = overlay(matching: overlayID),
+        // 최신 전환이면서 여전히 표시 중이고 아이콘이 아직 숨겨져 있을 때만 등장을 재생한다.
+        guard let overlay = overlay(matching: overlayID, generation: generation),
+              appearance != nil,
               overlay.iconView.alphaValue == 0
         else { return }
 
@@ -522,7 +551,7 @@ final class NotchIndicatorController {
     }
 
     /// 검은 영역을 노치 안으로 접어 넣은 뒤 창을 내린다.
-    private func collapse(_ overlay: NotchOverlay) {
+    private func collapse(_ overlay: NotchOverlay, generation: UInt) {
         let panel = overlay.panel
         let background = overlay.backgroundView
         let icon = overlay.iconView
@@ -543,13 +572,15 @@ final class NotchIndicatorController {
             icon.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.startCollapse(for: overlayID)
+                self?.startCollapse(for: overlayID, generation: generation)
             }
         }
     }
 
-    private func startCollapse(for overlayID: ObjectIdentifier) {
-        guard appearance == nil, let overlay = overlay(matching: overlayID) else { return }
+    private func startCollapse(for overlayID: ObjectIdentifier, generation: UInt) {
+        guard let overlay = overlay(matching: overlayID, generation: generation),
+              appearance == nil
+        else { return }
         guard !currentAccessibilityPreferences().reduceMotion else {
             overlay.iconView.layer?.removeAllAnimations()
             overlay.backgroundView.shapeLayer?.removeAllAnimations()
@@ -574,22 +605,23 @@ final class NotchIndicatorController {
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in
             Task { @MainActor [weak self] in
-                self?.finishCollapse(for: overlayID)
+                self?.finishCollapse(for: overlayID, generation: generation)
             }
         }
         overlay.backgroundView.shapeLayer?.add(collapse, forKey: "notchCollapse")
         CATransaction.commit()
     }
 
-    private func finishCollapse(for overlayID: ObjectIdentifier) {
-        guard let overlay = overlay(matching: overlayID) else { return }
+    private func finishCollapse(for overlayID: ObjectIdentifier, generation: UInt) {
+        guard let overlay = overlay(matching: overlayID, generation: generation) else { return }
         overlay.backgroundView.shapeLayer?.removeAnimation(forKey: "notchCollapse")
         guard appearance == nil else { return }
         overlay.panel.orderOut(nil)
     }
 
-    private func overlay(matching overlayID: ObjectIdentifier) -> NotchOverlay? {
-        overlays.first { ObjectIdentifier($0.panel) == overlayID }
+    private func overlay(matching overlayID: ObjectIdentifier, generation: UInt) -> NotchOverlay? {
+        guard transitionGenerations.isCurrent(generation, for: overlayID) else { return nil }
+        return overlays.first { ObjectIdentifier($0.panel) == overlayID }
     }
 
     /// tint를 적용할 수 있도록 template SF Symbol을 만든다. 이름을 해석하지 못하면 nil이다.

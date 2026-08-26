@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import TurtleCore
+@_spi(Testing) import TurtleCore
 
 func registerNotchIndicatorTests() {
     // MARK: R3-POL — posture state → 배지 표시 정책
@@ -83,6 +83,26 @@ func registerNotchIndicatorTests() {
             NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil,
             "SF Symbol \(name) must exist on this macOS"
         )
+    }
+
+    // MARK: R6-TRN — 비동기 애니메이션 전환 세대
+
+    TestRegistry.test("R6-TRN-001 rapid alternating states invalidate stale completions per overlay") {
+        let firstObject = NSObject()
+        let secondObject = NSObject()
+        let firstOverlay = ObjectIdentifier(firstObject)
+        let secondOverlay = ObjectIdentifier(secondObject)
+        var generations = NotchIndicatorTransitionGenerations()
+
+        let firstReveal = generations.begin(for: firstOverlay)
+        let otherReveal = generations.begin(for: secondOverlay)
+        let firstCollapse = generations.begin(for: firstOverlay)
+        let secondReveal = generations.begin(for: firstOverlay)
+
+        try expect(!generations.isCurrent(firstReveal, for: firstOverlay), "취소된 첫 reveal 완료는 무시한다")
+        try expect(!generations.isCurrent(firstCollapse, for: firstOverlay), "취소된 collapse 완료는 무시한다")
+        try expect(generations.isCurrent(secondReveal, for: firstOverlay), "가장 최근 reveal 완료만 허용한다")
+        try expect(generations.isCurrent(otherReveal, for: secondOverlay), "다른 오버레이의 전환은 독립적이다")
     }
 
     TestRegistry.test("R5-GEO-001 the badge reaches back into the notch to hide the seam") {
