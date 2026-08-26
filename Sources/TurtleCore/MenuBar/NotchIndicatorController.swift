@@ -354,7 +354,12 @@ final class NotchIndicatorController {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .ignoresCycle]
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .canJoinAllApplications,
+            .fullScreenAuxiliary,
+            .ignoresCycle,
+        ]
         // 장식용 오버레이이므로 접근성 창 목록에 노출하지 않는다.
         // 노출되면 보조 기술이 빈 대화상자로 읽고 외부에서 위치를 옮길 수 있다.
         panel.setAccessibilityElement(false)
@@ -397,13 +402,21 @@ final class NotchIndicatorController {
 
     /// 확정된 자세 상태를 현재 접근성 선호와 함께 표시에 반영한다.
     private func render(_ state: PostureState) {
+        let accessibility = currentAccessibilityPreferences()
         let next = NotchIndicatorAppearance.make(
             for: state,
-            accessibility: currentAccessibilityPreferences()
+            accessibility: accessibility
         )
-        // 접근성 알림은 결과가 같아도 도착한다. 같은 표시를 다시 적용하면
-        // 진행 중인 등장·퇴장 애니메이션이 끊기므로 결과가 달라질 때만 그린다.
-        guard next != appearance else { return }
+        // 동작 줄이기를 퇴장 도중 켜면 진행 중인 애니메이션을 즉시 끝낸다.
+        // 그 외의 같은 결과는 다시 적용하지 않아 진행 중인 전환을 유지한다.
+        guard next != appearance else {
+            if next == nil, accessibility.reduceMotion {
+                for overlay in overlays {
+                    collapse(overlay)
+                }
+            }
+            return
+        }
         appearance = next
         applyAppearance()
     }
@@ -476,20 +489,11 @@ final class NotchIndicatorController {
             // 밀려 나온 뒤 끝에서 천천히 멎는 감속 곡선이다.
             reveal.timingFunction = CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1)
 
+            let overlayID = ObjectIdentifier(overlay.panel)
             CATransaction.begin()
             CATransaction.setCompletionBlock { [weak self] in
-                // 펼침이 취소돼도(접힘 전환, 즉시 적용) 이 블록은 호출된다.
-                // 여전히 표시 중이고 아이콘이 아직 숨겨져 있을 때만 등장을 재생한다.
-                guard let self, self.appearance != nil, icon.alphaValue == 0 else { return }
-                let scale = CABasicAnimation(keyPath: "transform.scale")
-                scale.fromValue = Self.iconEntranceScale
-                scale.toValue = 1
-                scale.duration = Self.iconFadeDuration
-                scale.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
-                icon.layer?.add(scale, forKey: "notchIconEntrance")
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = Self.iconFadeDuration
-                    icon.animator().alphaValue = 1
+                Task { @MainActor [weak self] in
+                    self?.finishReveal(for: overlayID)
                 }
             }
             shape?.add(reveal, forKey: "notchReveal")
@@ -497,52 +501,95 @@ final class NotchIndicatorController {
         }
     }
 
+    private func finishReveal(for overlayID: ObjectIdentifier) {
+        // 펼침이 취소돼도(접힘 전환, 즉시 적용) 완료 블록은 호출된다.
+        // 여전히 표시 중이고 아이콘이 아직 숨겨져 있을 때만 등장을 재생한다.
+        guard appearance != nil,
+              let overlay = overlay(matching: overlayID),
+              overlay.iconView.alphaValue == 0
+        else { return }
+
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = Self.iconEntranceScale
+        scale.toValue = 1
+        scale.duration = Self.iconFadeDuration
+        scale.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+        overlay.iconView.layer?.add(scale, forKey: "notchIconEntrance")
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.iconFadeDuration
+            overlay.iconView.animator().alphaValue = 1
+        }
+    }
 
     /// 검은 영역을 노치 안으로 접어 넣은 뒤 창을 내린다.
     private func collapse(_ overlay: NotchOverlay) {
-        // 퇴장도 호출 시점의 동작 줄이기 설정을 따른다.
-        guard overlay.panel.isVisible, !currentAccessibilityPreferences().reduceMotion else {
-            overlay.panel.orderOut(nil)
-            return
-        }
         let panel = overlay.panel
         let background = overlay.backgroundView
         let icon = overlay.iconView
-        guard background.shapeLayer?.animation(forKey: "notchCollapse") == nil else { return }
-        background.shapeLayer?.removeAnimation(forKey: "notchReveal")
-
-        let size = background.frame.size
-        let collapsedWidth = NotchIndicatorLayout.defaultNotchOverlap
-        guard size.width > collapsedWidth, size.height > 0 else {
+        // 퇴장도 호출 시점의 동작 줄이기 설정을 따른다.
+        guard overlay.panel.isVisible, !currentAccessibilityPreferences().reduceMotion else {
+            icon.layer?.removeAllAnimations()
+            background.shapeLayer?.removeAllAnimations()
             panel.orderOut(nil)
             return
         }
-        let expandedPath = Self.badgePath(width: size.width, height: size.height)
-        let collapsedPath = Self.badgePath(width: collapsedWidth, height: size.height)
+        guard background.shapeLayer?.animation(forKey: "notchCollapse") == nil else { return }
+        background.shapeLayer?.removeAnimation(forKey: "notchReveal")
 
         // 아이콘이 먼저 사라지고, 그다음 검은 영역이 노치 안으로 되돌아간다.
+        let overlayID = ObjectIdentifier(panel)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.iconExitDuration
             icon.animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            guard let self, self.appearance == nil else { return }
-            let collapse = CABasicAnimation(keyPath: "path")
-            collapse.fromValue = expandedPath
-            collapse.toValue = collapsedPath
-            collapse.duration = Self.collapseDuration
-            collapse.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.6, 1)
-            collapse.fillMode = .forwards
-            collapse.isRemovedOnCompletion = false
-
-            CATransaction.begin()
-            CATransaction.setCompletionBlock { [weak self] in
-                background.shapeLayer?.removeAnimation(forKey: "notchCollapse")
-                guard let self, self.appearance == nil else { return }
-                panel.orderOut(nil)
+            Task { @MainActor [weak self] in
+                self?.startCollapse(for: overlayID)
             }
-            background.shapeLayer?.add(collapse, forKey: "notchCollapse")
-            CATransaction.commit()
         }
+    }
+
+    private func startCollapse(for overlayID: ObjectIdentifier) {
+        guard appearance == nil, let overlay = overlay(matching: overlayID) else { return }
+        guard !currentAccessibilityPreferences().reduceMotion else {
+            overlay.iconView.layer?.removeAllAnimations()
+            overlay.backgroundView.shapeLayer?.removeAllAnimations()
+            overlay.panel.orderOut(nil)
+            return
+        }
+        let size = overlay.backgroundView.frame.size
+        let collapsedWidth = NotchIndicatorLayout.defaultNotchOverlap
+        guard size.width > collapsedWidth, size.height > 0 else {
+            overlay.panel.orderOut(nil)
+            return
+        }
+
+        let collapse = CABasicAnimation(keyPath: "path")
+        collapse.fromValue = Self.badgePath(width: size.width, height: size.height)
+        collapse.toValue = Self.badgePath(width: collapsedWidth, height: size.height)
+        collapse.duration = Self.collapseDuration
+        collapse.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.6, 1)
+        collapse.fillMode = .forwards
+        collapse.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.finishCollapse(for: overlayID)
+            }
+        }
+        overlay.backgroundView.shapeLayer?.add(collapse, forKey: "notchCollapse")
+        CATransaction.commit()
+    }
+
+    private func finishCollapse(for overlayID: ObjectIdentifier) {
+        guard let overlay = overlay(matching: overlayID) else { return }
+        overlay.backgroundView.shapeLayer?.removeAnimation(forKey: "notchCollapse")
+        guard appearance == nil else { return }
+        overlay.panel.orderOut(nil)
+    }
+
+    private func overlay(matching overlayID: ObjectIdentifier) -> NotchOverlay? {
+        overlays.first { ObjectIdentifier($0.panel) == overlayID }
     }
 
     /// tint를 적용할 수 있도록 template SF Symbol을 만든다. 이름을 해석하지 못하면 nil이다.
