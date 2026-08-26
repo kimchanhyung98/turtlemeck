@@ -23,6 +23,7 @@ Swift 패키지에는 외부 패키지 의존성이 없으며 다음 제품과 �
 `Sources/turtlemeck/main.swift`가 `runTurtleMeckApp()`을 호출한다.
 `Sources/TurtleCore/App/Entry.swift`에 정의된 이 함수가 `AppDelegate`를 생성·유지하고 설치한다.
 `AppDelegate`는 하나의 `AppModel`을 만들고 실행 모드에 따라 `StatusItemController` 또는 디버그 `NSWindow`에 연결한다.
+`NotchIndicatorController`는 실행 모드와 무관하게 항상 생성해 `AppModel.postureState`가 `bad`일 때만 노치 오른쪽 경고 배지를 표시한다.
 
 `AppModel`은 화면 상태를 소유하며 다음 구성 요소의 수명 주기를 조율한다.
 
@@ -58,7 +59,7 @@ Swift 패키지에는 외부 패키지 의존성이 없으며 다음 제품과 �
 | `Sources/TurtleCore/Camera/` | 권한, 캡처 세션, 버스트 예약, 프레임 품질 게이트 |
 | `Sources/TurtleCore/Inference/` | PoseNet·Depth Anything V2 Core ML 어댑터와 Apple Vision 2D 폴백 |
 | `Sources/TurtleCore/Detection/` | 대상 선택, ROI·특성값, 보정, 버스트 판정, 상태 전이, 튜닝값 |
-| `Sources/TurtleCore/MenuBar/` | `NSStatusItem`, `NSPopover`, 공용 SwiftUI `MenuView` |
+| `Sources/TurtleCore/MenuBar/` | `NSStatusItem`, `NSPopover`, 공용 SwiftUI `MenuView`, 노치 오른쪽 경고 배지 오버레이 |
 | `Sources/TurtleCore/Notifications/` | 알림 반복 정책과 macOS 배너·소리 출력 |
 | `Sources/TurtleCore/Storage/` | UserDefaults 설정·기준 자세와 JSON 일일 통계 |
 | `Sources/TurtleCore/Output/` | 판정에 영향을 주지 않는 디버그·로컬 산출물 |
@@ -80,6 +81,16 @@ Swift 패키지에는 외부 패키지 의존성이 없으며 다음 제품과 �
 
 일반 모드의 `StatusItemController`는 `NSStatusItem`과 `.transient` 동작의 `NSPopover`를 소유하고 그 안에 SwiftUI `MenuView`를 호스팅한다.
 팝오버 밖의 로컬·전역 마우스 입력을 감시해 화면을 닫지만 앱의 점검은 멈추지 않는다.
+
+`NotchIndicatorController`는 노치가 있는 화면을 골라 노치 오른쪽 보조 상단 영역에 클릭 통과 `NSPanel` 배지를 띄운다.
+화면 기하 판정(`NotchIndicatorLayout`)과 상태별 표시 정책(`NotchIndicatorAppearance`)은 순수 계산으로 분리해 자동 테스트가 검증하고, 창은 확정 상태가 `bad`일 때만 보인다.
+`NotchIndicatorAppearance`는 표시 여부와 함께 등장 애니메이션 사용 여부도 결정하며, 손쉬운 사용의 동작 줄이기가 켜져 있으면 애니메이션을 쓰지 않는다.
+Adapter는 `CAShapeLayer` 경로를 노치 안쪽 접힌 폭에서 전체 폭까지 애니메이션한 뒤 아이콘을 페이드인하고, 숨길 때는 아이콘을 먼저 지운 뒤 경로를 다시 접는다. 창 frame은 이 과정에서 바뀌지 않는다.
+panel은 접근성 창 목록에서 제외해 보조 기술이 빈 창으로 읽거나 위치를 옮기지 못하게 한다.
+`NotchIndicatorPreview`는 디버그 모드에서만 `AppModel.notchPreviewState`로 표시 상태를 대체하는 순수 규칙이며, 운영 모드에서는 값이 남아 있어도 실제 판정을 그대로 쓴다.
+표시 대체는 노치에만 적용되고 자세 판정, 통계, 알림 경로는 그대로 동작한다.
+화면 구성이 바뀌면 `NSApplication.didChangeScreenParametersNotification`을 받아 오버레이를 전부 지우고 현재 화면으로 다시 만든다.
+자세 판정과 메뉴 막대 동작은 이 Adapter에 의존하지 않는다.
 
 디버그 모드에서는 `NSWindow` 안의 `NSHostingController`가 같은 `MenuView`를 `ScrollView`로 감싼다.
 디버그 실행 플래그는 별도로 `MenuView`, `AppModel`, `CameraManager`를 통해 진단 패널과 파일 출력도 활성화한다.

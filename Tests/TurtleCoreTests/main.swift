@@ -3,6 +3,7 @@ import Foundation
 
 registerWorkflowTests()
 registerProductTests()
+registerNotchIndicatorTests()
 
 var failures = 0
 for test in TestRegistry.cases {

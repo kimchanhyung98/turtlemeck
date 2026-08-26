@@ -5,9 +5,13 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private var statusController: StatusItemController?
+    private var notchController: NotchIndicatorController?
     private var mainWindowController: NSWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 노치 표시는 실행 모드와 무관하게 항상 조립한다.
+        notchController = NotchIndicatorController(model: model)
+
         switch AppUIMode.current {
         case .menuBar:
             NSApplication.shared.setActivationPolicy(.accessory)

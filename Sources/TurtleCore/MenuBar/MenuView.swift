@@ -16,6 +16,7 @@ struct MenuView: View {
             settingsPanel
             if AppLaunchFlags.debugEnabled {
                 advancedPanel
+                notchPreviewPanel
                 debugPanel
             }
             if isPrivacyExpanded {
@@ -209,6 +210,59 @@ struct MenuView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var notchPreviewPanel: some View {
+        MenuPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("노치 미리보기")
+
+                Text("카메라와 무관하게 노치 표시만 강제합니다. 자세 판정, 통계, 알림은 그대로 진행됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("표시 상태", selection: $model.notchPreviewState) {
+                    Text("실제 판정").tag(PostureState?.none)
+                    ForEach(PostureState.allCases, id: \.self) { state in
+                        Text(previewLabel(for: state)).tag(PostureState?.some(state))
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: Layout.trailingControlWidth, alignment: .leading)
+                .accessibilityLabel("노치 미리보기 표시 상태")
+
+                Text(notchPreviewHint)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var notchPreviewHint: String {
+        let state = model.notchPreviewState ?? model.postureState
+        return state == .bad
+            ? "노치가 있는 화면에서 검은 영역이 펼쳐진 뒤 노란 경고 아이콘이 나타납니다. 동작 줄이기가 켜져 있으면 즉시 표시됩니다."
+            : "주의 외의 상태에서는 노치에 아무것도 표시하지 않습니다. 숨김이 정상 동작입니다."
+    }
+
+    private func previewLabel(for state: PostureState) -> String {
+        switch state {
+        case .good:
+            return "정상"
+        case .bad:
+            return "주의"
+        case .calibrating:
+            return "보정 중"
+        case .noEval:
+            return "판정 대기"
+        case .paused:
+            return "중지"
+        case .blocked:
+            return "카메라 확인 필요"
+        case .needsCalibration:
+            return "보정 필요"
         }
     }
 

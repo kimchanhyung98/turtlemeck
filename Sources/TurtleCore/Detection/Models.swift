@@ -6,7 +6,7 @@ public enum PostureAssessment: String, Codable, Equatable, Sendable {
     case noEval
 }
 
-public enum PostureState: String, Codable, Equatable, Sendable {
+public enum PostureState: String, Codable, CaseIterable, Equatable, Sendable {
     case good
     case bad
     case calibrating
