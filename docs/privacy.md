@@ -19,7 +19,7 @@
 | 데이터 | 내용 | 위치 |
 |---|---|---|
 | 설정과 기준 자세 | 점검 주기, 알림 설정, 로그인 시 실행 상태, 보정 특성값과 카메라·구도 정보 | UserDefaults 도메인 `com.go.turtlemeck` |
-| 일일 통계 | 날짜, 정상·주의 시간, 주의 전환, 회복, 보낸 알림 횟수 | `~/Library/Application Support/turtlemeck/stats.json` |
+| 일일 통계 | 날짜, 정상·주의 시간, 주의 전환, 회복, 보낸 알림 횟수 | 기본 `~/Library/Application Support/turtlemeck/stats.json`; Application Support 위치를 얻지 못하면 임시 디렉터리의 `turtlemeck/stats.json` |
 | 디버그 산출물 | RGB 캡처, 표시용 상대 깊이, 랜드마크·ROI 오버레이, 프레임·세션 JSON | 기본 `<프로젝트 루트>/debug/<yyyyMMdd-HHmmss>/` |
 | 로컬 AI 산출물 | 로컬 프로세스 요청문과 stdout·stderr 결과 | `<debug-root>/<yyyyMMdd-HHmmss>-local/` |
 
