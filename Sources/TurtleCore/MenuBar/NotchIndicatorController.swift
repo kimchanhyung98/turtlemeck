@@ -196,6 +196,8 @@ public enum NotchIndicatorLayout {
         guard notchOverlap.isFinite, notchOverlap >= 0, notchOverlap < notchWidth else { return nil }
 
         let rect: CGRect
+        // 생성식이 노치 경계 접촉과 `notchOverlap`만큼의 겹침을 보장하므로,
+        // 여기서는 선택한 보조 영역의 바깥쪽과 반대편 보조 영역 경계만 확인한다.
         switch side {
         case .left:
             rect = CGRect(
@@ -205,7 +207,6 @@ public enum NotchIndicatorLayout {
                 height: left.height
             )
             guard rect.minX >= left.minX - epsilon,
-                  rect.maxX >= left.maxX - epsilon,
                   rect.maxX < right.minX + epsilon
             else { return nil }
         case .right:
@@ -216,8 +217,7 @@ public enum NotchIndicatorLayout {
                 height: right.height
             )
             guard rect.maxX <= right.maxX + epsilon,
-                  rect.minX > left.maxX - epsilon,
-                  rect.minX <= right.minX + epsilon
+                  rect.minX > left.maxX - epsilon
             else { return nil }
         }
 
