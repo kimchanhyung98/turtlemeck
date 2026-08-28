@@ -4,6 +4,19 @@ import Foundation
 @_spi(Testing) import TurtleCore
 
 func registerNotchIndicatorTests() {
+    TestRegistry.test("R7-CFG-001 notch placement maps to the selected sides") {
+        try expectEqual(NotchIndicatorPlacement.none.sides, [], "none")
+        try expectEqual(NotchIndicatorPlacement.left.sides, [.left], "left")
+        try expectEqual(NotchIndicatorPlacement.right.sides, [.right], "right")
+        try expectEqual(NotchIndicatorPlacement.both.sides, [.left, .right], "both")
+
+        var settings = Settings.defaults
+        settings.notchIndicatorPlacement = .both
+        try expectEqual(settings.activeNotchIndicatorSides, [.left, .right], "both")
+        settings.notchIndicatorPlacement = .none
+        try expectEqual(settings.activeNotchIndicatorSides, [], "none")
+    }
+
     // MARK: R3-POL — posture state → 배지 표시 정책
     // 사용자 결정(2026-08-25): 정상은 아무것도 표시하지 않고, 주의일 때만 노란 경고 아이콘을 애니메이션과 함께 표시한다.
 
@@ -150,6 +163,30 @@ func registerNotchIndicatorTests() {
         try expectApprox(Double(frames[0].maxX), 996, "배지는 노치 화면 위에 놓인다")
     }
 
+    TestRegistry.test("R5-CFG-001 screen capability requires at least one usable notch side") {
+        let notched = deviceNotchScreen()
+        let plain = NotchScreenGeometry(
+            frame: CGRect(x: -192, y: 1117, width: 1920, height: 1080),
+            safeAreaTop: 0,
+            auxiliaryTopLeftArea: nil,
+            auxiliaryTopRightArea: nil
+        )
+        try expect(!NotchIndicatorLayout.supportsIndicator(on: plain), "비노치 화면만 있으면 설정을 숨긴다")
+        try expect(NotchIndicatorLayout.supportsIndicator(on: notched), "노치 화면에서는 설정을 표시한다")
+        try expect(
+            [plain, notched].contains { NotchIndicatorLayout.supportsIndicator(on: $0) },
+            "연결 화면 중 하나라도 노치를 지원하면 설정을 표시한다"
+        )
+
+        var oneUsableSide = standardNotchScreen()
+        oneUsableSide.auxiliaryTopLeftArea = CGRect(x: 646, y: 950, width: 20, height: 32)
+        try expect(NotchIndicatorLayout.supportsIndicator(on: oneUsableSide), "한쪽에 배지를 표시할 수 있으면 설정을 표시한다")
+
+        var noUsableSide = oneUsableSide
+        noUsableSide.auxiliaryTopRightArea = CGRect(x: 846, y: 950, width: 20, height: 32)
+        try expect(!NotchIndicatorLayout.supportsIndicator(on: noUsableSide), "양쪽 모두 너무 좁으면 설정을 숨긴다")
+    }
+
     TestRegistry.test("R5-GEO-002 an overlap that would swallow the notch hides the badge") {
         let screen = standardNotchScreen()
         let left = try unwrap(screen.auxiliaryTopLeftArea, "left area")
@@ -221,7 +258,7 @@ func registerNotchIndicatorTests() {
         }
     }
 
-    TestRegistry.test("R4-PRV-005 the picker can reach all seven posture states") {
+    TestRegistry.test("R4-PRV-005 all seven posture states remain available to the preview list") {
         try expectEqual(PostureState.allCases.count, 7, "상태가 늘면 미리보기 목록도 함께 늘어야 한다")
     }
 
@@ -235,7 +272,7 @@ func registerNotchIndicatorTests() {
         try expectEqual(shown, [.bad], "미리보기에서도 주의만 배지를 그린다. 나머지를 고르면 숨김이 정상이다")
     }
 
-    // MARK: R2-GEO — 합성 화면 기하 → 오른쪽 배지 frame (right-status-badge-plan §6)
+    // MARK: R2-GEO — 합성 화면 기하 → 좌우 배지 frame (docs/notch.md)
 
     TestRegistry.test("R2-GEO-001 standard screen puts a 32pt badge at the right auxiliary origin") {
         let rect = try unwrap(
@@ -331,7 +368,7 @@ func registerNotchIndicatorTests() {
         try expect(NotchIndicatorLayout.badgeFrame(for: overlapping) == nil, "overlap must hide")
     }
 
-    TestRegistry.test("R2-GEO-011 every produced badge frame stays inside the right auxiliary area") {
+    TestRegistry.test("R2-GEO-011 every right badge stays on-screen with the documented notch overlap") {
         for screen in validNotchScreens() {
             for width in [CGFloat(28), 32] {
                 let rect = try unwrap(NotchIndicatorLayout.badgeFrame(for: screen, width: width), "invariant badge")
@@ -432,6 +469,54 @@ func registerNotchIndicatorTests() {
         )
         let rect = try unwrap(NotchIndicatorLayout.badgeFrame(for: screen), "upper screen badge")
         try expectRect(rect, equalsX: 834, y: 1932, width: 52, height: 32, "R2-GEO-021")
+    }
+
+    TestRegistry.test("R2-GEO-022 left badge mirrors the documented right badge") {
+        let standard = standardNotchScreen()
+        let left = try unwrap(
+            NotchIndicatorLayout.badgeFrame(for: standard, side: .left, width: 32),
+            "standard left badge"
+        )
+        let right = try unwrap(
+            NotchIndicatorLayout.badgeFrame(for: standard, side: .right, width: 32),
+            "standard right badge"
+        )
+        try expectRect(left, equalsX: 634, y: 950, width: 44, height: 32, "left standard")
+        try expectRect(right, equalsX: 834, y: 950, width: 44, height: 32, "right standard")
+
+        let device = deviceNotchScreen()
+        let deviceLeft = try unwrap(NotchIndicatorLayout.badgeFrame(for: device, side: .left), "device left badge")
+        let deviceRight = try unwrap(NotchIndicatorLayout.badgeFrame(for: device, side: .right), "device right badge")
+        try expectRect(deviceLeft, equalsX: 731, y: 1085, width: 52, height: 32, "left device")
+        try expectRect(deviceRight, equalsX: 944, y: 1085, width: 52, height: 32, "right device")
+    }
+
+    TestRegistry.test("R2-GEO-023 both sides preserve visible width and notch overlap without crossing") {
+        for screen in validNotchScreens() {
+            let leftArea = try unwrap(screen.auxiliaryTopLeftArea, "left area")
+            let rightArea = try unwrap(screen.auxiliaryTopRightArea, "right area")
+            let left = try unwrap(NotchIndicatorLayout.badgeFrame(for: screen, side: .left), "left badge")
+            let right = try unwrap(NotchIndicatorLayout.badgeFrame(for: screen, side: .right), "right badge")
+
+            try expectApprox(Double(left.minX), Double(leftArea.maxX) - 40, "left visible width")
+            try expectApprox(Double(left.maxX), Double(leftArea.maxX) + 12, "left notch overlap")
+            try expectApprox(Double(right.minX), Double(rightArea.minX) - 12, "right notch overlap")
+            try expectApprox(Double(right.maxX), Double(rightArea.minX) + 40, "right visible width")
+            try expect(left.maxX < right.minX, "left and right badges must not overlap")
+        }
+    }
+
+    TestRegistry.test("R2-GEO-024 a narrow side does not suppress the other valid side") {
+        var screen = standardNotchScreen()
+        screen.auxiliaryTopLeftArea = CGRect(x: 646, y: 950, width: 20, height: 32)
+        try expect(
+            NotchIndicatorLayout.badgeFrame(for: screen, side: .left, width: 32) == nil,
+            "narrow left area must hide the left badge"
+        )
+        try expect(
+            NotchIndicatorLayout.badgeFrame(for: screen, side: .right, width: 32) != nil,
+            "the valid right badge must remain available"
+        )
     }
 }
 

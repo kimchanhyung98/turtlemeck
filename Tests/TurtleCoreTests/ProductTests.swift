@@ -12,6 +12,37 @@ func registerProductTests() {
         try expectEqual(decoded, settings, "settings round trip")
     }
 
+    TestRegistry.test("notch indicator placement supports none, left, right, and both") {
+        try expectEqual(Settings.defaults.notchIndicatorPlacement, .none, "신규 설정의 기본값은 없음이다")
+        let initialized = Settings(
+            checkIntervalSeconds: 60,
+            bannerNotificationsEnabled: false,
+            notificationSoundEnabled: false,
+            launchAtLogin: false
+        )
+        try expectEqual(initialized.notchIndicatorPlacement, .none, "초기화 시 위치를 생략해도 기본값은 없음이다")
+        try expectEqual(NotchIndicatorPlacement.none.sides, [], "none placement")
+        try expectEqual(NotchIndicatorPlacement.left.sides, [.left], "left placement")
+        try expectEqual(NotchIndicatorPlacement.right.sides, [.right], "right placement")
+        try expectEqual(NotchIndicatorPlacement.both.sides, [.left, .right], "both placement")
+
+        for placement in NotchIndicatorPlacement.allCases {
+            var settings = Settings.defaults
+            settings.notchIndicatorPlacement = placement
+            try expectEqual(settings.activeNotchIndicatorSides, placement.sides, "active sides: \(placement)")
+
+            let encoded = try JSONEncoder().encode(settings)
+            let decoded = try JSONDecoder().decode(Settings.self, from: encoded)
+            try expectEqual(decoded, settings, "notch setting round trip: \(placement)")
+
+            guard let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
+                throw TestFailure(description: "encoded settings must be a JSON object")
+            }
+            try expect(object["notchIndicatorEnabled"] == nil, "새 설정은 구 토글 키를 저장하지 않는다")
+            try expectEqual(object["notchIndicatorPlacement"] as? String, placement.rawValue, "single notch setting is encoded")
+        }
+    }
+
     TestRegistry.test("legacy algorithms and baselines are not reused") {
         let json = """
         {"storedCheckIntervalSeconds":10,"postureAlgorithm":"bodyFrame3D","sensitivity":"medium","bannerNotificationsEnabled":false,"notificationSoundEnabled":false,"launchAtLogin":false,"baseline":{"profileAngle":70}}
@@ -19,6 +50,82 @@ func registerProductTests() {
         let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
         try expectEqual(settings.checkIntervalSeconds, 15, "legacy interval clamp")
         try expectEqual(settings.baseline, nil, "incompatible baseline must require calibration")
+        try expectEqual(settings.notchIndicatorPlacement, .none, "노치 키가 없는 설정은 새 기본값인 없음으로 보정한다")
+    }
+
+    TestRegistry.test("legacy disabled notch setting migrates to none without discarding other settings") {
+        let legacyOnlyJSON = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorEnabled":false}
+        """
+        let legacyOnly = try JSONDecoder().decode(Settings.self, from: Data(legacyOnlyJSON.utf8))
+        try expectEqual(legacyOnly.notchIndicatorPlacement, .none, "구 토글만 꺼져 있어도 없음으로 마이그레이션한다")
+
+        let json = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorEnabled":false,"notchIndicatorPlacement":"future-position"}
+        """
+        let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        try expectEqual(settings.checkIntervalSeconds, 120, "known settings survive")
+        try expect(settings.bannerNotificationsEnabled, "known notification setting survives")
+        try expect(settings.launchAtLogin, "known launch setting survives")
+        try expectEqual(settings.notchIndicatorPlacement, .none, "구 토글의 비활성화 선택을 우선 보존한다")
+
+        let validPlacementJSON = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorEnabled":false,"notchIndicatorPlacement":"left"}
+        """
+        let validPlacement = try JSONDecoder().decode(Settings.self, from: Data(validPlacementJSON.utf8))
+        try expectEqual(validPlacement.notchIndicatorPlacement, .none, "구 토글이 꺼져 있으면 새 위치 값보다 비활성화 선택을 우선한다")
+    }
+
+    TestRegistry.test("unknown notch placement falls back to right when legacy setting is enabled") {
+        let legacyOnlyJSON = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorEnabled":true}
+        """
+        let legacyOnly = try JSONDecoder().decode(Settings.self, from: Data(legacyOnlyJSON.utf8))
+        try expectEqual(legacyOnly.notchIndicatorPlacement, .right, "구 토글만 켜져 있으면 기존 오른쪽 동작을 보존한다")
+
+        let json = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorEnabled":true,"notchIndicatorPlacement":"future-position"}
+        """
+        let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        try expectEqual(settings.notchIndicatorPlacement, .right, "unknown placement uses the compatible fallback")
+
+        let validPlacementJSON = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorEnabled":true,"notchIndicatorPlacement":"left"}
+        """
+        let validPlacement = try JSONDecoder().decode(Settings.self, from: Data(validPlacementJSON.utf8))
+        try expectEqual(validPlacement.notchIndicatorPlacement, .left, "구 토글이 켜져 있고 새 위치가 유효하면 새 위치를 보존한다")
+    }
+
+    TestRegistry.test("unknown notch placement falls back to none without a legacy opt-in") {
+        let json = """
+        {"storedCheckIntervalSeconds":120,"bannerNotificationsEnabled":true,"notificationSoundEnabled":false,"launchAtLogin":true,"notchIndicatorPlacement":"future-position"}
+        """
+        let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        try expectEqual(settings.notchIndicatorPlacement, .none, "unknown placement does not enable notch alerts")
+    }
+
+    TestRegistry.test("legacy settings add notch defaults without losing a current baseline") {
+        var current = Settings.defaults
+        current.bannerNotificationsEnabled = true
+        current.baseline = Baseline(
+            center: -0.3,
+            dispersion: 0.02,
+            burstCount: 1,
+            captureConfiguration: testCaptureConfiguration
+        )
+
+        let encoded = try JSONEncoder().encode(current)
+        guard var legacyObject = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
+            throw TestFailure(description: "encoded settings must be a JSON object")
+        }
+        legacyObject.removeValue(forKey: "notchIndicatorEnabled")
+        legacyObject.removeValue(forKey: "notchIndicatorPlacement")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+        let decoded = try JSONDecoder().decode(Settings.self, from: legacyData)
+        try expectEqual(decoded.notchIndicatorPlacement, .none, "노치 키가 없는 설정은 새 기본값을 사용한다")
+        try expect(decoded.bannerNotificationsEnabled, "existing notification setting survives")
+        try expectEqual(decoded.baseline, current.baseline, "current-version baseline survives migration")
     }
 
     TestRegistry.test("baselines from older feature definitions require recalibration") {

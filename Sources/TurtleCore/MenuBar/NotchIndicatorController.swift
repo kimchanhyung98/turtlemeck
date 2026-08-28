@@ -17,7 +17,7 @@ public struct AccessibilityDisplayPreferences: Equatable, Sendable {
     public static let `default` = AccessibilityDisplayPreferences()
 }
 
-/// 자세 상태를 노치 오른쪽 배지 표시로 바꾸는 순수 정책이다.
+/// 자세 상태를 노치 배지 표시로 바꾸는 순수 정책이다.
 /// 실제 시스템 색상 선택과 창 생성은 Adapter가 담당하고, 여기서는 의미(kind)와 등장 방식만 결정한다.
 public struct NotchIndicatorAppearance: Equatable, Sendable {
     public enum Kind: String, Equatable, Sendable {
@@ -58,7 +58,7 @@ public struct NotchIndicatorAppearance: Equatable, Sendable {
     }
 }
 
-/// 디버그 모드에서 노치 표시만 강제로 바꾸는 미리보기 규칙이다.
+/// 디버그 모드에서 노치가 그릴 자세 상태만 강제로 바꾸는 미리보기 규칙이다.
 /// 카메라·자세 판정·통계·알림은 그대로 돌아가고 노치가 그리는 상태만 달라진다.
 public enum NotchIndicatorPreview {
     /// 디버그 모드가 아닐 때는 미리보기 값이 남아 있어도 실제 판정을 그대로 쓴다.
@@ -118,7 +118,7 @@ public struct NotchScreenGeometry: Equatable, Sendable {
     }
 }
 
-/// 노치 오른쪽 보조 상단 영역의 시작점에 놓을 배지 frame을 계산하는 순수 좌표 계획이다.
+/// 노치 좌우 보조 상단 영역에 놓을 배지 frame을 계산하는 순수 좌표 계획이다.
 /// 기하가 모호하면 표시하지 않는다(fail closed). 특정 모델·메뉴 막대 높이 상수를 쓰지 않는다.
 public enum NotchIndicatorLayout {
     /// 부동소수점 노이즈 허용 오차다. 잘못된 기하를 억지로 화면 안에 맞추는 데 사용하지 않는다.
@@ -128,8 +128,17 @@ public enum NotchIndicatorLayout {
     /// 컷아웃의 둥근 모서리 안쪽에 남는 밝은 쐐기를 덮는 용도이며, 이 구간은 노치에 가려 보이지 않는다.
     public static let defaultNotchOverlap: CGFloat = 12
 
+    public static func supportsIndicator(
+        on screen: NotchScreenGeometry,
+        width: CGFloat = 40
+    ) -> Bool {
+        badgeFrame(for: screen, side: .left, width: width) != nil
+            || badgeFrame(for: screen, side: .right, width: width) != nil
+    }
+
     public static func badgeFrame(
         for screen: NotchScreenGeometry,
+        side: NotchIndicatorSide = .right,
         width: CGFloat = 40,
         notchOverlap: CGFloat = NotchIndicatorLayout.defaultNotchOverlap
     ) -> CGRect? {
@@ -179,23 +188,41 @@ public enum NotchIndicatorLayout {
         let notchWidth = right.minX - left.maxX
         guard notchWidth > 0, notchWidth < frame.width else { return nil }
 
-        // 노치 오른쪽으로 드러나는 폭은 보조 영역 안에 들어가야 한다
-        guard width.isFinite, width > 0, width <= right.width else { return nil }
+        // 노치 바깥으로 드러나는 폭은 선택한 보조 영역 안에 들어가야 한다.
+        let auxiliaryArea = side == .left ? left : right
+        guard width.isFinite, width > 0, width <= auxiliaryArea.width else { return nil }
 
-        // 겹침은 노치 안에서만 허용한다. 왼쪽 보조 영역까지 넘어가면 표시하지 않는다.
+        // 겹침은 노치 안에서만 허용한다. 반대편 보조 영역까지 넘어가면 표시하지 않는다.
         guard notchOverlap.isFinite, notchOverlap >= 0, notchOverlap < notchWidth else { return nil }
 
-        let rect = CGRect(
-            x: right.minX - notchOverlap,
-            y: right.minY,
-            width: width + notchOverlap,
-            height: right.height
-        )
+        let rect: CGRect
+        // 생성식이 노치 경계 접촉과 `notchOverlap`만큼의 겹침을 보장하므로,
+        // 여기서는 선택한 보조 영역의 바깥쪽과 반대편 보조 영역 경계만 확인한다.
+        switch side {
+        case .left:
+            rect = CGRect(
+                x: left.maxX - width,
+                y: left.minY,
+                width: width + notchOverlap,
+                height: left.height
+            )
+            guard rect.minX >= left.minX - epsilon,
+                  rect.maxX < right.minX + epsilon
+            else { return nil }
+        case .right:
+            rect = CGRect(
+                x: right.minX - notchOverlap,
+                y: right.minY,
+                width: width + notchOverlap,
+                height: right.height
+            )
+            guard rect.maxX <= right.maxX + epsilon,
+                  rect.minX > left.maxX - epsilon
+            else { return nil }
+        }
 
-        // 최종 불변식 확인: 오른쪽 끝은 보조 영역 안, 왼쪽 끝은 노치 안, 전체는 화면 안이다
-        guard rect.maxX <= right.maxX + epsilon,
-              rect.minX > left.maxX - epsilon,
-              rect.minY >= right.minY - epsilon, rect.maxY <= right.maxY + epsilon,
+        // 최종 불변식 확인: 선택한 보조 영역과 노치 안에만 걸치고 전체는 화면 안이다.
+        guard rect.minY >= auxiliaryArea.minY - epsilon, rect.maxY <= auxiliaryArea.maxY + epsilon,
               rect.minX >= frame.minX, rect.maxX <= frame.maxX,
               rect.minY >= frame.minY, rect.maxY <= frame.maxY
         else { return nil }
@@ -218,22 +245,23 @@ private final class NotchBadgeBackgroundView: NSView {
 private struct NotchOverlay {
     var screen: NSScreen
     var geometry: NotchScreenGeometry
+    var side: NotchIndicatorSide
     var panel: NSPanel
     var backgroundView: NotchBadgeBackgroundView
     var iconView: NSImageView
 }
 
-/// 노치 오른쪽 상태 배지의 수명 주기를 소유하는 MenuBar Module의 표시 Adapter다.
+/// 노치 좌우 상태 배지의 수명 주기를 소유하는 MenuBar Module의 표시 Adapter다.
 /// 호출자는 생성해 유지하기만 하면 되고, 화면·창·관찰자 세부사항은 내부에 숨긴다.
 @MainActor
 final class NotchIndicatorController {
-    /// 노치 오른쪽으로 드러나는 배지 폭이다. 아이콘 좌우 여백이 약 8pt가 되도록 잡았다.
+    /// 노치 바깥으로 드러나는 배지 폭이다. 아이콘 좌우 여백이 약 8pt가 되도록 잡았다.
     private static let badgeWidth: CGFloat = 40
     /// 배지 안 glyph의 optical size다.
     private static let iconPointSize: CGFloat = 16
     /// 화면 맨 위에서 바깥으로 벌어지는 역곡선의 반지름이다. 위쪽이 가장 넓다.
     private static let topFlareRadius: CGFloat = 8
-    /// 아래쪽 오른쪽 모서리를 볼록하게 둥글리는 반지름이다.
+    /// 노치 바깥쪽 아래 모서리를 볼록하게 둥글리는 반지름이다.
     private static let bottomCornerRadius: CGFloat = 8
     /// 검은 영역이 노치에서 자라 나오는 시간이다.
     private static let revealDuration: TimeInterval = 0.42
@@ -245,14 +273,19 @@ final class NotchIndicatorController {
     private static let collapseDuration: TimeInterval = 0.36
     /// 아이콘이 떠오를 때 시작 배율이다. 노치 안에서 튀어나오는 느낌을 준다.
     private static let iconEntranceScale: CGFloat = 0.55
-    /// 아이콘 높이에서 검게 보이는 구간은 노치 안쪽 겹침만큼 오른쪽, 상단 벌어짐만큼 왼쪽이다.
-    private static var iconCenterOffset: CGFloat {
-        (NotchIndicatorLayout.defaultNotchOverlap - topFlareRadius) / 2
+    /// 아이콘은 노치 안쪽 겹침과 바깥쪽 벌어짐을 제외한 검은 구간의 중앙에 놓는다.
+    private static func iconCenterOffset(for side: NotchIndicatorSide) -> CGFloat {
+        let offset = (NotchIndicatorLayout.defaultNotchOverlap - topFlareRadius) / 2
+        return side == .left ? -offset : offset
     }
 
-    /// 배지 외곽선이다. 왼쪽은 물리 노치에 이어지므로 각지고,
-    /// 오른쪽은 화면 맨 위에서 가장 넓다가 아래로 오면서 좁아진 뒤 볼록하게 마무리된다.
-    private static func badgePath(width: CGFloat, height: CGFloat) -> CGPath {
+    /// 오른쪽 배지의 외곽선을 만든 뒤 왼쪽 배지는 전체 panel 안에서 수평 반전한다.
+    private static func badgePath(
+        width: CGFloat,
+        height: CGFloat,
+        side: NotchIndicatorSide,
+        containerWidth: CGFloat? = nil
+    ) -> CGPath {
         let path = CGMutablePath()
         guard width > 0, height > 0 else { return path }
         // 폭이 좁을 때는 두 곡률을 같은 비율로 줄여 경로가 뒤집히지 않게 한다.
@@ -280,7 +313,13 @@ final class NotchIndicatorController {
         )
         path.addLine(to: CGPoint(x: 0, y: height))
         path.closeSubpath()
-        return path
+        guard side == .left else { return path }
+
+        // 왼쪽 배지는 전체 panel의 오른쪽 끝이 노치에 닿는다. 접힌 path도 panel 오른쪽에 남도록
+        // 현재 shape 폭이 아니라 전체 container 폭을 기준으로 수평 반전한다.
+        let mirrorWidth = containerWidth ?? width
+        var transform = CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: mirrorWidth, ty: 0)
+        return path.copy(using: &transform) ?? path
     }
 
     private let model: AppModel
@@ -307,6 +346,15 @@ final class NotchIndicatorController {
             .removeDuplicates()
             .sink { [weak self] state in
                 self?.render(state)
+            }
+            .store(in: &cancellables)
+
+        model.$settings
+            .map(\.activeNotchIndicatorSides)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] sides in
+                self?.rebuildOverlays(sides: sides)
             }
             .store(in: &cancellables)
 
@@ -345,29 +393,48 @@ final class NotchIndicatorController {
 
     /// 현재 `NSScreen.screens`를 다시 읽어 오버레이를 전체 재구성한다.
     /// 화면 ID를 영속화하지 않으므로 중복 제거나 화면 객체 수명 문제가 없다.
-    private func rebuildOverlays() {
+    private func rebuildOverlays(sides requestedSides: [NotchIndicatorSide]? = nil) {
         for overlay in overlays {
             overlay.panel.orderOut(nil)
         }
         transitionGenerations.invalidateAll()
-        overlays = NSScreen.screens.compactMap { screen in
-            let geometry = NotchScreenGeometry(
-                frame: screen.frame,
-                safeAreaTop: screen.safeAreaInsets.top,
-                auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
-                auxiliaryTopRightArea: screen.auxiliaryTopRightArea
+        let sides = requestedSides ?? model.settings.activeNotchIndicatorSides
+        let screens = NSScreen.screens.map { screen -> (screen: NSScreen, geometry: NotchScreenGeometry) in
+            (
+                screen,
+                NotchScreenGeometry(
+                    frame: screen.frame,
+                    safeAreaTop: screen.safeAreaInsets.top,
+                    auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
+                    auxiliaryTopRightArea: screen.auxiliaryTopRightArea
+                )
             )
-            // 실제 배지 폭으로 검증한다. 상태와 무관하게 frame이 같으므로 여기서 확인한 것이 곧 표시 조건이다.
-            guard NotchIndicatorLayout.badgeFrame(for: geometry, width: Self.badgeWidth) != nil else {
-                return nil
+        }
+        model.setHasNotchedDisplay(
+            screens.contains { NotchIndicatorLayout.supportsIndicator(on: $0.geometry, width: Self.badgeWidth) }
+        )
+        overlays = screens.flatMap { item in
+            sides.compactMap { side -> NotchOverlay? in
+                // 실제 배지 폭으로 검증한다. 상태와 무관하게 frame이 같으므로 여기서 확인한 것이 곧 표시 조건이다.
+                guard NotchIndicatorLayout.badgeFrame(
+                    for: item.geometry,
+                    side: side,
+                    width: Self.badgeWidth
+                ) != nil else {
+                    return nil
+                }
+                return makeOverlay(screen: item.screen, geometry: item.geometry, side: side)
             }
-            return makeOverlay(screen: screen, geometry: geometry)
         }
         // 화면 재구성은 상태 전이가 아니므로 표시 중이던 배지는 애니메이션 없이 즉시 복원한다.
         applyAppearance(animated: false)
     }
 
-    private func makeOverlay(screen: NSScreen, geometry: NotchScreenGeometry) -> NotchOverlay {
+    private func makeOverlay(
+        screen: NSScreen,
+        geometry: NotchScreenGeometry,
+        side: NotchIndicatorSide
+    ) -> NotchOverlay {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -413,7 +480,7 @@ final class NotchIndicatorController {
             // panel은 노치 안쪽까지 걸쳐 있으므로 아이콘은 노치 바깥 영역의 중앙에 놓는다.
             icon.centerXAnchor.constraint(
                 equalTo: content.centerXAnchor,
-                constant: Self.iconCenterOffset
+                constant: Self.iconCenterOffset(for: side)
             ),
             icon.centerYAnchor.constraint(equalTo: content.centerYAnchor),
         ])
@@ -422,6 +489,7 @@ final class NotchIndicatorController {
         return NotchOverlay(
             screen: screen,
             geometry: geometry,
+            side: side,
             panel: panel,
             backgroundView: background,
             iconView: icon
@@ -460,7 +528,11 @@ final class NotchIndicatorController {
         for overlay in overlays {
             let overlayID = ObjectIdentifier(overlay.panel)
             let generation = transitionGenerations.begin(for: overlayID)
-            guard let rect = NotchIndicatorLayout.badgeFrame(for: overlay.geometry, width: Self.badgeWidth) else {
+            guard let rect = NotchIndicatorLayout.badgeFrame(
+                for: overlay.geometry,
+                side: overlay.side,
+                width: Self.badgeWidth
+            ) else {
                 overlay.panel.orderOut(nil)
                 continue
             }
@@ -480,7 +552,11 @@ final class NotchIndicatorController {
             overlay.iconView.contentTintColor = color(for: appearance.kind)
 
             let full = CGRect(origin: .zero, size: aligned.size)
-            let fullPath = Self.badgePath(width: full.width, height: full.height)
+            let fullPath = Self.badgePath(
+                width: full.width,
+                height: full.height,
+                side: overlay.side
+            )
             overlay.backgroundView.frame = full
             guard wasHidden, animated, appearance.usesEntranceAnimation else {
                 // 같은 상태가 다시 들어오면 다시 재생하지 않고 완성된 모습을 유지한다.
@@ -497,10 +573,12 @@ final class NotchIndicatorController {
                 continue
             }
 
-            // 노치 안에 숨어 있던 검은 영역이 오른쪽으로 자라 나온 뒤 아이콘이 뒤따라 떠오른다.
+            // 노치 안에 숨어 있던 검은 영역이 선택한 방향으로 자라 나온 뒤 아이콘이 뒤따라 떠오른다.
             let collapsedPath = Self.badgePath(
                 width: NotchIndicatorLayout.defaultNotchOverlap,
-                height: full.height
+                height: full.height,
+                side: overlay.side,
+                containerWidth: full.width
             )
             let icon = overlay.iconView
             let shape = overlay.backgroundView.shapeLayer
@@ -595,8 +673,17 @@ final class NotchIndicatorController {
         }
 
         let collapse = CABasicAnimation(keyPath: "path")
-        collapse.fromValue = Self.badgePath(width: size.width, height: size.height)
-        collapse.toValue = Self.badgePath(width: collapsedWidth, height: size.height)
+        collapse.fromValue = Self.badgePath(
+            width: size.width,
+            height: size.height,
+            side: overlay.side
+        )
+        collapse.toValue = Self.badgePath(
+            width: collapsedWidth,
+            height: size.height,
+            side: overlay.side,
+            containerWidth: size.width
+        )
         collapse.duration = Self.collapseDuration
         collapse.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.6, 1)
         collapse.fillMode = .forwards
