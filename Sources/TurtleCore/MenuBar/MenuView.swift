@@ -171,6 +171,26 @@ struct MenuView: View {
                     .labelsHidden()
                 }
 
+                if model.hasNotchedDisplay {
+                    HStack {
+                        Label("노치 알림", systemImage: "exclamationmark.triangle")
+                            .font(.callout)
+                        Spacer()
+                        Picker("노치 알림", selection: Binding(
+                            get: { model.settings.notchIndicatorPlacement },
+                            set: { model.setNotchIndicatorPlacement($0) }
+                        )) {
+                            Text("없음").tag(NotchIndicatorPlacement.none)
+                            Text("왼쪽").tag(NotchIndicatorPlacement.left)
+                            Text("오른쪽").tag(NotchIndicatorPlacement.right)
+                            Text("모두").tag(NotchIndicatorPlacement.both)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: Layout.trailingControlWidth, alignment: .trailing)
+                    }
+                }
+
                 HStack {
                     Label("로그인 시 자동 실행", systemImage: "power.circle")
                         .font(.callout)
@@ -218,7 +238,7 @@ struct MenuView: View {
             VStack(alignment: .leading, spacing: 10) {
                 sectionTitle("노치 미리보기")
 
-                Text("카메라와 무관하게 노치 표시만 강제합니다. 자세 판정, 통계, 알림은 그대로 진행됩니다.")
+                Text("카메라와 무관하게 노치 자세 상태만 바꿉니다. 노치 알림 설정은 유지되며, 자세 판정, 통계, 알림은 그대로 진행됩니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -241,9 +261,15 @@ struct MenuView: View {
     }
 
     private var notchPreviewHint: String {
+        guard model.hasNotchedDisplay else {
+            return "표시 가능한 노치 화면이 없습니다."
+        }
+        guard model.settings.notchIndicatorPlacement != .none else {
+            return "노치 알림이 없음으로 설정되어 미리보기를 표시하지 않습니다."
+        }
         let state = model.notchPreviewState ?? model.postureState
         return state == .bad
-            ? "노치가 있는 화면에서 검은 영역이 펼쳐진 뒤 노란 경고 아이콘이 나타납니다. 동작 줄이기가 켜져 있으면 즉시 표시됩니다."
+            ? "노치가 있는 화면의 선택한 위치에서 검은 영역이 펼쳐진 뒤 노란 경고 아이콘이 나타납니다. 동작 줄이기가 켜져 있으면 즉시 표시됩니다."
             : "주의 외의 상태에서는 노치에 아무것도 표시하지 않습니다. 숨김이 정상 동작입니다."
     }
 
