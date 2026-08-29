@@ -3,7 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export COPYFILE_DISABLE=1
-APP="$ROOT/.build/turtlemeck.app"
+APP_OUTPUT="$ROOT/.build/turtlemeck.app"
+APP_CACHE_KEY="$(printf '%s' "$ROOT" | shasum -a 256 | cut -c 1-16)"
+APP_CACHE="${TMPDIR:-/tmp}/turtlemeck-package-cache/$APP_CACHE_KEY/turtlemeck.app"
+APP="$APP_OUTPUT"
 CHECKSUMS="$ROOT/.build/SHA256SUMS"
 BUNDLE_ID="com.go.turtlemeck"
 CONTENTS="$APP/Contents"
@@ -71,12 +74,17 @@ notarize() {
     --wait
 }
 
+has_codesign_forbidden_xattrs() {
+  xattr -r "$1" 2>/dev/null \
+    | grep -E 'com\.apple\.(FinderInfo|ResourceFork)$' >/dev/null
+}
+
 cd "$ROOT"
 
 swift build --disable-sandbox -c release --arch arm64 --product turtlemeck
 swift build --disable-sandbox -c release --arch x86_64 --product turtlemeck
 
-rm -rf "$APP" "$ZIP" "$DMG" "$CHECKSUMS"
+rm -rf "$APP_OUTPUT" "$APP_CACHE" "$ZIP" "$DMG" "$CHECKSUMS"
 mkdir -p "$MACOS" "$RESOURCES/en.lproj" "$RESOURCES/ko.lproj"
 
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$MACOS/turtlemeck"
@@ -148,7 +156,24 @@ if [ ! -f "$RESOURCES/AppIcon.icns" ] || [ ! -f "$RESOURCES/ThirdPartyNotices.md
   echo "[package] required icon or third-party notices are missing" >&2
   exit 1
 fi
-xattr -cr "$APP" 2>/dev/null || true
+if has_codesign_forbidden_xattrs "$APP"; then
+  # File Provider 볼륨은 .app/.mlmodelc에 FinderInfo를 즉시 복원하므로 로컬 캐시에서 서명한다.
+  mkdir -p "$(dirname "$APP_CACHE")"
+  ditto --norsrc --noextattr "$APP" "$APP_CACHE"
+  rm -rf "$APP_OUTPUT"
+  APP="$APP_CACHE"
+  CONTENTS="$APP/Contents"
+  MACOS="$CONTENTS/MacOS"
+  RESOURCES="$CONTENTS/Resources"
+  xattr -cr "$APP" 2>/dev/null || true
+  if has_codesign_forbidden_xattrs "$APP"; then
+    echo "[package] unable to remove FinderInfo or resource-fork metadata before signing" >&2
+    exit 1
+  fi
+  echo "[package] signing from local cache because the project volume restores Finder metadata"
+else
+  xattr -cr "$APP" 2>/dev/null || true
+fi
 
 chmod +x "$MACOS/turtlemeck"
 ARCHS="$(lipo -archs "$MACOS/turtlemeck")"
@@ -168,6 +193,9 @@ else
   codesign --force --deep --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
+if [ "$APP" != "$APP_OUTPUT" ]; then
+  ln -s "$APP" "$APP_OUTPUT"
+fi
 # 최종 배포 파일인 DMG도 별도로 서명하고 공증한다.
 if [ "$RELEASE_MODE" = "1" ]; then
   codesign -d --entitlements - --xml "$APP" 2>/dev/null \
@@ -194,10 +222,9 @@ if [ "$RELEASE_MODE" = "1" ]; then
   rm -f "$NOTARY_ARCHIVE"
   NOTARY_ARCHIVE=""
 fi
-
 (
-  cd "$ROOT/.build"
-  zip -qry -X "$(basename "$ZIP")" "$(basename "$APP")"
+  cd "$(dirname "$APP")"
+  zip -qry -X "$ZIP" "$(basename "$APP")"
 )
 DMG_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/turtlemeck-dmg.XXXXXX")"
 cp -R "$APP" "$DMG_STAGE/turtlemeck.app"
@@ -224,7 +251,7 @@ zip -T "$ZIP"
   shasum -a 256 -c "$(basename "$CHECKSUMS")"
 )
 
-echo "Packaged $APP"
+echo "Packaged $APP_OUTPUT"
 echo "Packaged $ZIP"
 echo "Packaged $DMG"
 echo "Checksums $CHECKSUMS"
