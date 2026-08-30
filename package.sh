@@ -5,7 +5,25 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export COPYFILE_DISABLE=1
 APP_OUTPUT="$ROOT/.build/turtlemeck.app"
 APP_CACHE_KEY="$(printf '%s' "$ROOT" | shasum -a 256 | cut -c 1-16)"
-APP_CACHE="${TMPDIR:-/tmp}/turtlemeck-package-cache/$APP_CACHE_KEY/turtlemeck.app"
+package_cache_path() {
+  local directory
+  if ! directory="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"; then
+    return 1
+  fi
+  case "$directory" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  directory="${directory%/}"
+  if [ -z "$directory" ]; then
+    return 1
+  fi
+  printf '%s/turtlemeck-package-cache/%s/turtlemeck.app\n' "$directory" "$1"
+}
+if ! APP_CACHE="$(package_cache_path "$APP_CACHE_KEY")"; then
+  echo "[package] unable to resolve the private macOS user temporary directory" >&2
+  exit 1
+fi
 APP="$APP_OUTPUT"
 CHECKSUMS="$ROOT/.build/SHA256SUMS"
 BUNDLE_ID="com.go.turtlemeck"
@@ -75,8 +93,32 @@ notarize() {
 }
 
 has_codesign_forbidden_xattrs() {
-  xattr -r "$1" 2>/dev/null \
-    | grep -E 'com\.apple\.(FinderInfo|ResourceFork)$' >/dev/null
+  local output
+  if ! output="$(xattr -rs "$1" 2>/dev/null)"; then
+    return 2
+  fi
+  if printf '%s\n' "$output" \
+    | grep -E '(^|:[[:space:]]+)com\.apple\.(FinderInfo|ResourceFork)$' >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# 0: ready to sign, 1: forbidden metadata remains, 2: xattr operation failed.
+prepare_codesign_xattrs() {
+  local status
+  if ! xattr -crs "$1" 2>/dev/null; then
+    return 2
+  fi
+  if has_codesign_forbidden_xattrs "$1"; then
+    return 1
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 1 ]; then
+    return 0
+  fi
+  return 2
 }
 
 cd "$ROOT"
@@ -156,8 +198,14 @@ if [ ! -f "$RESOURCES/AppIcon.icns" ] || [ ! -f "$RESOURCES/ThirdPartyNotices.md
   echo "[package] required icon or third-party notices are missing" >&2
   exit 1
 fi
-if has_codesign_forbidden_xattrs "$APP"; then
-  # File Provider 볼륨은 .app/.mlmodelc에 FinderInfo를 즉시 복원하므로 로컬 캐시에서 서명한다.
+XATTR_STATUS=0
+if prepare_codesign_xattrs "$APP"; then
+  :
+else
+  XATTR_STATUS=$?
+fi
+if [ "$XATTR_STATUS" -ne 0 ]; then
+  # File Provider 볼륨에 남는 서명 금지 메타데이터는 사용자 전용 임시 캐시에서 제거한다.
   mkdir -p "$(dirname "$APP_CACHE")"
   ditto --norsrc --noextattr "$APP" "$APP_CACHE"
   rm -rf "$APP_OUTPUT"
@@ -165,14 +213,18 @@ if has_codesign_forbidden_xattrs "$APP"; then
   CONTENTS="$APP/Contents"
   MACOS="$CONTENTS/MacOS"
   RESOURCES="$CONTENTS/Resources"
-  xattr -cr "$APP" 2>/dev/null || true
-  if has_codesign_forbidden_xattrs "$APP"; then
-    echo "[package] unable to remove FinderInfo or resource-fork metadata before signing" >&2
+  if prepare_codesign_xattrs "$APP"; then
+    :
+  else
+    XATTR_STATUS=$?
+    if [ "$XATTR_STATUS" -eq 1 ]; then
+      echo "[package] unable to remove FinderInfo or resource-fork metadata before signing" >&2
+    else
+      echo "[package] unable to clear or inspect extended attributes before signing" >&2
+    fi
     exit 1
   fi
-  echo "[package] signing from local cache because the project volume restores Finder metadata"
-else
-  xattr -cr "$APP" 2>/dev/null || true
+  echo "[package] signing from private cache because project metadata could not be cleared safely"
 fi
 
 chmod +x "$MACOS/turtlemeck"

@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+Tests/package-script.sh
+
 ICON_CHECK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/turtlemeck-icon-check.XXXXXX")"
 EXPECTED_ICONSET="$ICON_CHECK_ROOT/Expected.iconset"
 mkdir "$EXPECTED_ICONSET"
