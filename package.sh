@@ -2,28 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=package-helpers.sh
+source "$ROOT/package-helpers.sh"
 export COPYFILE_DISABLE=1
 APP_OUTPUT="$ROOT/.build/turtlemeck.app"
-APP_CACHE_KEY="$(printf '%s' "$ROOT" | shasum -a 256 | cut -c 1-16)"
-package_cache_path() {
-  local directory
-  if ! directory="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"; then
-    return 1
-  fi
-  case "$directory" in
-    /*) ;;
-    *) return 1 ;;
-  esac
-  directory="${directory%/}"
-  if [ -z "$directory" ]; then
-    return 1
-  fi
-  printf '%s/turtlemeck-package-cache/%s/turtlemeck.app\n' "$directory" "$1"
-}
-if ! APP_CACHE="$(package_cache_path "$APP_CACHE_KEY")"; then
-  echo "[package] unable to resolve the private macOS user temporary directory" >&2
-  exit 1
-fi
 APP="$APP_OUTPUT"
 CHECKSUMS="$ROOT/.build/SHA256SUMS"
 BUNDLE_ID="com.go.turtlemeck"
@@ -92,41 +74,12 @@ notarize() {
     --wait
 }
 
-has_codesign_forbidden_xattrs() {
-  local output
-  if ! output="$(xattr -rs "$1" 2>/dev/null)"; then
-    return 2
-  fi
-  if printf '%s\n' "$output" \
-    | grep -E '(^|:[[:space:]]+)com\.apple\.(FinderInfo|ResourceFork)$' >/dev/null; then
-    return 0
-  fi
-  return 1
-}
-
-# 0: ready to sign, 1: forbidden metadata remains, 2: xattr operation failed.
-prepare_codesign_xattrs() {
-  local status
-  if ! xattr -crs "$1" 2>/dev/null; then
-    return 2
-  fi
-  if has_codesign_forbidden_xattrs "$1"; then
-    return 1
-  else
-    status=$?
-  fi
-  if [ "$status" -eq 1 ]; then
-    return 0
-  fi
-  return 2
-}
-
 cd "$ROOT"
 
 swift build --disable-sandbox -c release --arch arm64 --product turtlemeck
 swift build --disable-sandbox -c release --arch x86_64 --product turtlemeck
 
-rm -rf "$APP_OUTPUT" "$APP_CACHE" "$ZIP" "$DMG" "$CHECKSUMS"
+rm -rf "$APP_OUTPUT" "$ZIP" "$DMG" "$CHECKSUMS"
 mkdir -p "$MACOS" "$RESOURCES/en.lproj" "$RESOURCES/ko.lproj"
 
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$MACOS/turtlemeck"
@@ -198,14 +151,14 @@ if [ ! -f "$RESOURCES/AppIcon.icns" ] || [ ! -f "$RESOURCES/ThirdPartyNotices.md
   echo "[package] required icon or third-party notices are missing" >&2
   exit 1
 fi
-XATTR_STATUS=0
-if prepare_codesign_xattrs "$APP"; then
-  :
-else
-  XATTR_STATUS=$?
-fi
-if [ "$XATTR_STATUS" -ne 0 ]; then
-  # File Provider 볼륨에 남는 서명 금지 메타데이터는 사용자 전용 임시 캐시에서 제거한다.
+if needs_codesign_cache "$APP"; then
+  APP_CACHE_KEY="$(printf '%s' "$ROOT" | shasum -a 256 | cut -c 1-16)"
+  if ! APP_CACHE="$(package_cache_path "$APP_CACHE_KEY")"; then
+    echo "[package] unable to resolve the private macOS user temporary directory" >&2
+    exit 1
+  fi
+  # 서명에 안전하지 않은 프로젝트 메타데이터는 사용자 전용 임시 캐시에서 제거한다.
+  rm -rf "$APP_CACHE"
   mkdir -p "$(dirname "$APP_CACHE")"
   ditto --norsrc --noextattr "$APP" "$APP_CACHE"
   rm -rf "$APP_OUTPUT"
@@ -213,15 +166,8 @@ if [ "$XATTR_STATUS" -ne 0 ]; then
   CONTENTS="$APP/Contents"
   MACOS="$CONTENTS/MacOS"
   RESOURCES="$CONTENTS/Resources"
-  if prepare_codesign_xattrs "$APP"; then
-    :
-  else
-    XATTR_STATUS=$?
-    if [ "$XATTR_STATUS" -eq 1 ]; then
-      echo "[package] unable to remove FinderInfo or resource-fork metadata before signing" >&2
-    else
-      echo "[package] unable to clear or inspect extended attributes before signing" >&2
-    fi
+  if ! prepare_codesign_xattrs "$APP"; then
+    echo "[package] unable to clear or inspect extended attributes before signing" >&2
     exit 1
   fi
   echo "[package] signing from private cache because project metadata could not be cleared safely"
