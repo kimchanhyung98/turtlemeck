@@ -2,8 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=package-helpers.sh
+source "$ROOT/package-helpers.sh"
 export COPYFILE_DISABLE=1
-APP="$ROOT/.build/turtlemeck.app"
+APP_OUTPUT="$ROOT/.build/turtlemeck.app"
+APP="$APP_OUTPUT"
 CHECKSUMS="$ROOT/.build/SHA256SUMS"
 BUNDLE_ID="com.go.turtlemeck"
 CONTENTS="$APP/Contents"
@@ -76,7 +79,7 @@ cd "$ROOT"
 swift build --disable-sandbox -c release --arch arm64 --product turtlemeck
 swift build --disable-sandbox -c release --arch x86_64 --product turtlemeck
 
-rm -rf "$APP" "$ZIP" "$DMG" "$CHECKSUMS"
+rm -rf "$APP_OUTPUT" "$ZIP" "$DMG" "$CHECKSUMS"
 mkdir -p "$MACOS" "$RESOURCES/en.lproj" "$RESOURCES/ko.lproj"
 
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$MACOS/turtlemeck"
@@ -148,7 +151,27 @@ if [ ! -f "$RESOURCES/AppIcon.icns" ] || [ ! -f "$RESOURCES/ThirdPartyNotices.md
   echo "[package] required icon or third-party notices are missing" >&2
   exit 1
 fi
-xattr -cr "$APP" 2>/dev/null || true
+if needs_codesign_cache "$APP"; then
+  APP_CACHE_KEY="$(printf '%s' "$ROOT" | shasum -a 256 | cut -c 1-16)"
+  if ! APP_CACHE="$(package_cache_path "$APP_CACHE_KEY")"; then
+    echo "[package] unable to resolve the private macOS user temporary directory" >&2
+    exit 1
+  fi
+  # 서명에 안전하지 않은 프로젝트 메타데이터는 사용자 전용 임시 캐시에서 제거한다.
+  rm -rf "$APP_CACHE"
+  mkdir -p "$(dirname "$APP_CACHE")"
+  ditto --norsrc --noextattr "$APP" "$APP_CACHE"
+  rm -rf "$APP_OUTPUT"
+  APP="$APP_CACHE"
+  CONTENTS="$APP/Contents"
+  MACOS="$CONTENTS/MacOS"
+  RESOURCES="$CONTENTS/Resources"
+  if ! prepare_codesign_xattrs "$APP"; then
+    echo "[package] unable to clear or inspect extended attributes before signing" >&2
+    exit 1
+  fi
+  echo "[package] signing from private cache because project metadata could not be cleared safely"
+fi
 
 chmod +x "$MACOS/turtlemeck"
 ARCHS="$(lipo -archs "$MACOS/turtlemeck")"
@@ -168,6 +191,9 @@ else
   codesign --force --deep --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
+if [ "$APP" != "$APP_OUTPUT" ]; then
+  ln -s "$APP" "$APP_OUTPUT"
+fi
 # 최종 배포 파일인 DMG도 별도로 서명하고 공증한다.
 if [ "$RELEASE_MODE" = "1" ]; then
   codesign -d --entitlements - --xml "$APP" 2>/dev/null \
@@ -194,10 +220,9 @@ if [ "$RELEASE_MODE" = "1" ]; then
   rm -f "$NOTARY_ARCHIVE"
   NOTARY_ARCHIVE=""
 fi
-
 (
-  cd "$ROOT/.build"
-  zip -qry -X "$(basename "$ZIP")" "$(basename "$APP")"
+  cd "$(dirname "$APP")"
+  zip -qry -X "$ZIP" "$(basename "$APP")"
 )
 DMG_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/turtlemeck-dmg.XXXXXX")"
 cp -R "$APP" "$DMG_STAGE/turtlemeck.app"
@@ -224,7 +249,7 @@ zip -T "$ZIP"
   shasum -a 256 -c "$(basename "$CHECKSUMS")"
 )
 
-echo "Packaged $APP"
+echo "Packaged $APP_OUTPUT"
 echo "Packaged $ZIP"
 echo "Packaged $DMG"
 echo "Checksums $CHECKSUMS"
